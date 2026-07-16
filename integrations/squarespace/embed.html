@@ -1,0 +1,35 @@
+<!-- Add this to a Squarespace Code Block on the custom-order page. -->
+<div class="printflow-embed">
+  <iframe
+    id="printflow-customizer"
+    src="https://YOUR-VERCEL-DOMAIN.com/s/YOUR-SHOP-SLUG"
+    title="Custom shirt designer"
+    loading="eager"
+    allow="clipboard-write"
+  ></iframe>
+</div>
+
+<style>
+  .printflow-embed {
+    width: 100%;
+  }
+
+  #printflow-customizer {
+    display: block;
+    width: 100%;
+    min-height: 1200px;
+    border: 0;
+    background: transparent;
+  }
+</style>
+
+<script>
+  window.addEventListener("message", function (event) {
+    if (!event.data || event.data.type !== "printflow:resize") return;
+
+    var frame = document.getElementById("printflow-customizer");
+    if (!frame) return;
+
+    frame.style.height = Math.max(800, Number(event.data.height) || 1200) + "px";
+  });
+</script>
