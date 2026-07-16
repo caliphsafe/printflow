@@ -164,3 +164,8 @@ using `supabase/cron.sql`.
 7. Confirm the order appears in `/dashboard/orders`.
 8. Confirm the original file and preview reach Google Drive.
 9. Confirm the order row reaches Google Sheets.
+
+
+## Catalog editor upgrade
+
+After deploying this version, run `supabase/migrations/20260716_catalog_v1.sql` once in Supabase SQL Editor. Then log in and open `/dashboard/products`. Product, color, size, package and checkout-link changes appear in `/s/YOUR-SHOP-SLUG` after saving.

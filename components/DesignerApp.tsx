@@ -9,6 +9,7 @@ import {
   useState
 } from "react";
 import type {
+  CatalogProduct,
   ProductPackage,
   PublicShop,
   ShirtColor,
@@ -62,7 +63,14 @@ function shirtPath() {
 }
 
 export default function DesignerApp({ shop }: Props) {
-  const settings = shop.settings;
+  const initialProduct = shop.products[0];
+  const [selectedProductId, setSelectedProductId] = useState(initialProduct.id);
+  const selectedProduct = shop.products.find((item) => item.id === selectedProductId) || initialProduct;
+  const settings = {
+    ...shop.settings,
+    product: { name: selectedProduct.name, description: selectedProduct.description || undefined },
+    ...selectedProduct.configuration
+  };
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragRef = useRef<{
     mode: "drag" | "resize";
@@ -71,18 +79,10 @@ export default function DesignerApp({ shop }: Props) {
     startArt: ArtworkState;
   } | null>(null);
 
-  const [selectedColor, setSelectedColor] = useState<ShirtColor>(
-    settings.colors[0]
-  );
-  const [selectedPackage, setSelectedPackage] = useState<ProductPackage>(
-    settings.packages[0]
-  );
-  const [printLocation, setPrintLocation] = useState(
-    settings.printLocations[0]
-  );
-  const [sizes, setSizes] = useState<SizeQuantity[]>(
-    settings.sizes.map((size) => ({ size, quantity: 0 }))
-  );
+  const [selectedColor, setSelectedColor] = useState<ShirtColor>(initialProduct.configuration.colors[0]);
+  const [selectedPackage, setSelectedPackage] = useState<ProductPackage>(initialProduct.configuration.packages[0]);
+  const [printLocation, setPrintLocation] = useState(initialProduct.configuration.printLocations[0]);
+  const [sizes, setSizes] = useState<SizeQuantity[]>(initialProduct.configuration.sizes.map((size) => ({ size, quantity: 0 })));
   const [artFile, setArtFile] = useState<File | null>(null);
   const [artDataUrl, setArtDataUrl] = useState<string>("");
   const [artwork, setArtwork] = useState<ArtworkState>({
@@ -103,6 +103,17 @@ export default function DesignerApp({ shop }: Props) {
     displayId: string;
     checkoutUrl: string;
   } | null>(null);
+
+
+  function selectProduct(product: CatalogProduct) {
+    setSelectedProductId(product.id);
+    setSelectedColor(product.configuration.colors[0]);
+    setSelectedPackage(product.configuration.packages[0]);
+    setPrintLocation(product.configuration.printLocations[0]);
+    setSizes(product.configuration.sizes.map((size) => ({ size, quantity: 0 })));
+    setCompleted(null);
+    setError("");
+  }
 
   const totalAssigned = useMemo(
     () => sizes.reduce((sum, item) => sum + item.quantity, 0),
@@ -349,6 +360,7 @@ export default function DesignerApp({ shop }: Props) {
           shopSlug: shop.slug,
           customer,
           configuration: {
+            productId: selectedProduct.id,
             packageId: selectedPackage.id,
             colorId: selectedColor.id,
             printLocation,
@@ -607,9 +619,25 @@ export default function DesignerApp({ shop }: Props) {
           </section>
 
           <section className="controls-panel">
+            {shop.products.length > 1 && (
+              <div className="control-section">
+                <div className="section-heading">
+                  <span>01</span>
+                  <div><h2>Choose your product</h2><p>Select the garment you want to customize.</p></div>
+                </div>
+                <div className="package-grid">
+                  {shop.products.map((product) => (
+                    <button key={product.id} type="button" className={product.id === selectedProduct.id ? "package-card selected" : "package-card"} onClick={() => selectProduct(product)}>
+                      <strong>{product.name}</strong><span>{product.description || `${product.configuration.colors.length} colors`}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="control-section">
               <div className="section-heading">
-                <span>01</span>
+                <span>{shop.products.length > 1 ? "02" : "01"}</span>
                 <div>
                   <h2>Choose your package</h2>
                   <p>The checkout price is controlled by Squarespace.</p>

@@ -12,6 +12,23 @@ export type ProductPackage = {
   checkoutUrl: string;
 };
 
+export type ProductConfiguration = {
+  sizes: string[];
+  colors: ShirtColor[];
+  printLocations: string[];
+  packages: ProductPackage[];
+  mockupImageUrl?: string;
+};
+
+export type CatalogProduct = {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  active: boolean;
+  configuration: ProductConfiguration;
+};
+
 export type ShopSettings = {
   brand: {
     primaryColor: string;
@@ -37,6 +54,7 @@ export type PublicShop = {
   slug: string;
   name: string;
   settings: ShopSettings;
+  products: CatalogProduct[];
 };
 
 export type SizeQuantity = {
