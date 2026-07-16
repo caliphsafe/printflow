@@ -462,11 +462,8 @@ export default function DesignerApp({ shop }: Props) {
           ) : (
             <p className="eyebrow">{shop.name}</p>
           )}
-          <h1>Design your custom shirts</h1>
-          <p>
-            Upload your artwork, position it on the shirt, assign the sizes,
-            then continue to secure checkout.
-          </p>
+          <h1>{settings.customerExperience?.headline || "Design your custom shirts"}</h1>
+          <p>{settings.customerExperience?.introduction || "Upload your artwork, position it on the shirt, assign the sizes, then continue to secure checkout."}</p>
         </div>
         <div className="header-price">
           <span>{selectedPackage.label}</span>
@@ -479,10 +476,8 @@ export default function DesignerApp({ shop }: Props) {
           <div className="success-icon">✓</div>
           <p className="eyebrow">DESIGN SAVED</p>
           <h2>Your design is attached.</h2>
-          <p>
-            Reference <strong>{completed.displayId}</strong> will follow the
-            order through checkout and into the print shop’s production files.
-          </p>
+          <p>{settings.customerExperience?.confirmationMessage || "Your design is attached and ready for checkout."}</p>
+          <p className="success-reference">Reference <strong>{completed.displayId}</strong> will follow the order through checkout and into production.</p>
           <button className="primary-button" onClick={continueToCheckout}>
             Continue to secure checkout
           </button>
@@ -700,7 +695,7 @@ export default function DesignerApp({ shop }: Props) {
                 <span>03</span>
                 <div>
                   <h2>Upload artwork</h2>
-                  <p>PNG, JPG, WEBP or SVG.</p>
+                  <p>{settings.customerExperience?.uploadInstructions || "PNG, JPG, WEBP or SVG."}</p>
                 </div>
               </div>
               <label className="upload-box">
@@ -854,10 +849,9 @@ export default function DesignerApp({ shop }: Props) {
                 <span>{selectedPackage.label}</span>
                 <strong>{money(selectedPackage.price)}</strong>
               </div>
-              <p>
-                Shipping and tax are calculated by the shop’s Squarespace
-                checkout.
-              </p>
+              <p>Shipping and tax are calculated by the shop’s checkout.</p>
+              {settings.customerExperience?.turnaroundTime && <p className="checkout-guidance"><strong>Turnaround:</strong> {settings.customerExperience.turnaroundTime}</p>}
+              {settings.customerExperience?.artworkDisclaimer && <p className="checkout-guidance">{settings.customerExperience.artworkDisclaimer}</p>}
               <button
                 className="primary-button"
                 type="button"

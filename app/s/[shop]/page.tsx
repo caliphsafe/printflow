@@ -3,6 +3,7 @@ import DesignerApp from "@/components/DesignerApp";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { legacyProductFromSettings, normalizeConfiguration } from "@/lib/catalog";
 import type { CatalogProduct, PublicShop, ShopSettings } from "@/lib/types";
+import { normalizeShopSettings } from "@/lib/shop-settings";
 
 type Props = { params: Promise<{ shop: string }> };
 
@@ -28,7 +29,7 @@ export default async function ShopDesignerPage({ params }: Props) {
     .eq("active", true)
     .order("created_at", { ascending: true });
 
-  const settings = data.settings as ShopSettings;
+  const settings = normalizeShopSettings(data.settings as ShopSettings);
   const products: CatalogProduct[] = rows?.length
     ? rows.map((row) => ({ ...row, configuration: normalizeConfiguration(row.configuration) }))
     : [legacyProductFromSettings(settings)];

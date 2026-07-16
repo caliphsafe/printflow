@@ -169,3 +169,7 @@ using `supabase/cron.sql`.
 ## Catalog editor upgrade
 
 After deploying this version, run `supabase/migrations/20260716_catalog_v1.sql` once in Supabase SQL Editor. Then log in and open `/dashboard/products`. Product, color, size, package and checkout-link changes appear in `/s/YOUR-SHOP-SLUG` after saving.
+
+
+## Visual shop settings migration
+Run `supabase/migrations/20260716_shop_settings_v1.sql` once before using logo upload and the visual settings editor.

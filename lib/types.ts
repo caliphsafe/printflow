@@ -35,6 +35,19 @@ export type ShopSettings = {
     textColor: string;
     logoUrl?: string;
   };
+  business?: {
+    contactEmail?: string;
+    phone?: string;
+    address?: string;
+  };
+  customerExperience?: {
+    headline?: string;
+    introduction?: string;
+    uploadInstructions?: string;
+    turnaroundTime?: string;
+    artworkDisclaimer?: string;
+    confirmationMessage?: string;
+  };
   product: {
     name: string;
     description?: string;
