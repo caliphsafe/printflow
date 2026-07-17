@@ -41,7 +41,7 @@ export function normalizeShopSettings(input: unknown): ShopSettings {
     packages: Array.isArray(source.packages) ? source.packages : [],
     upload: {
       acceptedTypes: Array.isArray(upload.acceptedTypes) && upload.acceptedTypes.length ? upload.acceptedTypes : DEFAULT_ACCEPTED_TYPES,
-      maxBytes: Number.isFinite(Number(upload.maxBytes)) ? Math.min(Math.max(Number(upload.maxBytes), 1024 * 1024), 25 * 1024 * 1024) : 10 * 1024 * 1024
+      maxBytes: Number.isFinite(Number(upload.maxBytes)) ? Math.min(Math.max(Number(upload.maxBytes), 1024 * 1024), 100 * 1024 * 1024) : 100 * 1024 * 1024
     }
   } as ShopSettings;
 }

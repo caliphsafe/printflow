@@ -260,9 +260,14 @@ drop policy if exists "Members read audit logs" on public.audit_logs;
 create policy "Members read audit logs" on public.audit_logs
 for select to authenticated using (public.is_organization_member(organization_id));
 
-insert into storage.buckets (id,name,public)
-values ('artwork','artwork',false),('previews','previews',false)
-on conflict (id) do update set public=excluded.public;
+insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
+values
+  ('artwork','artwork',false,104857600,array['image/png','image/jpeg','image/webp','image/svg+xml']),
+  ('previews','previews',false,10485760,array['image/png'])
+on conflict (id) do update set
+  public=excluded.public,
+  file_size_limit=excluded.file_size_limit,
+  allowed_mime_types=excluded.allowed_mime_types;
 
 -- Pilot tenant and shop.
 insert into public.organizations(name,slug,subscription_status)
@@ -289,7 +294,7 @@ select id,'demo-print-shop','Demo Print Shop',
     {"id":"50-shirts","label":"50 shirts","quantity":50,"price":449,"checkoutUrl":"https://YOUR-SQUARESPACE-DOMAIN.com/store/p/50-custom-shirts"},
     {"id":"100-shirts","label":"100 shirts","quantity":100,"price":699,"checkoutUrl":"https://YOUR-SQUARESPACE-DOMAIN.com/store/p/100-custom-shirts"}
   ],
-  "upload":{"acceptedTypes":["image/png","image/jpeg","image/webp","image/svg+xml"],"maxBytes":10485760}
+  "upload":{"acceptedTypes":["image/png","image/jpeg","image/webp","image/svg+xml"],"maxBytes":104857600}
 }'::jsonb
 from public.organizations where slug='demo-print-company'
 on conflict(slug) do update set settings=excluded.settings, active=true, updated_at=now();

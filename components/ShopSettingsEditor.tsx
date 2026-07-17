@@ -100,7 +100,7 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
             <label><span>Turnaround time</span><input value={experience.turnaroundTime || ""} onChange={e=>patchSettings("customerExperience",{turnaroundTime:e.target.value})}/></label>
             <label><span>Artwork disclaimer</span><textarea rows={3} value={experience.artworkDisclaimer || ""} onChange={e=>patchSettings("customerExperience",{artworkDisclaimer:e.target.value})}/></label>
             <label><span>Saved-design confirmation</span><textarea rows={2} value={experience.confirmationMessage || ""} onChange={e=>patchSettings("customerExperience",{confirmationMessage:e.target.value})}/></label>
-            <label><span>Maximum upload size (MB)</span><input type="number" min="1" max="25" value={Math.round(draft.settings.upload.maxBytes/1024/1024)} onChange={e=>patchSettings("upload",{maxBytes:Number(e.target.value)*1024*1024})}/></label>
+            <label><span>Maximum artwork upload size (MB)</span><input type="number" min="1" max="100" value={Math.round(draft.settings.upload.maxBytes/1024/1024)} onChange={e=>patchSettings("upload",{maxBytes:Number(e.target.value)*1024*1024})}/></label>
           </div>
         </section>
 
