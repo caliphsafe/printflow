@@ -27,9 +27,11 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
       id: String(item?.id || `package-${index + 1}`), label: String(item?.label || `${item?.quantity || 1} shirts`), quantity: Math.max(1, Number(item?.quantity || 1)), price: Math.max(0, Number(item?.price || 0)), checkoutUrl: String(item?.checkoutUrl || "")
     })) : DEFAULT_CONFIGURATION.packages,
     mockupImageUrl: raw.mockupImageUrl ? String(raw.mockupImageUrl) : undefined,
-    supplier: supplierRaw?.provider === "ss-activewear" ? {
-      provider: "ss-activewear", styleId: String(supplierRaw.styleId), brandName: String(supplierRaw.brandName), styleName: String(supplierRaw.styleName), partNumber: supplierRaw.partNumber ? String(supplierRaw.partNumber) : undefined,
+    supplier: supplierRaw?.provider ? {
+      provider: String(supplierRaw.provider),
+      supplierName: supplierRaw.supplierName ? String(supplierRaw.supplierName) : undefined, styleId: String(supplierRaw.styleId), brandName: String(supplierRaw.brandName), styleName: String(supplierRaw.styleName), partNumber: supplierRaw.partNumber ? String(supplierRaw.partNumber) : undefined,
       importedAt: String(supplierRaw.importedAt || new Date().toISOString()),
+      sourceMode: supplierRaw.sourceMode === "demo" || supplierRaw.sourceMode === "manual" ? supplierRaw.sourceMode : "live",
       variants: Array.isArray(supplierRaw.variants) ? supplierRaw.variants.map((item: SupplierVariant) => ({ sku: String(item.sku), skuId: item.skuId ? String(item.skuId) : undefined, gtin: item.gtin ? String(item.gtin) : undefined, colorName: String(item.colorName), sizeName: String(item.sizeName), customerPrice: Math.max(0, Number(item.customerPrice || 0)), quantity: Math.max(0, Number(item.quantity || 0)) })) : []
     } : undefined
   };

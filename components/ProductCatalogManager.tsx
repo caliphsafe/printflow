@@ -86,7 +86,7 @@ export default function ProductCatalogManager({ initialProducts }: Props) {
         <div className="catalog-items">
           {products.map((product) => (
             <button key={product.id} className={selectedId === product.id ? "catalog-item active" : "catalog-item"} onClick={() => choose(product)}>
-              <span><strong>{product.name}</strong><small>{product.configuration.supplier ? "S&S imported" : "Manual"} · {product.configuration.packages.length} price packages · {product.configuration.colors.length} colors</small></span>
+              <span><strong>{product.name}</strong><small>{product.configuration.supplier ? `${product.configuration.supplier.supplierName || product.configuration.supplier.provider}${product.configuration.supplier.sourceMode === "demo" ? " · Demo" : ""}` : "Manual"} · {product.configuration.packages.length} price packages · {product.configuration.colors.length} colors</small></span>
               <span className={product.active ? "status-dot on" : "status-dot"} />
             </button>
           ))}
@@ -97,7 +97,7 @@ export default function ProductCatalogManager({ initialProducts }: Props) {
         {!draft ? <div className="empty-state"><h2>No products yet</h2><button className="primary-button fit-button" onClick={createDraft}>Create your first product</button></div> : (
           <>
             <div className="catalog-editor-head">
-              <div><p className="eyebrow">{draft.configuration.supplier ? "S&S IMPORTED PRODUCT" : "PRODUCT EDITOR"}</p><h2>{draft.name || "Untitled product"}</h2>{draft.configuration.supplier && <small>{draft.configuration.supplier.variants.length} supplier SKUs · imported {new Date(draft.configuration.supplier.importedAt).toLocaleDateString()}</small>}</div>
+              <div><p className="eyebrow">{draft.configuration.supplier ? `${draft.configuration.supplier.supplierName || draft.configuration.supplier.provider}${draft.configuration.supplier.sourceMode === "demo" ? " · DEMO IMPORT" : " · IMPORTED PRODUCT"}` : "PRODUCT EDITOR"}</p><h2>{draft.name || "Untitled product"}</h2>{draft.configuration.supplier && <small>{draft.configuration.supplier.variants.length} supplier SKUs · imported {new Date(draft.configuration.supplier.importedAt).toLocaleDateString()}</small>}</div>
               <label className="toggle-row"><input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} /><span>Active in designer</span></label>
             </div>
 

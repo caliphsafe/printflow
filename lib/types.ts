@@ -1,3 +1,5 @@
+export type SupplierProvider = "ss-activewear" | "sanmar" | "alphabroder" | "demo" | string;
+
 export type SupplierVariant = {
   sku: string;
   skuId?: string;
@@ -6,6 +8,7 @@ export type SupplierVariant = {
   sizeName: string;
   customerPrice: number;
   quantity: number;
+  active?: boolean;
 };
 
 export type ShirtColor = {
@@ -15,23 +18,20 @@ export type ShirtColor = {
   swatchImageUrl?: string;
   frontImageUrl?: string;
   backImageUrl?: string;
+  active?: boolean;
 };
 
-export type ProductPackage = {
-  id: string;
-  label: string;
-  quantity: number;
-  price: number;
-  checkoutUrl: string;
-};
+export type ProductPackage = { id: string; label: string; quantity: number; price: number; checkoutUrl: string };
 
 export type SupplierProductConfiguration = {
-  provider: "ss-activewear";
+  provider: SupplierProvider;
+  supplierName?: string;
   styleId: string;
   brandName: string;
   styleName: string;
   partNumber?: string;
   importedAt: string;
+  sourceMode?: "live" | "demo" | "manual";
   variants: SupplierVariant[];
 };
 
@@ -44,14 +44,7 @@ export type ProductConfiguration = {
   supplier?: SupplierProductConfiguration;
 };
 
-export type CatalogProduct = {
-  id: string;
-  slug: string;
-  name: string;
-  description?: string | null;
-  active: boolean;
-  configuration: ProductConfiguration;
-};
+export type CatalogProduct = { id: string; slug: string; name: string; description?: string | null; active: boolean; configuration: ProductConfiguration };
 
 export type ShopSettings = {
   brand: { primaryColor: string; textColor: string; logoUrl?: string };
