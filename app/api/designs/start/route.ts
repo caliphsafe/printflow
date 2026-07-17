@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { makeDesignDisplayId } from "@/lib/design-id";
-import { legacyProductFromSettings, normalizeConfiguration } from "@/lib/catalog";
+import { legacyProductFromSettings, normalizeConfiguration, pricingForQuantity } from "@/lib/catalog";
 import { normalizeShopSettings } from "@/lib/shop-settings";
 import type { CatalogProduct, DesignMode, DesignSide, SizeQuantity } from "@/lib/types";
 
 type ArtPayload = { filename: string; mimeType: string; sizeBytes: number; placement: unknown };
-type Payload = { shopSlug: string; customer: { name: string; email: string; phone?: string }; configuration: { productId: string; packageId: string; colorId: string; designMode: DesignMode; decorationMethod: string; sizes: SizeQuantity[]; notes?: string; totalPrice: number; surcharge: number }; artworks: Partial<Record<DesignSide, ArtPayload>> };
+type Payload = { shopSlug: string; customer: { name: string; email: string; phone?: string }; configuration: { productId: string; packageId: string; colorId: string; designMode: DesignMode; decorationMethod: string; sizes: SizeQuantity[]; notes?: string; totalPrice: number; surcharge: number; quantity?: number }; artworks: Partial<Record<DesignSide, ArtPayload>> };
 const jsonError = (error: string, status = 400) => NextResponse.json({ error }, { status });
 const extension = (filename: string) => { const ext = filename.split(".").pop()?.toLowerCase() || "bin"; return /^[a-z0-9]{1,8}$/.test(ext) ? ext : "bin"; };
 
@@ -20,14 +20,17 @@ export async function POST(request: Request) {
     const products: CatalogProduct[] = (rows || []).map((row: any) => ({ ...row, configuration: normalizeConfiguration(row.configuration) }));
     if (!products.length) products.push(legacyProductFromSettings(settings));
     const product = products.find((item) => item.id === payload.configuration.productId); if (!product) return jsonError("Product is unavailable.");
-    const pkg = product.configuration.packages.find((item) => item.id === payload.configuration.packageId);
     const color = product.configuration.colors.find((item) => item.id === payload.configuration.colorId && item.active !== false);
-    if (!pkg || !color) return jsonError("Selected product option is unavailable.");
+    if (!color) return jsonError("Selected product option is unavailable.");
     if (!product.configuration.customization.designModes.includes(payload.configuration.designMode)) return jsonError("That design placement is unavailable.");
     const required: DesignSide[] = payload.configuration.designMode === "front-back" ? ["front", "back"] : [payload.configuration.designMode];
     for (const side of required) { const art = payload.artworks?.[side]; if (!art) return jsonError(`Upload ${side} artwork.`); if (art.sizeBytes <= 0 || art.sizeBytes > settings.upload.maxBytes) return jsonError(`${side} artwork is too large.`); if (!settings.upload.acceptedTypes.includes(art.mimeType)) return jsonError(`${side} artwork type is not accepted.`); }
     const sizes = Array.isArray(payload.configuration.sizes) ? payload.configuration.sizes : []; const total = sizes.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
-    if (total !== pkg.quantity) return jsonError(`Size quantities must total ${pkg.quantity}.`);
+    const minimumQuantity = Math.max(12, product.configuration.customization.minimumQuantity);
+    if (total < minimumQuantity) return jsonError(`Order quantity must be at least ${minimumQuantity}.`);
+    const pricing = pricingForQuantity(product.configuration.packages, total);
+    const pkg = pricing.tier;
+    if (!pkg) return jsonError("Product pricing is unavailable.");
     if (!payload.customer?.name?.trim() || !payload.customer?.email?.trim()) return jsonError("Customer name and email are required.");
 
     const supplierItems: any[] = []; const supplier = product.configuration.supplier;
@@ -37,8 +40,8 @@ export async function POST(request: Request) {
     for (const side of required) { const art = payload.artworks[side]!; const originalPath = `${shop.id}/${displayId}/${side}-original.${extension(art.filename)}`; const previewPath = `${shop.id}/${displayId}/${side}-preview.png`; sideData[side] = { originalPath, previewPath, filename: art.filename, mimeType: art.mimeType, placement: art.placement, garmentImageUrl: side === "front" ? color.frontImageUrl : color.backImageUrl }; }
     const primary = sideData[required[0]];
     const expectedSurcharge = payload.configuration.designMode === "front" ? product.configuration.customization.frontSurcharge : payload.configuration.designMode === "back" ? product.configuration.customization.backSurcharge : product.configuration.customization.twoSideSurcharge;
-    const finalPrice = Number(pkg.price) + Number(expectedSurcharge);
-    const { data: design, error } = await supabase.from("designs").insert({ organization_id: shop.organization_id, shop_id: shop.id, display_id: displayId, status: "draft", customer_name: payload.customer.name.trim(), customer_email: payload.customer.email.trim().toLowerCase(), customer_phone: payload.customer.phone?.trim() || null, catalog_product_id: product.id === "legacy-product" ? null : product.id, product_name: product.name, package_id: pkg.id, package_label: pkg.label, package_quantity: pkg.quantity, package_price: finalPrice, shirt_color_id: color.id, shirt_color_name: color.name, print_location: payload.configuration.designMode, size_breakdown: sizes, supplier_items: supplierItems, customer_notes: payload.configuration.notes?.trim() || null, original_artwork_path: primary.originalPath, preview_path: primary.previewPath, original_filename: primary.filename, original_mime_type: primary.mimeType, checkout_url: pkg.checkoutUrl || `${new URL(request.url).origin}/s/${shop.slug}`, design_sides: sideData, design_configuration: { designMode: payload.configuration.designMode, decorationMethod: payload.configuration.decorationMethod, surcharge: expectedSurcharge, basePrice: pkg.price, totalPrice: finalPrice, productId: product.id, colorId: color.id } }).select("id,display_id").single();
+    const finalPrice = Number(pricing.basePrice) + Number(expectedSurcharge);
+    const { data: design, error } = await supabase.from("designs").insert({ organization_id: shop.organization_id, shop_id: shop.id, display_id: displayId, status: "draft", customer_name: payload.customer.name.trim(), customer_email: payload.customer.email.trim().toLowerCase(), customer_phone: payload.customer.phone?.trim() || null, catalog_product_id: product.id === "legacy-product" ? null : product.id, product_name: product.name, package_id: pkg.id, package_label: `${total} items · ${pkg.label} rate`, package_quantity: total, package_price: finalPrice, shirt_color_id: color.id, shirt_color_name: color.name, print_location: payload.configuration.designMode, size_breakdown: sizes, supplier_items: supplierItems, customer_notes: payload.configuration.notes?.trim() || null, original_artwork_path: primary.originalPath, preview_path: primary.previewPath, original_filename: primary.filename, original_mime_type: primary.mimeType, checkout_url: pkg.checkoutUrl || `${new URL(request.url).origin}/s/${shop.slug}`, design_sides: sideData, design_configuration: { designMode: payload.configuration.designMode, decorationMethod: payload.configuration.decorationMethod, surcharge: expectedSurcharge, basePrice: pricing.basePrice, unitPrice: pricing.unitPrice, quantity: total, pricingTierId: pkg.id, totalPrice: finalPrice, productId: product.id, colorId: color.id } }).select("id,display_id").single();
     if (error || !design) return jsonError(error?.message || "Unable to create design session.", 500);
     for (const side of required) { const data = sideData[side]; const original = await supabase.storage.from("artwork").createSignedUploadUrl(data.originalPath); const preview = await supabase.storage.from("previews").createSignedUploadUrl(data.previewPath); if (original.error || preview.error) return jsonError("Unable to prepare secure uploads.", 500); uploads[side] = { original: { bucket: "artwork", path: data.originalPath, token: original.data.token }, preview: { bucket: "previews", path: data.previewPath, token: preview.data.token } }; }
     return NextResponse.json({ designId: design.id, displayId: design.display_id, uploads });

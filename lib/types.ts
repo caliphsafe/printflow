@@ -12,11 +12,17 @@ export type ShirtColor = {
   frontImageUrl?: string; backImageUrl?: string; active?: boolean;
 };
 
+/** Pricing tiers are stored in the existing packages array for backwards compatibility.
+ * quantity = minimum quantity for this tier; price = total price at that quantity.
+ */
 export type ProductPackage = {
   id: string; label: string; quantity: number; price: number; checkoutUrl: string;
 };
 
-export type PrintArea = { x: number; y: number; width: number; height: number };
+export type PrintArea = {
+  x: number; y: number; width: number; height: number;
+  widthInches?: number; heightInches?: number; topInches?: number;
+};
 
 export type ProductCustomization = {
   category: string;

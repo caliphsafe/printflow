@@ -1,4 +1,27 @@
-import type { CatalogProduct, ProductConfiguration, ShopSettings, SupplierVariant } from "@/lib/types";
+import type { CatalogProduct, PrintArea, ProductConfiguration, ProductPackage, ShopSettings, SupplierVariant } from "@/lib/types";
+
+export const CANVAS_PX_PER_INCH = 28;
+
+export function inchesToPrintArea(area: PrintArea): PrintArea {
+  const widthInches = Math.max(1, Number(area.widthInches ?? area.width / CANVAS_PX_PER_INCH));
+  const heightInches = Math.max(1, Number(area.heightInches ?? area.height / CANVAS_PX_PER_INCH));
+  const topInches = Math.max(0, Number(area.topInches ?? area.y / CANVAS_PX_PER_INCH));
+  const width = Math.min(560, widthInches * CANVAS_PX_PER_INCH);
+  const height = Math.min(560, heightInches * CANVAS_PX_PER_INCH);
+  return { widthInches, heightInches, topInches, width, height, x: 400 - width / 2, y: Math.min(700 - height, topInches * CANVAS_PX_PER_INCH) };
+}
+
+export function tierUnitPrice(tier: ProductPackage) {
+  return tier.quantity > 0 ? tier.price / tier.quantity : 0;
+}
+
+export function pricingForQuantity(tiers: ProductPackage[], quantity: number) {
+  const sorted = [...tiers].sort((a, b) => a.quantity - b.quantity);
+  const eligible = sorted.filter((tier) => quantity >= tier.quantity);
+  const tier = eligible.at(-1) || sorted[0];
+  const unitPrice = tier ? tierUnitPrice(tier) : 0;
+  return { tier, unitPrice, basePrice: Number((unitPrice * quantity).toFixed(2)) };
+}
 
 export const DEFAULT_CONFIGURATION: ProductConfiguration = {
   sizes: ["S", "M", "L", "XL", "2XL"],
@@ -7,14 +30,18 @@ export const DEFAULT_CONFIGURATION: ProductConfiguration = {
     { id: "white", name: "White", hex: "#f7f7f2" }
   ],
   printLocations: ["Front Center", "Back Center"],
-  packages: [{ id: "12-shirts", label: "12 shirts", quantity: 12, price: 179, checkoutUrl: "" }],
+  packages: [
+    { id: "12-plus", label: "12–23", quantity: 12, price: 216, checkoutUrl: "" },
+    { id: "24-plus", label: "24–47", quantity: 24, price: 384, checkoutUrl: "" },
+    { id: "48-plus", label: "48+", quantity: 48, price: 672, checkoutUrl: "" }
+  ],
   customization: {
     category: "T-Shirts", decorationMethods: ["Screen Print"],
     designModes: ["front", "back", "front-back"], frontEnabled: true, backEnabled: true,
     frontSurcharge: 0, backSurcharge: 0, twoSideSurcharge: 36, minimumQuantity: 12,
-    frontPrintArea: { x: 250, y: 210, width: 300, height: 360 },
-    backPrintArea: { x: 250, y: 190, width: 300, height: 390 },
-    customerInstructions: "Choose a side, upload transparent artwork, and position it inside the print area."
+    frontPrintArea: inchesToPrintArea({ x: 0, y: 0, width: 0, height: 0, widthInches: 11, heightInches: 13, topInches: 7.5 }),
+    backPrintArea: inchesToPrintArea({ x: 0, y: 0, width: 0, height: 0, widthInches: 11, heightInches: 14, topInches: 6.8 }),
+    customerInstructions: "Upload transparent, high-resolution artwork and keep important details inside the outlined print area."
   }
 };
 
@@ -26,6 +53,7 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
   const raw = (value ?? {}) as Partial<ProductConfiguration>;
   const supplierRaw = raw.supplier as ProductConfiguration["supplier"] | undefined;
   const custom = raw.customization || DEFAULT_CONFIGURATION.customization;
+  const normalizeArea = (value: PrintArea | undefined, fallback: PrintArea) => inchesToPrintArea(value || fallback);
   return {
     sizes: Array.isArray(raw.sizes) && raw.sizes.length ? raw.sizes.map(String) : DEFAULT_CONFIGURATION.sizes,
     colors: Array.isArray(raw.colors) && raw.colors.length ? raw.colors.map((item, index) => ({
@@ -37,9 +65,9 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
     })) : DEFAULT_CONFIGURATION.colors,
     printLocations: Array.isArray(raw.printLocations) && raw.printLocations.length ? raw.printLocations.map(String) : DEFAULT_CONFIGURATION.printLocations,
     packages: Array.isArray(raw.packages) && raw.packages.length ? raw.packages.map((item, index) => ({
-      id: String(item?.id || `package-${index + 1}`), label: String(item?.label || `${item?.quantity || 1} shirts`),
+      id: String(item?.id || `tier-${index + 1}`), label: String(item?.label || `${item?.quantity || 1}+`),
       quantity: Math.max(1, Number(item?.quantity || 1)), price: Math.max(0, Number(item?.price || 0)), checkoutUrl: String(item?.checkoutUrl || "")
-    })) : DEFAULT_CONFIGURATION.packages,
+    })).sort((a, b) => a.quantity - b.quantity) : DEFAULT_CONFIGURATION.packages,
     mockupImageUrl: raw.mockupImageUrl ? String(raw.mockupImageUrl) : undefined,
     customization: {
       category: String(custom.category || "T-Shirts"),
@@ -50,9 +78,9 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
       frontSurcharge: Math.max(0, Number(custom.frontSurcharge || 0)),
       backSurcharge: Math.max(0, Number(custom.backSurcharge || 0)),
       twoSideSurcharge: Math.max(0, Number(custom.twoSideSurcharge || 0)),
-      minimumQuantity: Math.max(1, Number(custom.minimumQuantity || 1)),
-      frontPrintArea: custom.frontPrintArea || DEFAULT_CONFIGURATION.customization.frontPrintArea,
-      backPrintArea: custom.backPrintArea || DEFAULT_CONFIGURATION.customization.backPrintArea,
+      minimumQuantity: Math.max(12, Number(custom.minimumQuantity || 12)),
+      frontPrintArea: normalizeArea(custom.frontPrintArea, DEFAULT_CONFIGURATION.customization.frontPrintArea),
+      backPrintArea: normalizeArea(custom.backPrintArea, DEFAULT_CONFIGURATION.customization.backPrintArea),
       customerInstructions: custom.customerInstructions ? String(custom.customerInstructions) : DEFAULT_CONFIGURATION.customization.customerInstructions
     },
     supplier: supplierRaw?.provider ? {

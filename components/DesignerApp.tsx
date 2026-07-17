@@ -2,7 +2,8 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import type { ArtworkPlacement, CatalogProduct, DesignMode, DesignSide, ProductPackage, PublicShop, ShirtColor, SizeQuantity } from "@/lib/types";
+import { pricingForQuantity } from "@/lib/catalog";
+import type { ArtworkPlacement, CatalogProduct, DesignMode, DesignSide, PublicShop, ShirtColor, SizeQuantity } from "@/lib/types";
 
 const W = 800; const H = 800;
 const emptyPlacement: ArtworkPlacement = { x: 280, y: 260, width: 240, height: 240, rotation: 0 };
@@ -22,7 +23,6 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const [color, setColor] = useState<ShirtColor>(products[0]?.configuration.colors[0]);
   const [mode, setMode] = useState<DesignMode>(products[0]?.configuration.customization.designModes[0] || "front");
   const [side, setSide] = useState<DesignSide>("front");
-  const [pkg, setPkg] = useState<ProductPackage>(products[0]?.configuration.packages[0]);
   const [sizes, setSizes] = useState<SizeQuantity[]>(products[0]?.configuration.sizes.map((size) => ({ size, quantity: 0 })) || []);
   const [decoration, setDecoration] = useState(products[0]?.configuration.customization.decorationMethods[0] || "Screen Print");
   const [front, setFront] = useState<SideState>(freshSide()); const [back, setBack] = useState<SideState>(freshSide());
@@ -36,7 +36,9 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const garmentUrl = assetUrl(side === "front" ? color?.frontImageUrl || product.configuration.mockupImageUrl : color?.backImageUrl || product.configuration.mockupImageUrl);
   const totalAssigned = useMemo(() => sizes.reduce((sum, item) => sum + item.quantity, 0), [sizes]);
   const surcharge = mode === "front" ? product.configuration.customization.frontSurcharge : mode === "back" ? product.configuration.customization.backSurcharge : product.configuration.customization.twoSideSurcharge;
-  const totalPrice = Number(pkg?.price || 0) + surcharge;
+  const pricing = pricingForQuantity(product?.configuration.packages || [], totalAssigned || product?.configuration.customization.minimumQuantity || 12);
+  const totalPrice = pricing.basePrice + surcharge;
+  const minimum = product?.configuration.customization.minimumQuantity || 12;
   const neededSides: DesignSide[] = mode === "front-back" ? ["front", "back"] : [mode];
 
   useEffect(() => { const send = () => window.parent.postMessage({ type: "printflow:resize", height: document.documentElement.scrollHeight }, "*"); send(); const observer = new ResizeObserver(send); observer.observe(document.body); return () => observer.disconnect(); }, []);
@@ -44,7 +46,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   function chooseProduct(next: CatalogProduct) {
     setProduct(next); setColor(next.configuration.colors.find((item) => item.active !== false) || next.configuration.colors[0]);
     const nextMode = next.configuration.customization.designModes[0] || "front"; setMode(nextMode); setSide(nextMode === "back" ? "back" : "front");
-    setPkg(next.configuration.packages[0]); setSizes(next.configuration.sizes.map((size) => ({ size, quantity: 0 })));
+    setSizes(next.configuration.sizes.map((size) => ({ size, quantity: 0 })));
     setDecoration(next.configuration.customization.decorationMethods[0] || "Screen Print"); setFront(freshSide()); setBack(freshSide()); setStep("customize"); window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -80,58 +82,53 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   async function submit() {
     setError(""); if (neededSides.some((target) => !(target === "front" ? front.file : back.file))) return setError(`Upload artwork for ${neededSides.join(" and ")}.`);
     if (!customer.name.trim() || !customer.email.trim()) return setError("Enter your name and email.");
-    if (totalAssigned !== pkg.quantity) return setError(`Size quantities must total ${pkg.quantity}. You currently have ${totalAssigned}.`);
+    if (totalAssigned < minimum) return setError(`Your order must include at least ${minimum} items. You currently have ${totalAssigned}.`);
     setSubmitting(true);
     try {
       const sideUploads: Record<string, any> = {};
       for (const target of neededSides) { const state = target === "front" ? front : back; sideUploads[target] = { filename: state.file!.name, mimeType: state.file!.type, sizeBytes: state.file!.size, placement: state.placement }; }
-      const startResponse = await fetch("/api/designs/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopSlug: shop.slug, customer, configuration: { productId: product.id, packageId: pkg.id, colorId: color.id, designMode: mode, decorationMethod: decoration, sizes, notes, totalPrice, surcharge }, artworks: sideUploads }) });
+      const startResponse = await fetch("/api/designs/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopSlug: shop.slug, customer, configuration: { productId: product.id, packageId: pricing.tier?.id || "", colorId: color.id, designMode: mode, decorationMethod: decoration, sizes, notes, totalPrice, surcharge, quantity: totalAssigned }, artworks: sideUploads }) });
       const startData = await startResponse.json(); if (!startResponse.ok) throw new Error(startData.error || "Unable to begin submission.");
       const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
       for (const target of neededSides) { const state = target === "front" ? front : back; const preview = await renderSide(target); const upload = startData.uploads[target];
         const originalResult = await supabase.storage.from(upload.original.bucket).uploadToSignedUrl(upload.original.path, upload.original.token, state.file!, { contentType: state.file!.type }); if (originalResult.error) throw originalResult.error;
         const previewResult = await supabase.storage.from(upload.preview.bucket).uploadToSignedUrl(upload.preview.path, upload.preview.token, preview, { contentType: "image/png" }); if (previewResult.error) throw previewResult.error;
       }
-      const completeResponse = await fetch("/api/designs/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designId: startData.designId }) }); const completeData = await completeResponse.json(); if (!completeResponse.ok) throw new Error(completeData.error || "Unable to complete submission."); setCompleted(completeData);
-    } catch (err) { setError(err instanceof Error ? err.message : "Submission failed."); } finally { setSubmitting(false); }
+      const finishResponse = await fetch("/api/designs/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designId: startData.designId }) }); const finishData = await finishResponse.json(); if (!finishResponse.ok) throw new Error(finishData.error || "Unable to complete submission."); setCompleted({ displayId: startData.displayId, checkoutUrl: finishData.checkoutUrl });
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to submit design."); } finally { setSubmitting(false); }
   }
 
-  if (!product) return <main className="designer-shell"><div className="designer-empty"><h1>No products are available yet.</h1></div></main>;
-  if (completed) return <main className="designer-shell"><section className="designer-complete"><span>✓</span><p className="eyebrow">DESIGN RECEIVED</p><h1>{completed.displayId}</h1><p>{shop.settings.customerExperience?.confirmationMessage || "Your design is saved. Continue to payment to reserve production."}</p><a className="designer-primary" href={completed.checkoutUrl}>Continue to payment · ${totalPrice.toFixed(2)}</a></section></main>;
+  if (!products.length) return <main className="designer-empty"><h1>No products are available yet.</h1></main>;
+  if (completed) return <main className="designer-complete"><span>✓</span><h1>Your design is ready.</h1><p>Reference {completed.displayId}</p><a className="designer-primary" href={completed.checkoutUrl}>Continue to payment · ${totalPrice.toFixed(2)}</a></main>;
 
-  return <main className="designer-shell" style={{ "--brand": shop.settings.brand.primaryColor, "--brand-text": shop.settings.brand.textColor } as React.CSSProperties}>
-    <header className="customer-header">{shop.settings.brand.logoUrl ? <img src={shop.settings.brand.logoUrl} alt={shop.name}/> : <strong>{shop.name}</strong>}<div><small>Custom product studio</small><b>{step === "products" ? "Choose a product" : product.name}</b></div>{step === "customize" && <button onClick={() => setStep("products")}>Change product</button>}</header>
-    {step === "products" ? <section className="product-first-flow"><div className="customer-intro"><p className="eyebrow">START YOUR ORDER</p><h1>{shop.settings.customerExperience?.headline || "Choose your blank, then make it yours."}</h1><p>{shop.settings.customerExperience?.introduction}</p></div><div className="customer-product-grid">{products.map((item) => { const firstColor = item.configuration.colors.find((c) => c.active !== false) || item.configuration.colors[0]; return <button className="customer-product-card" key={item.id} onClick={() => chooseProduct(item)}><div className="customer-product-image">{firstColor?.frontImageUrl || item.configuration.mockupImageUrl ? <img src={assetUrl(firstColor?.frontImageUrl || item.configuration.mockupImageUrl)} alt={item.name}/> : <div className="product-placeholder">T</div>}</div><div><span>{item.configuration.customization.category}</span><h2>{item.name}</h2><p>{item.description}</p><small>{item.configuration.colors.length} colors · {item.configuration.sizes.length} sizes · From ${Math.min(...item.configuration.packages.map((p) => p.price)).toFixed(2)}</small></div></button>; })}</div></section> :
-    <section className="designer-workspace">
-      <aside className="designer-controls">
-        <div className="mobile-product-summary"><p className="eyebrow">CUSTOMIZING</p><h1>{product.name}</h1><p>{product.description}</p></div>
-        <Control title="1. Design placement"><div className="design-mode-grid">{product.configuration.customization.designModes.map((value) => <button key={value} className={mode === value ? "selected" : ""} onClick={() => { setMode(value); setSide(value === "back" ? "back" : "front"); }}>{modeLabel(value)}</button>)}</div></Control>
-        <Control title="2. Garment color"><div className="customer-color-grid">{product.configuration.colors.filter((item) => item.active !== false).map((item) => <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => setColor(item)}><i style={{ background: item.hex }}/><span>{item.name}</span></button>)}</div></Control>
-        <Control title="3. Decoration"><select value={decoration} onChange={(e) => setDecoration(e.target.value)}>{product.configuration.customization.decorationMethods.map((item) => <option key={item}>{item}</option>)}</select></Control>
-        <Control title="4. Package"><div className="customer-package-list">{product.configuration.packages.map((item) => <button key={item.id} className={pkg.id === item.id ? "selected" : ""} onClick={() => { setPkg(item); setSizes(product.configuration.sizes.map((size) => ({ size, quantity: 0 }))); }}><span>{item.label}</span><b>${(item.price + surcharge).toFixed(2)}</b></button>)}</div><small>Includes ${surcharge.toFixed(2)} for {modeLabel(mode).toLowerCase()}.</small></Control>
+  return <main className="designer-shell modern-customer-shell" style={{ "--brand": shop.settings.brand.primaryColor, "--brand-text": shop.settings.brand.textColor } as React.CSSProperties}>
+    <header className="customer-header modern">{shop.settings.brand.logoUrl ? <img src={shop.settings.brand.logoUrl} alt={shop.name}/> : <strong>{shop.name}</strong>}<div><small>Custom order studio</small><b>{step === "products" ? "Choose a product" : product.name}</b></div>{step === "customize" && <button onClick={() => setStep("products")}>← Products</button>}</header>
+
+    {step === "products" ? <section className="product-first-flow modern"><div className="customer-intro"><p className="eyebrow">START YOUR ORDER</p><h1>{shop.settings.customerExperience?.headline || "Choose your blank. Make it yours."}</h1><p>{shop.settings.customerExperience?.introduction || "Select a product to see colors, print options, and live pricing."}</p></div><div className="customer-product-grid modern">{products.map((item) => { const firstColor = item.configuration.colors.find((c) => c.active !== false) || item.configuration.colors[0]; const min=item.configuration.customization.minimumQuantity; const price=pricingForQuantity(item.configuration.packages,min); return <button className="customer-product-card modern" key={item.id} onClick={() => chooseProduct(item)}><div className="customer-product-image">{firstColor?.frontImageUrl || item.configuration.mockupImageUrl ? <img src={assetUrl(firstColor?.frontImageUrl || item.configuration.mockupImageUrl)} alt={item.name}/> : <div className="product-placeholder">T</div>}<span className="product-card-arrow">→</span></div><div><span>{item.configuration.customization.category}</span><h2>{item.name}</h2><p>{item.description}</p><div className="product-card-meta"><small>{item.configuration.colors.length} colors</small><small>{item.configuration.sizes.length} sizes</small><small>Min. {min}</small></div><strong>From ${price.unitPrice.toFixed(2)} each</strong></div></button>; })}</div></section> :
+    <section className="modern-designer-layout">
+      <aside className="designer-step-panel">
+        <div className="designer-step-heading"><p className="eyebrow">CUSTOMIZE</p><h1>{product.name}</h1><p>{product.description}</p></div>
+        <WizardSection number="1" title="Print sides"><div className="radio-card-grid">{product.configuration.customization.designModes.map((value) => <label key={value} className={mode===value?"radio-card selected":"radio-card"}><input type="radio" name="mode" checked={mode===value} onChange={()=>{setMode(value);setSide(value==="back"?"back":"front")}}/><span><b>{modeLabel(value)}</b><small>{value==="front-back"?"Upload separate artwork for both sides.":`Artwork on the ${value} only.`}</small></span><i/></label>)}</div></WizardSection>
+        <WizardSection number="2" title="Garment color"><div className="modern-color-picker">{product.configuration.colors.filter((item)=>item.active!==false).map((item)=><button key={item.id} className={color.id===item.id?"selected":""} onClick={()=>setColor(item)} title={item.name}><i style={{background:item.hex}}/><span>{item.name}</span></button>)}</div></WizardSection>
+        <WizardSection number="3" title="Decoration"><select className="modern-select" value={decoration} onChange={(e)=>setDecoration(e.target.value)}>{product.configuration.customization.decorationMethods.map((item)=><option key={item}>{item}</option>)}</select></WizardSection>
       </aside>
 
-      <div className="design-stage-column">
-        <div className="side-tabs">{neededSides.map((target) => <button key={target} className={side === target ? "selected" : ""} onClick={() => setSide(target)}>{target === "front" ? "Front" : "Back"}{(target === "front" ? front.file : back.file) ? <i>✓</i> : null}</button>)}</div>
-        <div className="design-stage">
-          <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
-            <rect width={W} height={H} fill="#f3f3f1"/>{garmentUrl ? <image href={garmentUrl} x="32" y="32" width="736" height="736" preserveAspectRatio="xMidYMid meet"/> : <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={color.hex} stroke="#bbb" strokeWidth="3"/>}
-            <rect x={printArea.x} y={printArea.y} width={printArea.width} height={printArea.height} fill="none" stroke="rgba(0,0,0,.3)" strokeDasharray="10 8"/>
-            {sideState.dataUrl && <g><image href={sideState.dataUrl} x={sideState.placement.x} y={sideState.placement.y} width={sideState.placement.width} height={sideState.placement.height} onPointerDown={(e) => begin("drag", e)} style={{ cursor: "move" }}/><rect x={sideState.placement.x} y={sideState.placement.y} width={sideState.placement.width} height={sideState.placement.height} fill="none" stroke="#111" strokeWidth="2" pointerEvents="none"/><circle cx={sideState.placement.x + sideState.placement.width} cy={sideState.placement.y + sideState.placement.height} r="13" fill="#111" onPointerDown={(e) => begin("resize", e)} style={{ cursor: "nwse-resize" }}/></g>}
-          </svg>
-          <div className="stage-upload"><label><input type="file" accept={shop.settings.upload.acceptedTypes.join(",")} onChange={(e) => handleArtwork(side, e.target.files?.[0])}/>{sideState.file ? `Replace ${side} artwork` : `Upload ${side} artwork`}</label>{sideState.file && <button onClick={() => setSideState(freshSide())}>Remove</button>}</div>
-        </div>
-        <p className="stage-help">{product.configuration.customization.customerInstructions}</p>
+      <div className="modern-stage-column">
+        <div className="stage-topbar"><div className="side-tabs modern">{neededSides.map((target)=><button key={target} className={side===target?"selected":""} onClick={()=>setSide(target)}>{target==="front"?"Front":"Back"}{(target==="front"?front.file:back.file)?<i>✓</i>:null}</button>)}</div><span>Print area: {printArea.widthInches?.toFixed(1)}″ × {printArea.heightInches?.toFixed(1)}″</span></div>
+        <div className="design-stage modern"><svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} onPointerMove={move} onPointerUp={end} onPointerCancel={end}><rect width={W} height={H} fill="#f6f6f3"/>{garmentUrl ? <image href={garmentUrl} x="32" y="32" width="736" height="736" preserveAspectRatio="xMidYMid meet"/> : <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={color.hex} stroke="#bbb" strokeWidth="3"/>}<rect x={printArea.x} y={printArea.y} width={printArea.width} height={printArea.height} rx="6" fill="rgba(255,255,255,.08)" stroke="rgba(0,0,0,.45)" strokeDasharray="10 8"/>{sideState.dataUrl && <g><image href={sideState.dataUrl} x={sideState.placement.x} y={sideState.placement.y} width={sideState.placement.width} height={sideState.placement.height} onPointerDown={(e)=>begin("drag",e)} style={{cursor:"move"}}/><rect x={sideState.placement.x} y={sideState.placement.y} width={sideState.placement.width} height={sideState.placement.height} fill="none" stroke="#111" strokeWidth="2" pointerEvents="none"/><circle cx={sideState.placement.x+sideState.placement.width} cy={sideState.placement.y+sideState.placement.height} r="13" fill="#111" onPointerDown={(e)=>begin("resize",e)} style={{cursor:"nwse-resize"}}/></g>}</svg><div className="stage-upload modern"><label><input type="file" accept={shop.settings.upload.acceptedTypes.join(",")} onChange={(e)=>handleArtwork(side,e.target.files?.[0])}/>{sideState.file?`Replace ${side} artwork`:`Upload ${side} artwork`}</label>{sideState.file&&<button onClick={()=>setSideState(freshSide())}>Remove</button>}</div></div>
+        <p className="stage-help modern">{product.configuration.customization.customerInstructions}</p>
       </div>
 
-      <aside className="order-panel">
-        <p className="eyebrow">ORDER DETAILS</p><h2>Build your size run</h2><div className="size-quantity-grid">{sizes.map((item) => <label key={item.size}><span>{item.size}</span><input type="number" min="0" value={item.quantity || ""} onChange={(e) => updateSize(item.size, Number(e.target.value))}/></label>)}</div><div className={totalAssigned === pkg.quantity ? "quantity-total good" : "quantity-total"}><span>Assigned</span><b>{totalAssigned} / {pkg.quantity}</b></div>
-        <div className="customer-fields"><input placeholder="Full name" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })}/><input type="email" placeholder="Email" value={customer.email} onChange={(e) => setCustomer({ ...customer, email: e.target.value })}/><input placeholder="Phone (optional)" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })}/><textarea rows={3} placeholder="Order notes" value={notes} onChange={(e) => setNotes(e.target.value)}/></div>
-        <div className="order-price"><span>{pkg.label}</span><b>${pkg.price.toFixed(2)}</b><span>{modeLabel(mode)}</span><b>${surcharge.toFixed(2)}</b><strong>Total</strong><strong>${totalPrice.toFixed(2)}</strong></div>
-        {error && <div className="error-message">{error}</div>}<button className="designer-primary full" disabled={submitting} onClick={submit}>{submitting ? "Saving design…" : `Continue · $${totalPrice.toFixed(2)}`}</button><small>{shop.settings.customerExperience?.artworkDisclaimer}</small>
+      <aside className="modern-order-panel">
+        <div><p className="eyebrow">ORDER DETAILS</p><h2>Choose quantities</h2><p>Order any amount. The minimum is {minimum} items.</p></div>
+        <div className="modern-size-grid">{sizes.map((item)=><label key={item.size}><span>{item.size}</span><div><button onClick={()=>updateSize(item.size,item.quantity-1)}>−</button><input type="number" min="0" value={item.quantity||""} onChange={(e)=>updateSize(item.size,Number(e.target.value))}/><button onClick={()=>updateSize(item.size,item.quantity+1)}>+</button></div></label>)}</div>
+        <div className={totalAssigned>=minimum?"modern-quantity-status good":"modern-quantity-status"}><span>Total quantity</span><b>{totalAssigned}</b><small>{totalAssigned>=minimum?"Minimum reached":`${minimum-totalAssigned} more needed`}</small></div>
+        <div className="live-price-card"><div><span>Rate</span><b>${pricing.unitPrice.toFixed(2)} each</b></div><div><span>{totalAssigned||minimum} garments</span><b>${pricing.basePrice.toFixed(2)}</b></div><div><span>{modeLabel(mode)}</span><b>${surcharge.toFixed(2)}</b></div><div className="total"><span>Estimated total</span><b>${totalPrice.toFixed(2)}</b></div></div>
+        <details className="customer-details" open><summary>Contact & notes</summary><div><input placeholder="Full name" value={customer.name} onChange={(e)=>setCustomer({...customer,name:e.target.value})}/><input type="email" placeholder="Email" value={customer.email} onChange={(e)=>setCustomer({...customer,email:e.target.value})}/><input placeholder="Phone (optional)" value={customer.phone} onChange={(e)=>setCustomer({...customer,phone:e.target.value})}/><textarea rows={3} placeholder="Order notes" value={notes} onChange={(e)=>setNotes(e.target.value)}/></div></details>
+        {error&&<div className="error-message">{error}</div>}<button className="designer-primary full modern" disabled={submitting||totalAssigned<minimum} onClick={submit}>{submitting?"Saving design…":`Continue · $${totalPrice.toFixed(2)}`}</button><small className="disclaimer">{shop.settings.customerExperience?.artworkDisclaimer}</small>
       </aside>
     </section>}
   </main>;
 }
 
-function Control({ title, children }: { title: string; children: React.ReactNode }) { return <section className="customer-control"><h3>{title}</h3>{children}</section>; }
+function WizardSection({number,title,children}:{number:string;title:string;children:React.ReactNode}){return <section className="wizard-section"><header><span>{number}</span><h3>{title}</h3></header>{children}</section>}
