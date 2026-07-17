@@ -10,7 +10,7 @@ async function testConnection(provider: string, c: Record<string,string>) {
     if (provider === "shopify") { const domain = c.shopDomain?.replace(/^https?:\/\//, "").replace(/\/$/, ""); const r = await fetch(`https://${domain}/admin/api/2026-07/shop.json`, { headers: { "X-Shopify-Access-Token": c.accessToken, "Content-Type": "application/json" }, cache: "no-store" }); const d = await r.json(); return r.ok ? { ok: true, label: d.shop?.name || domain } : { ok: false, error: d.errors || "Shopify rejected these credentials." }; }
     if (provider === "squarespace") { const r = await fetch("https://api.squarespace.com/1.0/profiles?limit=1", { headers: { Authorization: `Bearer ${c.apiKey}`, "User-Agent": "PrintFlow custom-print-platform" }, cache: "no-store" }); return r.ok ? { ok: true, label: "Squarespace site" } : { ok: false, error: `Squarespace returned ${r.status}. Check API permissions.` }; }
     if (provider === "google-drive") { JSON.parse(c.serviceAccountJson || "{}"); return { ok: true, label: c.folderId ? "Google Drive folder configured" : "Google service account configured" }; }
-    if (provider === "sanmar" || provider === "alphabroder") return { ok: true, label: "Credentials saved — live connector pending provider approval" };
+    if (provider === "sanmar") return { ok: true, label: "Credentials saved — live connector pending provider approval" };
     return { ok: true, label: "Credentials securely configured" };
   } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "Connection test failed." }; }
 }

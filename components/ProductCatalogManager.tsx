@@ -9,7 +9,9 @@ import type {
   PrintSize,
   ProductConfiguration,
   ProductPackage,
-  ShirtColor
+  ProductPricingOverrides,
+  ShirtColor,
+  ShopPricingProfile
 } from "@/lib/types";
 import {
   DEFAULT_CONFIGURATION,
@@ -73,7 +75,7 @@ function sizeTitle(size: PrintSize) {
   return size === "heart" ? "Heart size" : "Full size";
 }
 
-export default function ProductCatalogManager({ initialProducts }: { initialProducts: CatalogProduct[] }) {
+export default function ProductCatalogManager({ initialProducts, pricingProfile }: { initialProducts: CatalogProduct[]; pricingProfile: ShopPricingProfile }) {
   const [products, setProducts] = useState(initialProducts);
   const [selectedId, setSelectedId] = useState(initialProducts[0]?.id || "");
   const [draft, setDraft] = useState<CatalogProduct | null>(initialProducts[0] ? copy(initialProducts[0]) : null);
@@ -389,6 +391,17 @@ export default function ProductCatalogManager({ initialProducts }: { initialProd
 
               {tab === "Pricing" && (
                 <>
+                  <Panel
+                    title="Global fees & product overrides"
+                    description="This product inherits the shop-wide setup, design optimization, decoration, and add-on rules unless you override them here."
+                  >
+                    <ProductPricingOverridesEditor
+                      profile={pricingProfile}
+                      decorationMethods={draft.configuration.customization.decorationMethods}
+                      value={draft.configuration.customization.pricingOverrides}
+                      onChange={(pricingOverrides) => updateCustomization({ pricingOverrides })}
+                    />
+                  </Panel>
                   <Panel
                     title="Per-shirt pricing formula"
                     description="Every unit is calculated as blank garment + front print + back print. A side only adds cost when the customer prints on it."
@@ -1076,4 +1089,67 @@ function ComponentTierEditor({ values, minimum, onChange }: { values: ProductPac
       </button>
     </div>
   );
+}
+
+function ProductPricingOverridesEditor({
+  profile,
+  decorationMethods,
+  value,
+  onChange
+}: {
+  profile: ShopPricingProfile;
+  decorationMethods: string[];
+  value: ProductPricingOverrides;
+  onChange: (value: ProductPricingOverrides) => void;
+}) {
+  function patchFee(key: "setupFee" | "designOptimizationFee", next: Partial<ProductPricingOverrides["setupFee"]>) {
+    onChange({ ...value, [key]: { ...value[key], ...next } });
+  }
+  function serviceId(name: string) {
+    return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  }
+  return <div className="product-pricing-overrides">
+    <div className="override-fee-grid">
+      <OverrideFeeCard
+        title="Order setup"
+        globalAmount={profile.setupFee.enabled ? profile.setupFee.amount : 0}
+        value={value.setupFee}
+        onChange={(next) => patchFee("setupFee", next)}
+      />
+      <OverrideFeeCard
+        title="Design optimization"
+        globalAmount={profile.designOptimizationFee.enabled ? profile.designOptimizationFee.amount : 0}
+        value={value.designOptimizationFee}
+        onChange={(next) => patchFee("designOptimizationFee", next)}
+      />
+    </div>
+    <div className="product-service-overrides">
+      <div><strong>Decoration percentage overrides</strong><small>Leave a field blank to inherit the global service percentage.</small></div>
+      {decorationMethods.map((method) => {
+        const id = serviceId(method);
+        const global = profile.decorationServices.find((item) => item.id === id || item.name.toLowerCase() === method.toLowerCase());
+        const current = value.decorationAdjustments[id];
+        return <label key={method}>
+          <span><b>{method}</b><small>Global: {global?.percentageAdjustment || 0}%</small></span>
+          <div className="input-suffix"><input type="text" inputMode="decimal" placeholder="Inherit" value={current ?? ""} onChange={(event) => onChange({ ...value, decorationAdjustments: { ...value.decorationAdjustments, [id]: event.target.value === "" ? null : Number(event.target.value) || 0 } })}/><span>%</span></div>
+        </label>;
+      })}
+    </div>
+    {profile.addOns.length > 0 && <div className="product-addon-overrides">
+      <div><strong>Add-on availability</strong><small>Use global behavior, force an add-on on, or hide it for this product.</small></div>
+      {profile.addOns.map((item) => <label key={item.id}><span><b>{item.name}</b><small>${item.amount.toFixed(2)} {item.pricingMode === "per_item" ? "per garment" : "per order"}</small></span><select value={value.addOnModes[item.id] || "inherit"} onChange={(event) => onChange({ ...value, addOnModes: { ...value.addOnModes, [item.id]: event.target.value as "inherit" | "enabled" | "disabled" } })}><option value="inherit">Use global setting</option><option value="enabled">Always available</option><option value="disabled">Hidden for product</option></select></label>)}
+    </div>}
+  </div>;
+}
+
+function OverrideFeeCard({ title, globalAmount, value, onChange }: { title: string; globalAmount: number; value: ProductPricingOverrides["setupFee"]; onChange: (value: Partial<ProductPricingOverrides["setupFee"]>) => void }) {
+  return <article className="override-fee-card">
+    <div><strong>{title}</strong><small>Global default: ${globalAmount.toFixed(2)}</small></div>
+    <select value={value.mode} onChange={(event) => onChange({ mode: event.target.value as ProductPricingOverrides["setupFee"]["mode"] })}>
+      <option value="inherit">Use global default</option>
+      <option value="custom">Use custom amount</option>
+      <option value="disabled">Do not charge</option>
+    </select>
+    {value.mode === "custom" && <DecimalMoneyInput value={Number(value.amount || 0)} ariaLabel={`${title} custom amount`} onChange={(amount) => onChange({ amount })}/>} 
+  </article>;
 }

@@ -5,9 +5,34 @@ import type {
   PrintSize,
   ProductConfiguration,
   ProductPackage,
+  ProductPricingOverrides,
   ShopSettings,
   SupplierVariant
 } from "@/lib/types";
+
+
+const DEFAULT_PRODUCT_PRICING_OVERRIDES: ProductPricingOverrides = {
+  setupFee: { mode: "inherit" as const },
+  designOptimizationFee: { mode: "inherit" as const },
+  decorationAdjustments: {},
+  addOnModes: {}
+};
+
+function normalizeProductPricingOverrides(input: unknown): ProductPricingOverrides {
+  const raw = input && typeof input === "object" ? input as any : {};
+  const normalizeFee = (value: any): ProductPricingOverrides["setupFee"] => {
+    const mode: ProductPricingOverrides["setupFee"]["mode"] = value?.mode === "custom" || value?.mode === "disabled" ? value.mode : "inherit";
+    return { mode, amount: mode === "custom" ? Math.max(0, Number(value?.amount || 0)) : undefined };
+  };
+  const decorations = raw.decorationAdjustments && typeof raw.decorationAdjustments === "object" ? raw.decorationAdjustments : {};
+  const addOnModes = raw.addOnModes && typeof raw.addOnModes === "object" ? raw.addOnModes : {};
+  return {
+    setupFee: normalizeFee(raw.setupFee),
+    designOptimizationFee: normalizeFee(raw.designOptimizationFee),
+    decorationAdjustments: Object.fromEntries(Object.entries(decorations).map(([key, value]) => [key, value === null || value === "" ? null : Number(value) || 0])),
+    addOnModes: Object.fromEntries(Object.entries(addOnModes).map(([key, value]) => [key, value === "enabled" || value === "disabled" ? value : "inherit"])) as ProductPricingOverrides["addOnModes"]
+  };
+}
 
 export const CANVAS_SIZE = 800;
 export const CANVAS_PX_PER_INCH = 24;
@@ -222,7 +247,8 @@ export const DEFAULT_CONFIGURATION: ProductConfiguration = {
     frontFullArea: normalizePrintArea(DEFAULT_FRONT_FULL, DEFAULT_FRONT_FULL),
     backHeartArea: normalizePrintArea(DEFAULT_BACK_HEART, DEFAULT_BACK_HEART),
     backFullArea: normalizePrintArea(DEFAULT_BACK_FULL, DEFAULT_BACK_FULL),
-    customerInstructions: "Upload transparent, high-resolution artwork. Choose Heart Size for a compact 4 × 4 inch print or Full Size for a print up to 14 × 18 inches."
+    customerInstructions: "Upload transparent, high-resolution artwork. Choose Heart Size for a compact 4 × 4 inch print or Full Size for a print up to 14 × 18 inches.",
+    pricingOverrides: DEFAULT_PRODUCT_PRICING_OVERRIDES
   }
 };
 
@@ -292,7 +318,8 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
       backFullArea: normalizePrintArea(custom.backFullArea || custom.backPrintArea, DEFAULT_CONFIGURATION.customization.backFullArea),
       customerInstructions: custom.customerInstructions
         ? String(custom.customerInstructions)
-        : DEFAULT_CONFIGURATION.customization.customerInstructions
+        : DEFAULT_CONFIGURATION.customization.customerInstructions,
+      pricingOverrides: normalizeProductPricingOverrides(custom.pricingOverrides)
     },
     supplier: supplierRaw?.provider
       ? {

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { makeDesignDisplayId } from "@/lib/design-id";
-import { legacyProductFromSettings, normalizeConfiguration, pricingForPrintOrder } from "@/lib/catalog";
+import { legacyProductFromSettings, normalizeConfiguration } from "@/lib/catalog";
+import { DEFAULT_PRICING_PROFILE, calculateResolvedOrderPricing, normalizePricingProfile } from "@/lib/pricing-settings";
 import { normalizeShopSettings } from "@/lib/shop-settings";
 import type { CatalogProduct, DesignMode, DesignSide, PrintSize, SizeQuantity } from "@/lib/types";
 
@@ -27,6 +28,8 @@ type Payload = {
     notes?: string;
     totalPrice: number;
     quantity?: number;
+    designOptimizationRequested?: boolean;
+    selectedAddOnIds?: string[];
   };
   artworks: Partial<Record<DesignSide, ArtPayload>>;
 };
@@ -46,11 +49,15 @@ export async function POST(request: Request) {
     if (!shop) return jsonError("Shop not found.", 404);
 
     const settings = normalizeShopSettings(shop.settings);
-    const { data: rows } = await supabase
-      .from("catalog_products")
-      .select("id,slug,name,description,active,configuration")
-      .eq("shop_id", shop.id)
-      .eq("active", true);
+    const [{ data: rows }, { data: pricingRow }] = await Promise.all([
+      supabase
+        .from("catalog_products")
+        .select("id,slug,name,description,active,configuration")
+        .eq("shop_id", shop.id)
+        .eq("active", true),
+      supabase.from("shop_pricing_profiles").select("configuration").eq("shop_id", shop.id).maybeSingle()
+    ]);
+    const profile = normalizePricingProfile(pricingRow?.configuration || DEFAULT_PRICING_PROFILE);
     const products: CatalogProduct[] = (rows || []).map((row: any) => ({ ...row, configuration: normalizeConfiguration(row.configuration) }));
     if (!products.length) products.push(legacyProductFromSettings(settings));
 
@@ -59,6 +66,7 @@ export async function POST(request: Request) {
     const color = product.configuration.colors.find((item) => item.id === payload.configuration.colorId && item.active !== false);
     if (!color) return jsonError("Selected product option is unavailable.");
     if (!product.configuration.customization.designModes.includes(payload.configuration.designMode)) return jsonError("That design placement is unavailable.");
+    if (!product.configuration.customization.decorationMethods.includes(payload.configuration.decorationMethod)) return jsonError("That decoration method is unavailable.");
 
     const required: DesignSide[] = payload.configuration.designMode === "front-back" ? ["front", "back"] : [payload.configuration.designMode];
     const printSizes: Partial<Record<DesignSide, PrintSize>> = {};
@@ -77,9 +85,17 @@ export async function POST(request: Request) {
     const minimumQuantity = Math.max(12, product.configuration.customization.minimumQuantity);
     if (total < minimumQuantity) return jsonError(`Order quantity must be at least ${minimumQuantity}.`);
 
-    const pricing = pricingForPrintOrder(product.configuration.packages, total, printSizes);
-    const tier = pricing.tier;
-    if (!tier) return jsonError("Product pricing is unavailable.");
+    const selectedAddOnIds = Array.from(new Set((payload.configuration.selectedAddOnIds || []).map(String)));
+    const pricing = calculateResolvedOrderPricing({
+      profile,
+      product,
+      quantity: total,
+      printSelections: printSizes,
+      decorationMethod: payload.configuration.decorationMethod,
+      designOptimizationRequested: payload.configuration.designOptimizationRequested === true,
+      selectedAddOnIds
+    });
+    if (!pricing.tierId) return jsonError("Product pricing is unavailable.");
     if (!payload.customer?.name?.trim() || !payload.customer?.email?.trim()) return jsonError("Customer name and email are required.");
 
     const supplierItems: any[] = [];
@@ -139,8 +155,8 @@ export async function POST(request: Request) {
         customer_phone: payload.customer.phone?.trim() || null,
         catalog_product_id: product.id === "legacy-product" ? null : product.id,
         product_name: product.name,
-        package_id: tier.id,
-        package_label: `${total} items · $${pricing.unitPrice.toFixed(2)} each`,
+        package_id: pricing.tierId,
+        package_label: `${total} items · $${pricing.unitPrice.toFixed(2)} merchandise each`,
         package_quantity: total,
         package_price: pricing.totalPrice,
         shirt_color_id: color.id,
@@ -153,18 +169,29 @@ export async function POST(request: Request) {
         preview_path: primary.previewPath,
         original_filename: primary.filename,
         original_mime_type: primary.mimeType,
-        checkout_url: tier.checkoutUrl || `${new URL(request.url).origin}/s/${shop.slug}`,
+        checkout_url: product.configuration.packages.find((item) => item.id === pricing.tierId)?.checkoutUrl || `${new URL(request.url).origin}/s/${shop.slug}`,
         design_sides: sideData,
         design_configuration: {
           designMode: payload.configuration.designMode,
-          decorationMethod: payload.configuration.decorationMethod,
+          decorationMethod: pricing.decorationMethod,
+          decorationPercentage: pricing.decorationPercentage,
           printSizes,
           quantity: total,
-          pricingTierId: tier.id,
+          pricingTierId: pricing.tierId,
           garmentUnitPrice: pricing.garmentUnitPrice,
+          baseFrontPrintUnitPrice: pricing.baseFrontPrintUnitPrice,
+          baseBackPrintUnitPrice: pricing.baseBackPrintUnitPrice,
           frontPrintUnitPrice: pricing.frontPrintUnitPrice,
           backPrintUnitPrice: pricing.backPrintUnitPrice,
           unitPrice: pricing.unitPrice,
+          merchandiseSubtotal: pricing.merchandiseSubtotal,
+          setupFee: pricing.setupFee,
+          setupFeeLabel: profile.setupFee.label,
+          designOptimizationRequested: pricing.designOptimizationRequested,
+          designOptimizationFee: pricing.designOptimizationFee,
+          designOptimizationLabel: profile.designOptimizationFee.label,
+          addOns: pricing.addOns,
+          addOnTotal: pricing.addOnTotal,
           totalPrice: pricing.totalPrice,
           productId: product.id,
           colorId: color.id
@@ -185,7 +212,7 @@ export async function POST(request: Request) {
       };
     }
 
-    return NextResponse.json({ designId: design.id, displayId: design.display_id, uploads });
+    return NextResponse.json({ designId: design.id, displayId: design.display_id, uploads, verifiedTotal: pricing.totalPrice });
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Unexpected error.", 500);
   }

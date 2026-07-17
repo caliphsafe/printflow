@@ -1,7 +1,9 @@
-export type SupplierProvider = "ss-activewear" | "sanmar" | "alphabroder" | "demo" | string;
+export type SupplierProvider = "ss-activewear" | "sanmar" | "demo" | string;
 export type DesignSide = "front" | "back";
 export type DesignMode = "front" | "back" | "front-back";
 export type PrintSize = "heart" | "full";
+export type PricingMode = "order" | "per_item";
+export type OverrideMode = "inherit" | "custom" | "disabled";
 
 export type SupplierVariant = {
   sku: string;
@@ -59,6 +61,18 @@ export type PrintArea = {
   defaultY?: number;
 };
 
+export type FeeOverride = {
+  mode: OverrideMode;
+  amount?: number;
+};
+
+export type ProductPricingOverrides = {
+  setupFee: FeeOverride;
+  designOptimizationFee: FeeOverride;
+  decorationAdjustments: Record<string, number | null>;
+  addOnModes: Record<string, "inherit" | "enabled" | "disabled">;
+};
+
 export type ProductCustomization = {
   category: string;
   decorationMethods: string[];
@@ -78,6 +92,7 @@ export type ProductCustomization = {
   backHeartArea: PrintArea;
   backFullArea: PrintArea;
   customerInstructions?: string;
+  pricingOverrides: ProductPricingOverrides;
 };
 
 export type SupplierProductConfiguration = {
@@ -111,6 +126,38 @@ export type CatalogProduct = {
   configuration: ProductConfiguration;
 };
 
+export type CorePricingFee = {
+  enabled: boolean;
+  label: string;
+  description: string;
+  amount: number;
+};
+
+export type DecorationPricingRule = {
+  id: string;
+  name: string;
+  percentageAdjustment: number;
+  active: boolean;
+};
+
+export type PricingAddOn = {
+  id: string;
+  name: string;
+  description: string;
+  amount: number;
+  pricingMode: PricingMode;
+  active: boolean;
+  customerSelectable: boolean;
+  selectedByDefault: boolean;
+};
+
+export type ShopPricingProfile = {
+  setupFee: CorePricingFee;
+  designOptimizationFee: CorePricingFee;
+  decorationServices: DecorationPricingRule[];
+  addOns: PricingAddOn[];
+};
+
 export type ShopSettings = {
   brand: { primaryColor: string; textColor: string; logoUrl?: string };
   business?: { contactEmail?: string; phone?: string; address?: string };
@@ -130,6 +177,41 @@ export type ShopSettings = {
   upload: { acceptedTypes: string[]; maxBytes: number };
 };
 
-export type PublicShop = { id: string; slug: string; name: string; settings: ShopSettings; products: CatalogProduct[] };
+export type PublicShop = {
+  id: string;
+  slug: string;
+  name: string;
+  settings: ShopSettings;
+  pricing: ShopPricingProfile;
+  products: CatalogProduct[];
+};
 export type SizeQuantity = { size: string; quantity: number };
 export type ArtworkPlacement = { x: number; y: number; width: number; height: number; rotation?: number };
+
+export type SelectedPricingAddOn = {
+  id: string;
+  name: string;
+  amount: number;
+  pricingMode: PricingMode;
+  total: number;
+};
+
+export type ResolvedOrderPricing = {
+  tierId?: string;
+  quantity: number;
+  garmentUnitPrice: number;
+  baseFrontPrintUnitPrice: number;
+  baseBackPrintUnitPrice: number;
+  decorationMethod: string;
+  decorationPercentage: number;
+  frontPrintUnitPrice: number;
+  backPrintUnitPrice: number;
+  unitPrice: number;
+  merchandiseSubtotal: number;
+  setupFee: number;
+  designOptimizationRequested: boolean;
+  designOptimizationFee: number;
+  addOns: SelectedPricingAddOn[];
+  addOnTotal: number;
+  totalPrice: number;
+};

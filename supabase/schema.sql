@@ -339,3 +339,18 @@ for select to authenticated using (
       and public.is_organization_member(s.organization_id)
   )
 );
+
+-- Global pricing profile used by the customer pricing engine.
+create table if not exists public.shop_pricing_profiles (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  shop_id uuid not null references public.shops(id) on delete cascade,
+  configuration jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(shop_id)
+);
+alter table public.shop_pricing_profiles enable row level security;
+drop policy if exists "Members manage shop pricing" on public.shop_pricing_profiles;
+create policy "Members manage shop pricing" on public.shop_pricing_profiles for all to authenticated
+using (public.is_organization_member(organization_id)) with check (public.is_organization_member(organization_id));

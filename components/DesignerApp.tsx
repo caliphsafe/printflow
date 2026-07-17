@@ -2,7 +2,8 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { printAreaFor, pricingForPrintOrder } from "@/lib/catalog";
+import { printAreaFor, pricingTierForQuantity, tierFullUnitPrice, tierHeartUnitPrice } from "@/lib/catalog";
+import { availableAddOns, calculateResolvedOrderPricing, decorationRuleFor, resolveDesignOptimizationFee } from "@/lib/pricing-settings";
 import type {
   ArtworkPlacement,
   CatalogProduct,
@@ -103,7 +104,10 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const [front, setFront] = useState<SideState>(freshSide());
   const [back, setBack] = useState<SideState>(freshSide());
   const [customer, setCustomer] = useState({ name: "", email: "", phone: "" });
+  const initialAddOns = firstProduct ? availableAddOns(shop.pricing, firstProduct).filter((item) => item.customerSelectable && item.selectedByDefault).map((item) => item.id) : [];
   const [notes, setNotes] = useState("");
+  const [designOptimizationRequested, setDesignOptimizationRequested] = useState(false);
+  const [selectedAddOnIds, setSelectedAddOnIds] = useState<string[]>(initialAddOns);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submissionStatus, setSubmissionStatus] = useState("");
@@ -127,7 +131,22 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     front: neededSides.includes("front") ? printSizes.front : undefined,
     back: neededSides.includes("back") ? printSizes.back : undefined
   };
-  const pricing = pricingForPrintOrder(product?.configuration.packages || [], totalAssigned || minimum, selectedPrints);
+  const pricing = calculateResolvedOrderPricing({
+    profile: shop.pricing,
+    product,
+    quantity: totalAssigned || minimum,
+    printSelections: selectedPrints,
+    decorationMethod: decoration,
+    designOptimizationRequested,
+    selectedAddOnIds
+  });
+  const activeTier = pricingTierForQuantity(product?.configuration.packages || [], totalAssigned || minimum);
+  const decorationRule = decorationRuleFor(shop.pricing, product, decoration);
+  const decorationMultiplier = 1 + decorationRule.percentageAdjustment / 100;
+  const heartRate = Number(((activeTier ? tierHeartUnitPrice(activeTier) : 0) * decorationMultiplier).toFixed(2));
+  const fullRate = Number(((activeTier ? tierFullUnitPrice(activeTier) : 0) * decorationMultiplier).toFixed(2));
+  const customerAddOns = availableAddOns(shop.pricing, product).filter((item) => item.customerSelectable);
+  const designOptimizationAmount = resolveDesignOptimizationFee(shop.pricing, product);
   const totalPrice = pricing.totalPrice;
   const uploadLimitMb = formatMegabytes(shop.settings.upload.maxBytes);
 
@@ -171,6 +190,8 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     setPrintSizes({ front: "heart", back: "heart" });
     setSizes(next.configuration.sizes.map((size) => ({ size, quantity: 0 })));
     setDecoration(next.configuration.customization.decorationMethods[0] || "Screen Print");
+    setDesignOptimizationRequested(false);
+    setSelectedAddOnIds(availableAddOns(shop.pricing, next).filter((item) => item.customerSelectable && item.selectedByDefault).map((item) => item.id));
     setFront(freshSide());
     setBack(freshSide());
     setError("");
@@ -377,7 +398,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
           customer,
           configuration: {
             productId: product.id,
-            packageId: pricing.tier?.id || "",
+            packageId: pricing.tierId || "",
             colorId: color.id,
             designMode: mode,
             decorationMethod: decoration,
@@ -385,7 +406,9 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             sizes,
             notes,
             totalPrice,
-            quantity: totalAssigned
+            quantity: totalAssigned,
+            designOptimizationRequested,
+            selectedAddOnIds
           },
           artworks: sideUploads
         })
@@ -464,6 +487,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
         </div>
         {step === "customize" && <button onClick={() => setStep("products")}>← Products</button>}
       </header>
+      <div className="customer-progress-strip"><span className={step === "products" ? "active" : "complete"}>1 · Product</span><i/><span className={step === "customize" ? "active" : ""}>2 · Customize</span><i/><span>3 · Review & pay</span></div>
 
       {step === "products" ? (
         <section className="product-first-flow modern">
@@ -476,7 +500,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             {products.map((item) => {
               const firstColor = item.configuration.colors.find((candidate) => candidate.active !== false) || item.configuration.colors[0];
               const min = item.configuration.customization.minimumQuantity;
-              const price = pricingForPrintOrder(item.configuration.packages, min, { front: "heart" });
+              const price = calculateResolvedOrderPricing({ profile: shop.pricing, product: item, quantity: min, printSelections: { front: "heart" }, decorationMethod: item.configuration.customization.decorationMethods[0] || "Screen Print", designOptimizationRequested: false, selectedAddOnIds: availableAddOns(shop.pricing, item).filter((addOn) => addOn.customerSelectable && addOn.selectedByDefault).map((addOn) => addOn.id) });
               return (
                 <button className="customer-product-card modern" key={item.id} onClick={() => chooseProduct(item)}>
                   <div className="customer-product-image">
@@ -496,7 +520,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                       <small>{item.configuration.sizes.length} sizes</small>
                       <small>Min. {min}</small>
                     </div>
-                    <strong>From ${price.unitPrice.toFixed(2)} each with print</strong>
+                    <strong>From ${price.unitPrice.toFixed(2)} each · ${price.totalPrice.toFixed(2)} minimum order</strong>
                   </div>
                 </button>
               );
@@ -540,7 +564,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                               <b>{printSizeLabel(value)}</b>
                               <small>{area.widthInches}″ × {area.heightInches}″ max</small>
                             </span>
-                            <em>{value === "heart" ? `$${pricing.tier ? Number(pricing.tier.heartPrintUnitPrice || 0).toFixed(2) : "0.00"}` : `$${pricing.tier ? Number(pricing.tier.fullPrintUnitPrice || 0).toFixed(2) : "0.00"}`}</em>
+                            <em>{value === "heart" ? `$${heartRate.toFixed(2)}` : `$${fullRate.toFixed(2)}`}</em>
                           </label>
                         );
                       })}
@@ -567,6 +591,13 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                   <option key={item}>{item}</option>
                 ))}
               </select>
+            </WizardSection>
+            <WizardSection number="5" title="Order services">
+              <div className="customer-service-stack">
+                {pricing.setupFee > 0 && <div className="included-fee-card"><span>Included</span><div><b>{shop.pricing.setupFee.label}</b><small>${pricing.setupFee.toFixed(2)} once per order</small></div></div>}
+                {designOptimizationAmount > 0 && <label className={designOptimizationRequested ? "service-choice selected" : "service-choice"}><input type="checkbox" checked={designOptimizationRequested} onChange={(event) => setDesignOptimizationRequested(event.target.checked)}/><span className="fake-check">✓</span><span><b>{shop.pricing.designOptimizationFee.label}</b><small>{shop.pricing.designOptimizationFee.description}</small></span><em>+${designOptimizationAmount.toFixed(2)}</em></label>}
+                {customerAddOns.map((item) => <label key={item.id} className={selectedAddOnIds.includes(item.id) ? "service-choice selected" : "service-choice"}><input type="checkbox" checked={selectedAddOnIds.includes(item.id)} onChange={(event) => setSelectedAddOnIds((current) => event.target.checked ? [...new Set([...current, item.id])] : current.filter((id) => id !== item.id))}/><span className="fake-check">✓</span><span><b>{item.name}</b><small>{item.description || (item.pricingMode === "per_item" ? "Added per garment" : "Added once per order")}</small></span><em>+${item.amount.toFixed(2)}{item.pricingMode === "per_item" ? "/ea" : ""}</em></label>)}
+              </div>
             </WizardSection>
           </aside>
 
@@ -704,8 +735,12 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
               <div><span>Blank garment</span><b>${pricing.garmentUnitPrice.toFixed(2)} / shirt</b></div>
               {neededSides.includes("front") && <div><span>Front · {printSizeLabel(printSizes.front)}</span><b>${pricing.frontPrintUnitPrice.toFixed(2)} / shirt</b></div>}
               {neededSides.includes("back") && <div><span>Back · {printSizeLabel(printSizes.back)}</span><b>${pricing.backPrintUnitPrice.toFixed(2)} / shirt</b></div>}
-              <div className="unit"><span>Unit price</span><b>${pricing.unitPrice.toFixed(2)} each</b></div>
-              <div><span>{totalAssigned || minimum} garments</span><b>${pricing.totalPrice.toFixed(2)}</b></div>
+              {pricing.decorationPercentage !== 0 && <div className="adjustment"><span>{decoration} adjustment</span><b>{pricing.decorationPercentage > 0 ? "+" : ""}{pricing.decorationPercentage}%</b></div>}
+              <div className="unit"><span>Unit merchandise</span><b>${pricing.unitPrice.toFixed(2)} each</b></div>
+              <div><span>{totalAssigned || minimum} garments</span><b>${pricing.merchandiseSubtotal.toFixed(2)}</b></div>
+              {pricing.setupFee > 0 && <div><span>{shop.pricing.setupFee.label}</span><b>${pricing.setupFee.toFixed(2)}</b></div>}
+              {pricing.designOptimizationFee > 0 && <div><span>{shop.pricing.designOptimizationFee.label}</span><b>${pricing.designOptimizationFee.toFixed(2)}</b></div>}
+              {pricing.addOns.map((item) => <div key={item.id}><span>{item.name}</span><b>${item.total.toFixed(2)}</b></div>)}
               <div className="total"><span>Estimated total</span><b>${totalPrice.toFixed(2)}</b></div>
             </div>
             <details className="customer-details" open>

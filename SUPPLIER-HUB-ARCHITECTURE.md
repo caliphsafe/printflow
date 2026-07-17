@@ -1,21 +1,28 @@
-# Supplier Hub architecture
+# PrintFlow Supplier Hub Architecture
 
-## Shared product model
-All suppliers map into the same concepts:
-- supplier/provider
-- style
-- brand and part number
-- colors
-- sizes
-- SKU/GTIN
-- front/back/swatch imagery
-- wholesale cost snapshot
-- inventory snapshot
+PrintFlow uses one supplier-neutral product format for manual products, demo products, and approved wholesale connectors.
 
-## Live connectors
-S&S remains the first live connector. SanMar and AlphaBroder cards are placeholders for later connectors.
+## Current providers
 
-## Safe order flow
-Customer payment -> blank-order draft -> admin review -> live supplier submission.
+- **S&S Activewear** — live connector foundation for catalog search, product import, inventory, and blank ordering. AlphaBroder is represented through S&S Activewear rather than as a separate provider.
+- **SanMar** — credential-ready connection awaiting approved live API mapping.
+- **PrintFlow Demo** — safe local catalog for testing.
+- **Manual products** — products from any unconnected or specialty source.
 
-The draft workflow works without an API key. Live one-click purchasing remains disabled unless an actual connected provider supports order submission.
+## Shared normalized fields
+
+- Provider
+- Supplier name
+- Brand
+- Style
+- Part number
+- Color
+- Size
+- SKU
+- GTIN
+- Wholesale cost snapshot
+- Inventory snapshot
+- Front garment image
+- Back garment image
+
+Supplier-specific connection settings remain in Supplier Hub. Every available account also appears in Integrations so admins can see their full connection status in one place.

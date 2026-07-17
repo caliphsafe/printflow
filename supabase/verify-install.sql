@@ -6,3 +6,4 @@ select to_regclass('public.catalog_products') is not null as catalog_products_ex
 select to_regclass('public.embed_keys') is not null as embed_keys_exists;
 select count(*) as seeded_shops from public.shops;
 select slug,name,active from public.shops order by created_at;
+select to_regclass('public.shop_pricing_profiles') is not null as shop_pricing_profiles_exists;
