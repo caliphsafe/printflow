@@ -1,872 +1,137 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import {
-  PointerEvent as ReactPointerEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from "react";
-import type {
-  CatalogProduct,
-  ProductPackage,
-  PublicShop,
-  ShirtColor,
-  SizeQuantity
-} from "@/lib/types";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import type { ArtworkPlacement, CatalogProduct, DesignMode, DesignSide, ProductPackage, PublicShop, ShirtColor, SizeQuantity } from "@/lib/types";
 
-type Props = {
-  shop: PublicShop;
-};
+const W = 800; const H = 800;
+const emptyPlacement: ArtworkPlacement = { x: 280, y: 260, width: 240, height: 240, rotation: 0 };
+type SideState = { file: File | null; dataUrl: string; placement: ArtworkPlacement };
+const freshSide = (): SideState => ({ file: null, dataUrl: "", placement: { ...emptyPlacement } });
 
-type ArtworkState = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
-const VIEWBOX_WIDTH = 800;
-const VIEWBOX_HEIGHT = 900;
-const PRINT_AREA = { x: 260, y: 235, width: 280, height: 390 };
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
+function assetUrl(url?: string) {
+  if (!url) return "";
+  try { const parsed = new URL(url, window.location.origin); if (parsed.hostname.endsWith("ssactivewear.com")) return `/api/public/supplier-image?url=${encodeURIComponent(parsed.toString())}`; return url; } catch { return url; }
 }
+function modeLabel(mode: DesignMode) { return mode === "front" ? "Front only" : mode === "back" ? "Back only" : "Front + back"; }
 
-function money(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD"
-  }).format(value);
-}
+export default function DesignerApp({ shop }: { shop: PublicShop }) {
+  const products = shop.products.filter((item) => item.active);
+  const [step, setStep] = useState<"products" | "customize">("products");
+  const [product, setProduct] = useState<CatalogProduct>(products[0]);
+  const [color, setColor] = useState<ShirtColor>(products[0]?.configuration.colors[0]);
+  const [mode, setMode] = useState<DesignMode>(products[0]?.configuration.customization.designModes[0] || "front");
+  const [side, setSide] = useState<DesignSide>("front");
+  const [pkg, setPkg] = useState<ProductPackage>(products[0]?.configuration.packages[0]);
+  const [sizes, setSizes] = useState<SizeQuantity[]>(products[0]?.configuration.sizes.map((size) => ({ size, quantity: 0 })) || []);
+  const [decoration, setDecoration] = useState(products[0]?.configuration.customization.decorationMethods[0] || "Screen Print");
+  const [front, setFront] = useState<SideState>(freshSide()); const [back, setBack] = useState<SideState>(freshSide());
+  const [customer, setCustomer] = useState({ name: "", email: "", phone: "" }); const [notes, setNotes] = useState("");
+  const [error, setError] = useState(""); const [submitting, setSubmitting] = useState(false); const [completed, setCompleted] = useState<{ displayId: string; checkoutUrl: string } | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null); const dragRef = useRef<any>(null);
 
-function shirtPath() {
-  return [
-    "M255 95",
-    "L185 122",
-    "L72 225",
-    "L150 338",
-    "L220 284",
-    "L220 780",
-    "Q400 830 580 780",
-    "L580 284",
-    "L650 338",
-    "L728 225",
-    "L615 122",
-    "L545 95",
-    "Q518 181 400 181",
-    "Q282 181 255 95",
-    "Z"
-  ].join(" ");
-}
+  const sideState = side === "front" ? front : back;
+  const setSideState = side === "front" ? setFront : setBack;
+  const printArea = side === "front" ? product.configuration.customization.frontPrintArea : product.configuration.customization.backPrintArea;
+  const garmentUrl = assetUrl(side === "front" ? color?.frontImageUrl || product.configuration.mockupImageUrl : color?.backImageUrl || product.configuration.mockupImageUrl);
+  const totalAssigned = useMemo(() => sizes.reduce((sum, item) => sum + item.quantity, 0), [sizes]);
+  const surcharge = mode === "front" ? product.configuration.customization.frontSurcharge : mode === "back" ? product.configuration.customization.backSurcharge : product.configuration.customization.twoSideSurcharge;
+  const totalPrice = Number(pkg?.price || 0) + surcharge;
+  const neededSides: DesignSide[] = mode === "front-back" ? ["front", "back"] : [mode];
 
-export default function DesignerApp({ shop }: Props) {
-  const initialProduct = shop.products[0];
-  const [selectedProductId, setSelectedProductId] = useState(initialProduct.id);
-  const selectedProduct = shop.products.find((item) => item.id === selectedProductId) || initialProduct;
-  const settings = {
-    ...shop.settings,
-    product: { name: selectedProduct.name, description: selectedProduct.description || undefined },
-    ...selectedProduct.configuration
-  };
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const dragRef = useRef<{
-    mode: "drag" | "resize";
-    startX: number;
-    startY: number;
-    startArt: ArtworkState;
-  } | null>(null);
+  useEffect(() => { const send = () => window.parent.postMessage({ type: "printflow:resize", height: document.documentElement.scrollHeight }, "*"); send(); const observer = new ResizeObserver(send); observer.observe(document.body); return () => observer.disconnect(); }, []);
 
-  const [selectedColor, setSelectedColor] = useState<ShirtColor>(initialProduct.configuration.colors[0] || { id: "default", name: "Default", hex: "#777777" });
-  const [selectedPackage, setSelectedPackage] = useState<ProductPackage>(initialProduct.configuration.packages[0]);
-  const [printLocation, setPrintLocation] = useState(initialProduct.configuration.printLocations[0]);
-  const [sizes, setSizes] = useState<SizeQuantity[]>(initialProduct.configuration.sizes.map((size) => ({ size, quantity: 0 })));
-  const [artFile, setArtFile] = useState<File | null>(null);
-  const [artDataUrl, setArtDataUrl] = useState<string>("");
-  const [artwork, setArtwork] = useState<ArtworkState>({
-    x: 310,
-    y: 300,
-    width: 180,
-    height: 180
-  });
-  const [customer, setCustomer] = useState({
-    name: "",
-    email: "",
-    phone: ""
-  });
-  const [notes, setNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [completed, setCompleted] = useState<{
-    displayId: string;
-    checkoutUrl: string;
-  } | null>(null);
-
-
-  function selectProduct(product: CatalogProduct) {
-    setSelectedProductId(product.id);
-    setSelectedColor(product.configuration.colors[0] || { id: "default", name: "Default", hex: "#777777" });
-    setSelectedPackage(product.configuration.packages[0]);
-    setPrintLocation(product.configuration.printLocations[0]);
-    setSizes(product.configuration.sizes.map((size) => ({ size, quantity: 0 })));
-    setCompleted(null);
-    setError("");
+  function chooseProduct(next: CatalogProduct) {
+    setProduct(next); setColor(next.configuration.colors.find((item) => item.active !== false) || next.configuration.colors[0]);
+    const nextMode = next.configuration.customization.designModes[0] || "front"; setMode(nextMode); setSide(nextMode === "back" ? "back" : "front");
+    setPkg(next.configuration.packages[0]); setSizes(next.configuration.sizes.map((size) => ({ size, quantity: 0 })));
+    setDecoration(next.configuration.customization.decorationMethods[0] || "Screen Print"); setFront(freshSide()); setBack(freshSide()); setStep("customize"); window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const totalAssigned = useMemo(
-    () => sizes.reduce((sum, item) => sum + item.quantity, 0),
-    [sizes]
-  );
-
-  useEffect(() => {
-    const sendHeight = () => {
-      window.parent.postMessage(
-        {
-          type: "printflow:resize",
-          height: document.documentElement.scrollHeight
-        },
-        "*"
-      );
-    };
-
-    sendHeight();
-    const observer = new ResizeObserver(sendHeight);
-    observer.observe(document.body);
-    return () => observer.disconnect();
-  }, []);
-
-  function svgPoint(event: ReactPointerEvent<SVGElement>) {
-    const svg = svgRef.current;
-    if (!svg) return { x: 0, y: 0 };
-
-    const rect = svg.getBoundingClientRect();
-    return {
-      x: ((event.clientX - rect.left) / rect.width) * VIEWBOX_WIDTH,
-      y: ((event.clientY - rect.top) / rect.height) * VIEWBOX_HEIGHT
-    };
+  async function handleArtwork(target: DesignSide, file?: File) {
+    if (!file) return; setError("");
+    if (!shop.settings.upload.acceptedTypes.includes(file.type)) return setError("That artwork file type is not accepted.");
+    if (file.size > shop.settings.upload.maxBytes) return setError("Artwork is larger than this shop allows.");
+    const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); });
+    const image = new Image(); image.src = dataUrl; await image.decode();
+    const area = target === "front" ? product.configuration.customization.frontPrintArea : product.configuration.customization.backPrintArea;
+    const ratio = Math.min((area.width * .72) / image.width, (area.height * .72) / image.height, 1);
+    const placement = { x: area.x + (area.width - image.width * ratio) / 2, y: area.y + (area.height - image.height * ratio) / 2, width: image.width * ratio, height: image.height * ratio, rotation: 0 };
+    (target === "front" ? setFront : setBack)({ file, dataUrl, placement });
   }
 
-  function beginArtworkInteraction(
-    mode: "drag" | "resize",
-    event: ReactPointerEvent<SVGElement>
-  ) {
-    if (!artDataUrl) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const point = svgPoint(event);
-    dragRef.current = {
-      mode,
-      startX: point.x,
-      startY: point.y,
-      startArt: { ...artwork }
-    };
+  function point(event: ReactPointerEvent<SVGElement>) { const rect = svgRef.current!.getBoundingClientRect(); return { x: ((event.clientX - rect.left) / rect.width) * W, y: ((event.clientY - rect.top) / rect.height) * H }; }
+  function begin(kind: "drag" | "resize", event: ReactPointerEvent<SVGElement>) { if (!sideState.dataUrl) return; event.preventDefault(); const p = point(event); dragRef.current = { kind, p, placement: { ...sideState.placement } }; event.currentTarget.setPointerCapture(event.pointerId); }
+  function move(event: ReactPointerEvent<SVGElement>) { if (!dragRef.current) return; const current = point(event); const dx = current.x - dragRef.current.p.x; const dy = current.y - dragRef.current.p.y; const start = dragRef.current.placement;
+    if (dragRef.current.kind === "drag") setSideState((state) => ({ ...state, placement: { ...state.placement, x: Math.max(printArea.x, Math.min(printArea.x + printArea.width - start.width, start.x + dx)), y: Math.max(printArea.y, Math.min(printArea.y + printArea.height - start.height, start.y + dy)) } }));
+    else { let width = Math.max(50, Math.min(printArea.x + printArea.width - start.x, start.width + dx)); let height = width * (start.height / start.width); if (height > printArea.y + printArea.height - start.y) { height = printArea.y + printArea.height - start.y; width = height * (start.width / start.height); } setSideState((state) => ({ ...state, placement: { ...state.placement, width, height } })); }
+  }
+  function end() { dragRef.current = null; }
+  function updateSize(size: string, quantity: number) { setSizes((current) => current.map((item) => item.size === size ? { ...item, quantity: Math.max(0, Math.floor(quantity || 0)) } : item)); }
+
+  async function renderSide(target: DesignSide) {
+    const state = target === "front" ? front : back; const url = assetUrl(target === "front" ? color.frontImageUrl || product.configuration.mockupImageUrl : color.backImageUrl || product.configuration.mockupImageUrl);
+    const canvas = document.createElement("canvas"); canvas.width = W; canvas.height = H; const ctx = canvas.getContext("2d")!; ctx.fillStyle = "#f5f5f5"; ctx.fillRect(0, 0, W, H);
+    if (url) { const img = new Image(); img.crossOrigin = "anonymous"; img.src = url; await img.decode(); const scale = Math.min(W / img.width, H / img.height) * .92; ctx.drawImage(img, (W - img.width * scale) / 2, (H - img.height * scale) / 2, img.width * scale, img.height * scale); }
+    if (state.dataUrl) { const art = new Image(); art.src = state.dataUrl; await art.decode(); ctx.drawImage(art, state.placement.x, state.placement.y, state.placement.width, state.placement.height); }
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Preview failed.")), "image/png", .92));
   }
 
-  function moveArtwork(event: ReactPointerEvent<SVGElement>) {
-    const interaction = dragRef.current;
-    if (!interaction) return;
-
-    const point = svgPoint(event);
-    const dx = point.x - interaction.startX;
-    const dy = point.y - interaction.startY;
-
-    if (interaction.mode === "drag") {
-      const nextX = clamp(
-        interaction.startArt.x + dx,
-        PRINT_AREA.x,
-        PRINT_AREA.x + PRINT_AREA.width - interaction.startArt.width
-      );
-      const nextY = clamp(
-        interaction.startArt.y + dy,
-        PRINT_AREA.y,
-        PRINT_AREA.y + PRINT_AREA.height - interaction.startArt.height
-      );
-
-      setArtwork((current) => ({ ...current, x: nextX, y: nextY }));
-      return;
-    }
-
-    const aspect = interaction.startArt.width / interaction.startArt.height;
-    const maxWidth =
-      PRINT_AREA.x + PRINT_AREA.width - interaction.startArt.x;
-    const maxHeight =
-      PRINT_AREA.y + PRINT_AREA.height - interaction.startArt.y;
-
-    let nextWidth = clamp(interaction.startArt.width + dx, 60, maxWidth);
-    let nextHeight = nextWidth / aspect;
-
-    if (nextHeight > maxHeight) {
-      nextHeight = maxHeight;
-      nextWidth = nextHeight * aspect;
-    }
-
-    setArtwork((current) => ({
-      ...current,
-      width: nextWidth,
-      height: nextHeight
-    }));
-  }
-
-  function endArtworkInteraction(event: ReactPointerEvent<SVGElement>) {
-    if (dragRef.current) {
-      try {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      } catch {
-        // Pointer capture may already be released.
-      }
-    }
-    dragRef.current = null;
-  }
-
-  async function handleArtwork(file: File | null) {
-    setError("");
-    setCompleted(null);
-
-    if (!file) {
-      setArtFile(null);
-      setArtDataUrl("");
-      return;
-    }
-
-    if (!settings.upload.acceptedTypes.includes(file.type)) {
-      setError("That artwork file type is not accepted.");
-      return;
-    }
-
-    if (file.size > settings.upload.maxBytes) {
-      setError(
-        `Artwork must be smaller than ${Math.round(
-          settings.upload.maxBytes / 1024 / 1024
-        )} MB.`
-      );
-      return;
-    }
-
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error("Unable to read artwork."));
-      reader.readAsDataURL(file);
-    });
-
-    const image = new Image();
-    image.src = dataUrl;
-    await image.decode();
-
-    const maxWidth = 210;
-    const maxHeight = 260;
-    const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
-    const width = image.width * ratio;
-    const height = image.height * ratio;
-
-    setArtwork({
-      x: PRINT_AREA.x + (PRINT_AREA.width - width) / 2,
-      y: PRINT_AREA.y + (PRINT_AREA.height - height) / 2,
-      width,
-      height
-    });
-    setArtFile(file);
-    setArtDataUrl(dataUrl);
-  }
-
-  function updateSize(size: string, value: number) {
-    setSizes((current) =>
-      current.map((item) =>
-        item.size === size
-          ? { ...item, quantity: Math.max(0, Math.floor(value || 0)) }
-          : item
-      )
-    );
-  }
-
-  async function renderPreview() {
-    const svg = svgRef.current;
-    if (!svg) throw new Error("Preview is not ready.");
-
-    const clone = svg.cloneNode(true) as SVGSVGElement;
-    clone.setAttribute("width", String(VIEWBOX_WIDTH));
-    clone.setAttribute("height", String(VIEWBOX_HEIGHT));
-
-    clone
-      .querySelectorAll("[data-editor-only='true']")
-      .forEach((element) => element.remove());
-
-    const serializer = new XMLSerializer();
-    const source = serializer.serializeToString(clone);
-    const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-
-    try {
-      const image = new Image();
-      image.src = url;
-      await image.decode();
-
-      const canvas = document.createElement("canvas");
-      canvas.width = VIEWBOX_WIDTH;
-      canvas.height = VIEWBOX_HEIGHT;
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Canvas is unavailable.");
-
-      context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-      return await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob(
-          (previewBlob) =>
-            previewBlob
-              ? resolve(previewBlob)
-              : reject(new Error("Unable to create preview.")),
-          "image/png",
-          0.92
-        );
-      });
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-
-  async function submitDesign() {
-    setError("");
-
-    if (!artFile || !artDataUrl) {
-      setError("Upload artwork before continuing.");
-      return;
-    }
-
-    if (!customer.name.trim() || !customer.email.trim()) {
-      setError("Enter the customer name and email.");
-      return;
-    }
-
-    if (totalAssigned !== selectedPackage.quantity) {
-      setError(
-        `The size quantities must total ${selectedPackage.quantity}. You currently have ${totalAssigned}.`
-      );
-      return;
-    }
-
+  async function submit() {
+    setError(""); if (neededSides.some((target) => !(target === "front" ? front.file : back.file))) return setError(`Upload artwork for ${neededSides.join(" and ")}.`);
+    if (!customer.name.trim() || !customer.email.trim()) return setError("Enter your name and email.");
+    if (totalAssigned !== pkg.quantity) return setError(`Size quantities must total ${pkg.quantity}. You currently have ${totalAssigned}.`);
     setSubmitting(true);
-
     try {
-      const previewBlob = await renderPreview();
-
-      const startResponse = await fetch("/api/designs/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shopSlug: shop.slug,
-          customer,
-          configuration: {
-            productId: selectedProduct.id,
-            packageId: selectedPackage.id,
-            colorId: selectedColor.id,
-            printLocation,
-            sizes,
-            notes
-          },
-          artwork: {
-            filename: artFile.name,
-            mimeType: artFile.type,
-            sizeBytes: artFile.size
-          }
-        })
-      });
-
-      const startData = await startResponse.json();
-      if (!startResponse.ok) {
-        throw new Error(startData.error || "Unable to begin submission.");
+      const sideUploads: Record<string, any> = {};
+      for (const target of neededSides) { const state = target === "front" ? front : back; sideUploads[target] = { filename: state.file!.name, mimeType: state.file!.type, sizeBytes: state.file!.size, placement: state.placement }; }
+      const startResponse = await fetch("/api/designs/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopSlug: shop.slug, customer, configuration: { productId: product.id, packageId: pkg.id, colorId: color.id, designMode: mode, decorationMethod: decoration, sizes, notes, totalPrice, surcharge }, artworks: sideUploads }) });
+      const startData = await startResponse.json(); if (!startResponse.ok) throw new Error(startData.error || "Unable to begin submission.");
+      const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
+      for (const target of neededSides) { const state = target === "front" ? front : back; const preview = await renderSide(target); const upload = startData.uploads[target];
+        const originalResult = await supabase.storage.from(upload.original.bucket).uploadToSignedUrl(upload.original.path, upload.original.token, state.file!, { contentType: state.file!.type }); if (originalResult.error) throw originalResult.error;
+        const previewResult = await supabase.storage.from(upload.preview.bucket).uploadToSignedUrl(upload.preview.path, upload.preview.token, preview, { contentType: "image/png" }); if (previewResult.error) throw previewResult.error;
       }
-
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!supabaseUrl || !anonKey) {
-        throw new Error("Public Supabase settings are missing.");
-      }
-
-      const supabase = createClient(supabaseUrl, anonKey, {
-        auth: { persistSession: false }
-      });
-
-      const originalUpload = await supabase.storage
-        .from(startData.uploads.original.bucket)
-        .uploadToSignedUrl(
-          startData.uploads.original.path,
-          startData.uploads.original.token,
-          artFile,
-          { contentType: artFile.type }
-        );
-
-      if (originalUpload.error) throw originalUpload.error;
-
-      const previewUpload = await supabase.storage
-        .from(startData.uploads.preview.bucket)
-        .uploadToSignedUrl(
-          startData.uploads.preview.path,
-          startData.uploads.preview.token,
-          previewBlob,
-          { contentType: "image/png" }
-        );
-
-      if (previewUpload.error) throw previewUpload.error;
-
-      const completeResponse = await fetch("/api/designs/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ designId: startData.designId })
-      });
-
-      const completeData = await completeResponse.json();
-      if (!completeResponse.ok) {
-        throw new Error(completeData.error || "Unable to finalize submission.");
-      }
-
-      setCompleted(completeData);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (caught) {
-      console.error(caught);
-      setError(
-        caught instanceof Error ? caught.message : "Something went wrong."
-      );
-    } finally {
-      setSubmitting(false);
-    }
+      const completeResponse = await fetch("/api/designs/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designId: startData.designId }) }); const completeData = await completeResponse.json(); if (!completeResponse.ok) throw new Error(completeData.error || "Unable to complete submission."); setCompleted(completeData);
+    } catch (err) { setError(err instanceof Error ? err.message : "Submission failed."); } finally { setSubmitting(false); }
   }
 
-  function continueToCheckout() {
-    if (!completed) return;
-    window.open(completed.checkoutUrl, "_top");
-  }
+  if (!product) return <main className="designer-shell"><div className="designer-empty"><h1>No products are available yet.</h1></div></main>;
+  if (completed) return <main className="designer-shell"><section className="designer-complete"><span>✓</span><p className="eyebrow">DESIGN RECEIVED</p><h1>{completed.displayId}</h1><p>{shop.settings.customerExperience?.confirmationMessage || "Your design is saved. Continue to payment to reserve production."}</p><a className="designer-primary" href={completed.checkoutUrl}>Continue to payment · ${totalPrice.toFixed(2)}</a></section></main>;
 
-  return (
-    <main
-      className="designer-page"
-      style={
-        {
-          "--brand": settings.brand.primaryColor,
-          "--brand-text": settings.brand.textColor
-        } as React.CSSProperties
-      }
-    >
-      <header className="designer-header">
-        <div>
-          {settings.brand.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={settings.brand.logoUrl}
-              alt={`${shop.name} logo`}
-              className="shop-logo"
-            />
-          ) : (
-            <p className="eyebrow">{shop.name}</p>
-          )}
-          <h1>{settings.customerExperience?.headline || "Design your custom shirts"}</h1>
-          <p>{settings.customerExperience?.introduction || "Upload your artwork, position it on the shirt, assign the sizes, then continue to secure checkout."}</p>
+  return <main className="designer-shell" style={{ "--brand": shop.settings.brand.primaryColor, "--brand-text": shop.settings.brand.textColor } as React.CSSProperties}>
+    <header className="customer-header">{shop.settings.brand.logoUrl ? <img src={shop.settings.brand.logoUrl} alt={shop.name}/> : <strong>{shop.name}</strong>}<div><small>Custom product studio</small><b>{step === "products" ? "Choose a product" : product.name}</b></div>{step === "customize" && <button onClick={() => setStep("products")}>Change product</button>}</header>
+    {step === "products" ? <section className="product-first-flow"><div className="customer-intro"><p className="eyebrow">START YOUR ORDER</p><h1>{shop.settings.customerExperience?.headline || "Choose your blank, then make it yours."}</h1><p>{shop.settings.customerExperience?.introduction}</p></div><div className="customer-product-grid">{products.map((item) => { const firstColor = item.configuration.colors.find((c) => c.active !== false) || item.configuration.colors[0]; return <button className="customer-product-card" key={item.id} onClick={() => chooseProduct(item)}><div className="customer-product-image">{firstColor?.frontImageUrl || item.configuration.mockupImageUrl ? <img src={assetUrl(firstColor?.frontImageUrl || item.configuration.mockupImageUrl)} alt={item.name}/> : <div className="product-placeholder">T</div>}</div><div><span>{item.configuration.customization.category}</span><h2>{item.name}</h2><p>{item.description}</p><small>{item.configuration.colors.length} colors · {item.configuration.sizes.length} sizes · From ${Math.min(...item.configuration.packages.map((p) => p.price)).toFixed(2)}</small></div></button>; })}</div></section> :
+    <section className="designer-workspace">
+      <aside className="designer-controls">
+        <div className="mobile-product-summary"><p className="eyebrow">CUSTOMIZING</p><h1>{product.name}</h1><p>{product.description}</p></div>
+        <Control title="1. Design placement"><div className="design-mode-grid">{product.configuration.customization.designModes.map((value) => <button key={value} className={mode === value ? "selected" : ""} onClick={() => { setMode(value); setSide(value === "back" ? "back" : "front"); }}>{modeLabel(value)}</button>)}</div></Control>
+        <Control title="2. Garment color"><div className="customer-color-grid">{product.configuration.colors.filter((item) => item.active !== false).map((item) => <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => setColor(item)}><i style={{ background: item.hex }}/><span>{item.name}</span></button>)}</div></Control>
+        <Control title="3. Decoration"><select value={decoration} onChange={(e) => setDecoration(e.target.value)}>{product.configuration.customization.decorationMethods.map((item) => <option key={item}>{item}</option>)}</select></Control>
+        <Control title="4. Package"><div className="customer-package-list">{product.configuration.packages.map((item) => <button key={item.id} className={pkg.id === item.id ? "selected" : ""} onClick={() => { setPkg(item); setSizes(product.configuration.sizes.map((size) => ({ size, quantity: 0 }))); }}><span>{item.label}</span><b>${(item.price + surcharge).toFixed(2)}</b></button>)}</div><small>Includes ${surcharge.toFixed(2)} for {modeLabel(mode).toLowerCase()}.</small></Control>
+      </aside>
+
+      <div className="design-stage-column">
+        <div className="side-tabs">{neededSides.map((target) => <button key={target} className={side === target ? "selected" : ""} onClick={() => setSide(target)}>{target === "front" ? "Front" : "Back"}{(target === "front" ? front.file : back.file) ? <i>✓</i> : null}</button>)}</div>
+        <div className="design-stage">
+          <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
+            <rect width={W} height={H} fill="#f3f3f1"/>{garmentUrl ? <image href={garmentUrl} x="32" y="32" width="736" height="736" preserveAspectRatio="xMidYMid meet"/> : <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={color.hex} stroke="#bbb" strokeWidth="3"/>}
+            <rect x={printArea.x} y={printArea.y} width={printArea.width} height={printArea.height} fill="none" stroke="rgba(0,0,0,.3)" strokeDasharray="10 8"/>
+            {sideState.dataUrl && <g><image href={sideState.dataUrl} x={sideState.placement.x} y={sideState.placement.y} width={sideState.placement.width} height={sideState.placement.height} onPointerDown={(e) => begin("drag", e)} style={{ cursor: "move" }}/><rect x={sideState.placement.x} y={sideState.placement.y} width={sideState.placement.width} height={sideState.placement.height} fill="none" stroke="#111" strokeWidth="2" pointerEvents="none"/><circle cx={sideState.placement.x + sideState.placement.width} cy={sideState.placement.y + sideState.placement.height} r="13" fill="#111" onPointerDown={(e) => begin("resize", e)} style={{ cursor: "nwse-resize" }}/></g>}
+          </svg>
+          <div className="stage-upload"><label><input type="file" accept={shop.settings.upload.acceptedTypes.join(",")} onChange={(e) => handleArtwork(side, e.target.files?.[0])}/>{sideState.file ? `Replace ${side} artwork` : `Upload ${side} artwork`}</label>{sideState.file && <button onClick={() => setSideState(freshSide())}>Remove</button>}</div>
         </div>
-        <div className="header-price">
-          <span>{selectedPackage.label}</span>
-          <strong>{money(selectedPackage.price)}</strong>
-        </div>
-      </header>
+        <p className="stage-help">{product.configuration.customization.customerInstructions}</p>
+      </div>
 
-      {completed ? (
-        <section className="success-card">
-          <div className="success-icon">✓</div>
-          <p className="eyebrow">DESIGN SAVED</p>
-          <h2>Your design is attached.</h2>
-          <p>{settings.customerExperience?.confirmationMessage || "Your design is attached and ready for checkout."}</p>
-          <p className="success-reference">Reference <strong>{completed.displayId}</strong> will follow the order through checkout and into production.</p>
-          <button className="primary-button" onClick={continueToCheckout}>
-            Continue to secure checkout
-          </button>
-          <button
-            className="text-button"
-            onClick={() => setCompleted(null)}
-          >
-            Make another change
-          </button>
-        </section>
-      ) : (
-        <div className="designer-grid">
-          <section className="preview-panel">
-            <div className="preview-topline">
-              <span>Live preview</span>
-              <span>{printLocation}</span>
-            </div>
-            {selectedProduct.configuration.supplier && <div className="supplier-product-note">{selectedProduct.configuration.supplier.brandName} {selectedProduct.configuration.supplier.styleName} · live supplier blank</div>}
-
-            <div className="shirt-stage">
-              <svg
-                ref={svgRef}
-                viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
-                role="img"
-                aria-label="T-shirt design preview"
-                onPointerMove={moveArtwork}
-                onPointerUp={endArtworkInteraction}
-                onPointerCancel={endArtworkInteraction}
-              >
-                <rect width="800" height="900" fill="#f5f5f2" rx="32" />
-                <ellipse
-                  cx="400"
-                  cy="812"
-                  rx="250"
-                  ry="32"
-                  fill="rgba(0,0,0,.10)"
-                />
-                {selectedColor.frontImageUrl ? (
-                  <image
-                    href={`/api/public/supplier-image?url=${encodeURIComponent(selectedColor.frontImageUrl)}`}
-                    x="115"
-                    y="55"
-                    width="570"
-                    height="750"
-                    preserveAspectRatio="xMidYMid meet"
-                  />
-                ) : (
-                  <>
-                    <path d={shirtPath()} fill={selectedColor.hex} stroke="rgba(0,0,0,.18)" strokeWidth="4" />
-                    <path d="M319 118 Q400 200 481 118" fill="none" stroke="rgba(0,0,0,.25)" strokeWidth="18" strokeLinecap="round" />
-                  </>
-                )}
-                <rect
-                  data-editor-only="true"
-                  x={PRINT_AREA.x}
-                  y={PRINT_AREA.y}
-                  width={PRINT_AREA.width}
-                  height={PRINT_AREA.height}
-                  rx="10"
-                  fill="none"
-                  stroke="rgba(80,80,80,.65)"
-                  strokeWidth="3"
-                  strokeDasharray="12 10"
-                />
-                {!artDataUrl && (
-                  <g data-editor-only="true">
-                    <text
-                      x="400"
-                      y="420"
-                      textAnchor="middle"
-                      fontSize="28"
-                      fill="rgba(40,40,40,.65)"
-                      fontFamily="Arial, sans-serif"
-                    >
-                      Upload artwork
-                    </text>
-                    <text
-                      x="400"
-                      y="458"
-                      textAnchor="middle"
-                      fontSize="18"
-                      fill="rgba(40,40,40,.45)"
-                      fontFamily="Arial, sans-serif"
-                    >
-                      Your printable area is shown here
-                    </text>
-                  </g>
-                )}
-                {artDataUrl && (
-                  <>
-                    <image
-                      href={artDataUrl}
-                      x={artwork.x}
-                      y={artwork.y}
-                      width={artwork.width}
-                      height={artwork.height}
-                      preserveAspectRatio="xMidYMid meet"
-                      onPointerDown={(event) =>
-                        beginArtworkInteraction("drag", event)
-                      }
-                      style={{ cursor: "grab", touchAction: "none" }}
-                    />
-                    <rect
-                      data-editor-only="true"
-                      x={artwork.x}
-                      y={artwork.y}
-                      width={artwork.width}
-                      height={artwork.height}
-                      fill="none"
-                      stroke="#111111"
-                      strokeWidth="3"
-                      strokeDasharray="8 6"
-                      pointerEvents="none"
-                    />
-                    <circle
-                      data-editor-only="true"
-                      cx={artwork.x + artwork.width}
-                      cy={artwork.y + artwork.height}
-                      r="15"
-                      fill="#ffffff"
-                      stroke="#111111"
-                      strokeWidth="4"
-                      onPointerDown={(event) =>
-                        beginArtworkInteraction("resize", event)
-                      }
-                      style={{ cursor: "nwse-resize", touchAction: "none" }}
-                    />
-                  </>
-                )}
-              </svg>
-            </div>
-
-            <p className="preview-help">
-              Drag the artwork to move it. Use the lower-right handle to resize
-              it within the printable area.
-            </p>
-          </section>
-
-          <section className="controls-panel">
-            {shop.products.length > 1 && (
-              <div className="control-section">
-                <div className="section-heading">
-                  <span>01</span>
-                  <div><h2>Choose your product</h2><p>Select the garment you want to customize.</p></div>
-                </div>
-                <div className="package-grid">
-                  {shop.products.map((product) => (
-                    <button key={product.id} type="button" className={product.id === selectedProduct.id ? "package-card selected" : "package-card"} onClick={() => selectProduct(product)}>
-                      <strong>{product.name}</strong><span>{product.description || `${product.configuration.colors.length} colors`}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="control-section">
-              <div className="section-heading">
-                <span>{shop.products.length > 1 ? "02" : "01"}</span>
-                <div>
-                  <h2>Choose your package</h2>
-                  <p>The checkout price is controlled by Squarespace.</p>
-                </div>
-              </div>
-              <div className="package-grid">
-                {settings.packages.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={
-                      item.id === selectedPackage.id
-                        ? "package-card selected"
-                        : "package-card"
-                    }
-                    onClick={() => {
-                      setSelectedPackage(item);
-                      setSizes((current) =>
-                        current.map((size) => ({ ...size, quantity: 0 }))
-                      );
-                    }}
-                  >
-                    <strong>{item.label}</strong>
-                    <span>{money(item.price)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="control-section">
-              <div className="section-heading">
-                <span>02</span>
-                <div>
-                  <h2>Shirt color</h2>
-                  <p>{selectedColor.name}</p>
-                </div>
-              </div>
-              <div className="swatches">
-                {settings.colors.map((color) => (
-                  <button
-                    key={color.id}
-                    type="button"
-                    className={
-                      color.id === selectedColor.id
-                        ? "swatch selected"
-                        : "swatch"
-                    }
-                    aria-label={color.name}
-                    title={color.name}
-                    onClick={() => setSelectedColor(color)}
-                  >
-                    <span style={{ backgroundColor: color.hex }} />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="control-section">
-              <div className="section-heading">
-                <span>03</span>
-                <div>
-                  <h2>Upload artwork</h2>
-                  <p>{settings.customerExperience?.uploadInstructions || "PNG, JPG, WEBP or SVG."}</p>
-                </div>
-              </div>
-              <label className="upload-box">
-                <input
-                  type="file"
-                  accept={settings.upload.acceptedTypes.join(",")}
-                  onChange={(event) =>
-                    handleArtwork(event.target.files?.[0] ?? null)
-                  }
-                />
-                <strong>
-                  {artFile ? artFile.name : "Choose your design file"}
-                </strong>
-                <span>
-                  Maximum {Math.round(settings.upload.maxBytes / 1024 / 1024)} MB
-                </span>
-              </label>
-            </div>
-
-            <div className="control-section">
-              <div className="section-heading">
-                <span>04</span>
-                <div>
-                  <h2>Print location</h2>
-                  <p>Additional locations can be configured per shop.</p>
-                </div>
-              </div>
-              <select
-                value={printLocation}
-                onChange={(event) => setPrintLocation(event.target.value)}
-              >
-                {settings.printLocations.map((location) => (
-                  <option value={location} key={location}>
-                    {location}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="control-section">
-              <div className="section-heading">
-                <span>05</span>
-                <div>
-                  <h2>Size breakdown</h2>
-                  <p>
-                    Assigned {totalAssigned} of {selectedPackage.quantity}
-                  </p>
-                </div>
-              </div>
-              <div className="size-grid">
-                {sizes.map((item) => (
-                  <label key={item.size}>
-                    <span>{item.size}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      inputMode="numeric"
-                      value={item.quantity}
-                      onChange={(event) =>
-                        updateSize(item.size, Number(event.target.value))
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
-              <div
-                className={
-                  totalAssigned === selectedPackage.quantity
-                    ? "quantity-meter complete"
-                    : "quantity-meter"
-                }
-              >
-                <span
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      (totalAssigned / selectedPackage.quantity) * 100
-                    )}%`
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="control-section">
-              <div className="section-heading">
-                <span>06</span>
-                <div>
-                  <h2>Customer information</h2>
-                  <p>Used to protect and reconnect the design.</p>
-                </div>
-              </div>
-              <div className="form-grid">
-                <label>
-                  <span>Name</span>
-                  <input
-                    type="text"
-                    autoComplete="name"
-                    value={customer.name}
-                    onChange={(event) =>
-                      setCustomer((current) => ({
-                        ...current,
-                        name: event.target.value
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  <span>Email</span>
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    value={customer.email}
-                    onChange={(event) =>
-                      setCustomer((current) => ({
-                        ...current,
-                        email: event.target.value
-                      }))
-                    }
-                  />
-                </label>
-                <label className="full-field">
-                  <span>Phone (optional)</span>
-                  <input
-                    type="tel"
-                    autoComplete="tel"
-                    value={customer.phone}
-                    onChange={(event) =>
-                      setCustomer((current) => ({
-                        ...current,
-                        phone: event.target.value
-                      }))
-                    }
-                  />
-                </label>
-                <label className="full-field">
-                  <span>Production notes (optional)</span>
-                  <textarea
-                    rows={4}
-                    value={notes}
-                    onChange={(event) => setNotes(event.target.value)}
-                    placeholder="Ink colors, placement notes, deadline, or anything the shop should know."
-                  />
-                </label>
-              </div>
-            </div>
-
-            {error && <div className="error-message">{error}</div>}
-
-            <div className="checkout-summary">
-              <div>
-                <span>{selectedPackage.label}</span>
-                <strong>{money(selectedPackage.price)}</strong>
-              </div>
-              <p>Shipping and tax are calculated by the shop’s checkout.</p>
-              {settings.customerExperience?.turnaroundTime && <p className="checkout-guidance"><strong>Turnaround:</strong> {settings.customerExperience.turnaroundTime}</p>}
-              {settings.customerExperience?.artworkDisclaimer && <p className="checkout-guidance">{settings.customerExperience.artworkDisclaimer}</p>}
-              <button
-                className="primary-button"
-                type="button"
-                disabled={submitting}
-                onClick={submitDesign}
-              >
-                {submitting ? "Saving your design…" : "Save design & continue"}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-    </main>
-  );
+      <aside className="order-panel">
+        <p className="eyebrow">ORDER DETAILS</p><h2>Build your size run</h2><div className="size-quantity-grid">{sizes.map((item) => <label key={item.size}><span>{item.size}</span><input type="number" min="0" value={item.quantity || ""} onChange={(e) => updateSize(item.size, Number(e.target.value))}/></label>)}</div><div className={totalAssigned === pkg.quantity ? "quantity-total good" : "quantity-total"}><span>Assigned</span><b>{totalAssigned} / {pkg.quantity}</b></div>
+        <div className="customer-fields"><input placeholder="Full name" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })}/><input type="email" placeholder="Email" value={customer.email} onChange={(e) => setCustomer({ ...customer, email: e.target.value })}/><input placeholder="Phone (optional)" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })}/><textarea rows={3} placeholder="Order notes" value={notes} onChange={(e) => setNotes(e.target.value)}/></div>
+        <div className="order-price"><span>{pkg.label}</span><b>${pkg.price.toFixed(2)}</b><span>{modeLabel(mode)}</span><b>${surcharge.toFixed(2)}</b><strong>Total</strong><strong>${totalPrice.toFixed(2)}</strong></div>
+        {error && <div className="error-message">{error}</div>}<button className="designer-primary full" disabled={submitting} onClick={submit}>{submitting ? "Saving design…" : `Continue · $${totalPrice.toFixed(2)}`}</button><small>{shop.settings.customerExperience?.artworkDisclaimer}</small>
+      </aside>
+    </section>}
+  </main>;
 }
+
+function Control({ title, children }: { title: string; children: React.ReactNode }) { return <section className="customer-control"><h3>{title}</h3>{children}</section>; }

@@ -3,30 +3,44 @@ import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { makeDesignDisplayId } from "@/lib/design-id";
 import { legacyProductFromSettings, normalizeConfiguration } from "@/lib/catalog";
 import { normalizeShopSettings } from "@/lib/shop-settings";
-import type { CatalogProduct, SizeQuantity } from "@/lib/types";
+import type { CatalogProduct, DesignMode, DesignSide, SizeQuantity } from "@/lib/types";
 
-type Payload={shopSlug:string;customer:{name:string;email:string;phone?:string};configuration:{productId:string;packageId:string;colorId:string;printLocation:string;sizes:SizeQuantity[];notes?:string};artwork:{filename:string;mimeType:string;sizeBytes:number}};
-function jsonError(error:string,status=400){return NextResponse.json({error},{status});}
-function safeExtension(filename:string){const ext=filename.split('.').pop()?.toLowerCase()||'bin';return /^[a-z0-9]{1,8}$/.test(ext)?ext:'bin';}
-export async function POST(request:Request){try{
- const payload=(await request.json()) as Payload; const supabase=createSupabaseAdmin();
- const {data:shop}=await supabase.from('shops').select('*').eq('slug',payload.shopSlug).eq('active',true).single(); if(!shop)return jsonError('Shop not found.',404);
- const settings=normalizeShopSettings(shop.settings);
- const {data:rows}=await supabase.from('catalog_products').select('id,slug,name,description,active,configuration').eq('shop_id',shop.id).eq('active',true);
- const products:CatalogProduct[]=(rows||[]).map((r:any)=>({...r,configuration:normalizeConfiguration(r.configuration)})); if(!products.length)products.push(legacyProductFromSettings(settings));
- const activeProduct=products.find(x=>x.id===payload.configuration.productId); if(!activeProduct)return jsonError('Product is unavailable.');
- const selectedPackage=activeProduct.configuration.packages.find(x=>x.id===payload.configuration.packageId); const selectedColor=activeProduct.configuration.colors.find(x=>x.id===payload.configuration.colorId);
- if(!selectedPackage||!selectedColor)return jsonError('Selected product option is unavailable.'); if(!activeProduct.configuration.printLocations.includes(payload.configuration.printLocation))return jsonError('Print location is unavailable.');
- const sizes=Array.isArray(payload.configuration.sizes)?payload.configuration.sizes:[]; const total=sizes.reduce((sum,x)=>sum+Math.max(0,Number(x.quantity||0)),0); if(total!==selectedPackage.quantity)return jsonError(`Size quantities must total ${selectedPackage.quantity}.`);
- if(!payload.customer?.name?.trim()||!payload.customer?.email?.trim())return jsonError('Customer name and email are required.');
- if(payload.artwork.sizeBytes<=0||payload.artwork.sizeBytes>settings.upload.maxBytes)return jsonError('Artwork file is larger than this shop allows.'); if(!settings.upload.acceptedTypes.includes(payload.artwork.mimeType))return jsonError('Artwork file type is not accepted.');
- const supplierItems:any[]=[]; const supplier=activeProduct.configuration.supplier;
- if(supplier){
-  for(const size of sizes.filter(x=>Number(x.quantity)>0)){const variant=supplier.variants.find(v=>v.colorName===selectedColor.name&&v.sizeName===size.size&&v.active!==false);if(!variant)return jsonError(`${selectedColor.name} / ${size.size} is unavailable from ${supplier.supplierName||supplier.provider}.`);supplierItems.push({provider:supplier.provider,supplierName:supplier.supplierName||supplier.provider,sourceMode:supplier.sourceMode||'live',sku:variant.sku,skuId:variant.skuId,gtin:variant.gtin,brandName:supplier.brandName,styleName:supplier.styleName,colorName:variant.colorName,sizeName:variant.sizeName,quantity:Number(size.quantity),unitCost:variant.customerPrice,inventorySnapshot:variant.quantity});}
- }
- const displayId=makeDesignDisplayId(); const originalPath=`${shop.id}/${displayId}/original.${safeExtension(payload.artwork.filename)}`; const previewPath=`${shop.id}/${displayId}/preview.png`;
- const {data:design,error:designError}=await supabase.from('designs').insert({organization_id:shop.organization_id,shop_id:shop.id,display_id:displayId,status:'draft',customer_name:payload.customer.name.trim(),customer_email:payload.customer.email.trim().toLowerCase(),customer_phone:payload.customer.phone?.trim()||null,catalog_product_id:activeProduct.id==='legacy-product'?null:activeProduct.id,product_name:activeProduct.name,package_id:selectedPackage.id,package_label:selectedPackage.label,package_quantity:selectedPackage.quantity,package_price:selectedPackage.price,shirt_color_id:selectedColor.id,shirt_color_name:selectedColor.name,print_location:payload.configuration.printLocation,size_breakdown:sizes,supplier_items:supplierItems,customer_notes:payload.configuration.notes?.trim()||null,original_artwork_path:originalPath,preview_path:previewPath,original_filename:payload.artwork.filename,original_mime_type:payload.artwork.mimeType,checkout_url:selectedPackage.checkoutUrl}).select('id,display_id').single();
- if(designError||!design)return jsonError(designError?.message||'Unable to create design session.',500);
- const [originalUpload,previewUpload]=await Promise.all([supabase.storage.from('artwork').createSignedUploadUrl(originalPath),supabase.storage.from('previews').createSignedUploadUrl(previewPath)]);if(originalUpload.error||previewUpload.error)return jsonError('Unable to prepare secure uploads.',500);
- return NextResponse.json({designId:design.id,displayId:design.display_id,uploads:{original:{bucket:'artwork',path:originalPath,token:originalUpload.data.token},preview:{bucket:'previews',path:previewPath,token:previewUpload.data.token}}});
- }catch(error){return jsonError(error instanceof Error?error.message:'Unexpected error.',500);}}
+type ArtPayload = { filename: string; mimeType: string; sizeBytes: number; placement: unknown };
+type Payload = { shopSlug: string; customer: { name: string; email: string; phone?: string }; configuration: { productId: string; packageId: string; colorId: string; designMode: DesignMode; decorationMethod: string; sizes: SizeQuantity[]; notes?: string; totalPrice: number; surcharge: number }; artworks: Partial<Record<DesignSide, ArtPayload>> };
+const jsonError = (error: string, status = 400) => NextResponse.json({ error }, { status });
+const extension = (filename: string) => { const ext = filename.split(".").pop()?.toLowerCase() || "bin"; return /^[a-z0-9]{1,8}$/.test(ext) ? ext : "bin"; };
+
+export async function POST(request: Request) {
+  try {
+    const payload = await request.json() as Payload; const supabase = createSupabaseAdmin();
+    const { data: shop } = await supabase.from("shops").select("*").eq("slug", payload.shopSlug).eq("active", true).single();
+    if (!shop) return jsonError("Shop not found.", 404);
+    const settings = normalizeShopSettings(shop.settings);
+    const { data: rows } = await supabase.from("catalog_products").select("id,slug,name,description,active,configuration").eq("shop_id", shop.id).eq("active", true);
+    const products: CatalogProduct[] = (rows || []).map((row: any) => ({ ...row, configuration: normalizeConfiguration(row.configuration) }));
+    if (!products.length) products.push(legacyProductFromSettings(settings));
+    const product = products.find((item) => item.id === payload.configuration.productId); if (!product) return jsonError("Product is unavailable.");
+    const pkg = product.configuration.packages.find((item) => item.id === payload.configuration.packageId);
+    const color = product.configuration.colors.find((item) => item.id === payload.configuration.colorId && item.active !== false);
+    if (!pkg || !color) return jsonError("Selected product option is unavailable.");
+    if (!product.configuration.customization.designModes.includes(payload.configuration.designMode)) return jsonError("That design placement is unavailable.");
+    const required: DesignSide[] = payload.configuration.designMode === "front-back" ? ["front", "back"] : [payload.configuration.designMode];
+    for (const side of required) { const art = payload.artworks?.[side]; if (!art) return jsonError(`Upload ${side} artwork.`); if (art.sizeBytes <= 0 || art.sizeBytes > settings.upload.maxBytes) return jsonError(`${side} artwork is too large.`); if (!settings.upload.acceptedTypes.includes(art.mimeType)) return jsonError(`${side} artwork type is not accepted.`); }
+    const sizes = Array.isArray(payload.configuration.sizes) ? payload.configuration.sizes : []; const total = sizes.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
+    if (total !== pkg.quantity) return jsonError(`Size quantities must total ${pkg.quantity}.`);
+    if (!payload.customer?.name?.trim() || !payload.customer?.email?.trim()) return jsonError("Customer name and email are required.");
+
+    const supplierItems: any[] = []; const supplier = product.configuration.supplier;
+    if (supplier) for (const size of sizes.filter((item) => item.quantity > 0)) { const variant = supplier.variants.find((item) => item.colorName === color.name && item.sizeName === size.size && item.active !== false); if (!variant) return jsonError(`${color.name} / ${size.size} is unavailable from ${supplier.supplierName || supplier.provider}.`); supplierItems.push({ provider: supplier.provider, supplierName: supplier.supplierName || supplier.provider, sourceMode: supplier.sourceMode || "live", sku: variant.sku, skuId: variant.skuId, gtin: variant.gtin, brandName: supplier.brandName, styleName: supplier.styleName, colorName: variant.colorName, sizeName: variant.sizeName, quantity: Number(size.quantity), unitCost: variant.customerPrice, inventorySnapshot: variant.quantity }); }
+
+    const displayId = makeDesignDisplayId(); const sideData: Record<string, any> = {}; const uploads: Record<string, any> = {};
+    for (const side of required) { const art = payload.artworks[side]!; const originalPath = `${shop.id}/${displayId}/${side}-original.${extension(art.filename)}`; const previewPath = `${shop.id}/${displayId}/${side}-preview.png`; sideData[side] = { originalPath, previewPath, filename: art.filename, mimeType: art.mimeType, placement: art.placement, garmentImageUrl: side === "front" ? color.frontImageUrl : color.backImageUrl }; }
+    const primary = sideData[required[0]];
+    const expectedSurcharge = payload.configuration.designMode === "front" ? product.configuration.customization.frontSurcharge : payload.configuration.designMode === "back" ? product.configuration.customization.backSurcharge : product.configuration.customization.twoSideSurcharge;
+    const finalPrice = Number(pkg.price) + Number(expectedSurcharge);
+    const { data: design, error } = await supabase.from("designs").insert({ organization_id: shop.organization_id, shop_id: shop.id, display_id: displayId, status: "draft", customer_name: payload.customer.name.trim(), customer_email: payload.customer.email.trim().toLowerCase(), customer_phone: payload.customer.phone?.trim() || null, catalog_product_id: product.id === "legacy-product" ? null : product.id, product_name: product.name, package_id: pkg.id, package_label: pkg.label, package_quantity: pkg.quantity, package_price: finalPrice, shirt_color_id: color.id, shirt_color_name: color.name, print_location: payload.configuration.designMode, size_breakdown: sizes, supplier_items: supplierItems, customer_notes: payload.configuration.notes?.trim() || null, original_artwork_path: primary.originalPath, preview_path: primary.previewPath, original_filename: primary.filename, original_mime_type: primary.mimeType, checkout_url: pkg.checkoutUrl || `${new URL(request.url).origin}/s/${shop.slug}`, design_sides: sideData, design_configuration: { designMode: payload.configuration.designMode, decorationMethod: payload.configuration.decorationMethod, surcharge: expectedSurcharge, basePrice: pkg.price, totalPrice: finalPrice, productId: product.id, colorId: color.id } }).select("id,display_id").single();
+    if (error || !design) return jsonError(error?.message || "Unable to create design session.", 500);
+    for (const side of required) { const data = sideData[side]; const original = await supabase.storage.from("artwork").createSignedUploadUrl(data.originalPath); const preview = await supabase.storage.from("previews").createSignedUploadUrl(data.previewPath); if (original.error || preview.error) return jsonError("Unable to prepare secure uploads.", 500); uploads[side] = { original: { bucket: "artwork", path: data.originalPath, token: original.data.token }, preview: { bucket: "previews", path: data.previewPath, token: preview.data.token } }; }
+    return NextResponse.json({ designId: design.id, displayId: design.display_id, uploads });
+  } catch (error) { return jsonError(error instanceof Error ? error.message : "Unexpected error.", 500); }
+}
