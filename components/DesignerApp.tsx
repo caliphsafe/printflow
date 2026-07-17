@@ -79,7 +79,7 @@ export default function DesignerApp({ shop }: Props) {
     startArt: ArtworkState;
   } | null>(null);
 
-  const [selectedColor, setSelectedColor] = useState<ShirtColor>(initialProduct.configuration.colors[0]);
+  const [selectedColor, setSelectedColor] = useState<ShirtColor>(initialProduct.configuration.colors[0] || { id: "default", name: "Default", hex: "#777777" });
   const [selectedPackage, setSelectedPackage] = useState<ProductPackage>(initialProduct.configuration.packages[0]);
   const [printLocation, setPrintLocation] = useState(initialProduct.configuration.printLocations[0]);
   const [sizes, setSizes] = useState<SizeQuantity[]>(initialProduct.configuration.sizes.map((size) => ({ size, quantity: 0 })));
@@ -107,7 +107,7 @@ export default function DesignerApp({ shop }: Props) {
 
   function selectProduct(product: CatalogProduct) {
     setSelectedProductId(product.id);
-    setSelectedColor(product.configuration.colors[0]);
+    setSelectedColor(product.configuration.colors[0] || { id: "default", name: "Default", hex: "#777777" });
     setSelectedPackage(product.configuration.packages[0]);
     setPrintLocation(product.configuration.printLocations[0]);
     setSizes(product.configuration.sizes.map((size) => ({ size, quantity: 0 })));
@@ -495,6 +495,7 @@ export default function DesignerApp({ shop }: Props) {
               <span>Live preview</span>
               <span>{printLocation}</span>
             </div>
+            {selectedProduct.configuration.supplier && <div className="supplier-product-note">{selectedProduct.configuration.supplier.brandName} {selectedProduct.configuration.supplier.styleName} · live supplier blank</div>}
 
             <div className="shirt-stage">
               <svg
@@ -514,19 +515,21 @@ export default function DesignerApp({ shop }: Props) {
                   ry="32"
                   fill="rgba(0,0,0,.10)"
                 />
-                <path
-                  d={shirtPath()}
-                  fill={selectedColor.hex}
-                  stroke="rgba(0,0,0,.18)"
-                  strokeWidth="4"
-                />
-                <path
-                  d="M319 118 Q400 200 481 118"
-                  fill="none"
-                  stroke="rgba(0,0,0,.25)"
-                  strokeWidth="18"
-                  strokeLinecap="round"
-                />
+                {selectedColor.frontImageUrl ? (
+                  <image
+                    href={`/api/public/supplier-image?url=${encodeURIComponent(selectedColor.frontImageUrl)}`}
+                    x="115"
+                    y="55"
+                    width="570"
+                    height="750"
+                    preserveAspectRatio="xMidYMid meet"
+                  />
+                ) : (
+                  <>
+                    <path d={shirtPath()} fill={selectedColor.hex} stroke="rgba(0,0,0,.18)" strokeWidth="4" />
+                    <path d="M319 118 Q400 200 481 118" fill="none" stroke="rgba(0,0,0,.25)" strokeWidth="18" strokeLinecap="round" />
+                  </>
+                )}
                 <rect
                   data-editor-only="true"
                   x={PRINT_AREA.x}

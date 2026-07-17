@@ -1,66 +1,40 @@
-import type { CatalogProduct, ProductConfiguration, ShopSettings } from "@/lib/types";
+import type { CatalogProduct, ProductConfiguration, ShopSettings, SupplierVariant } from "@/lib/types";
 
 export const DEFAULT_CONFIGURATION: ProductConfiguration = {
   sizes: ["S", "M", "L", "XL", "2XL"],
-  colors: [
-    { id: "black", name: "Black", hex: "#171717" },
-    { id: "white", name: "White", hex: "#f7f7f2" }
-  ],
+  colors: [{ id: "black", name: "Black", hex: "#171717" }, { id: "white", name: "White", hex: "#f7f7f2" }],
   printLocations: ["Front Center"],
-  packages: [
-    {
-      id: "12-shirts",
-      label: "12 shirts",
-      quantity: 12,
-      price: 179,
-      checkoutUrl: ""
-    }
-  ]
+  packages: [{ id: "12-shirts", label: "12 shirts", quantity: 12, price: 179, checkoutUrl: "" }]
 };
 
 export function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "") || "product";
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "product";
 }
 
 export function normalizeConfiguration(value: unknown): ProductConfiguration {
   const raw = (value ?? {}) as Partial<ProductConfiguration>;
+  const supplierRaw = raw.supplier as ProductConfiguration["supplier"] | undefined;
   return {
     sizes: Array.isArray(raw.sizes) && raw.sizes.length ? raw.sizes.map(String) : DEFAULT_CONFIGURATION.sizes,
     colors: Array.isArray(raw.colors) && raw.colors.length ? raw.colors.map((item, index) => ({
-      id: String(item?.id || `color-${index + 1}`),
-      name: String(item?.name || `Color ${index + 1}`),
-      hex: String(item?.hex || "#111111")
+      id: String(item?.id || `color-${index + 1}`), name: String(item?.name || `Color ${index + 1}`), hex: String(item?.hex || "#111111"),
+      swatchImageUrl: item?.swatchImageUrl ? String(item.swatchImageUrl) : undefined,
+      frontImageUrl: item?.frontImageUrl ? String(item.frontImageUrl) : undefined,
+      backImageUrl: item?.backImageUrl ? String(item.backImageUrl) : undefined
     })) : DEFAULT_CONFIGURATION.colors,
-    printLocations: Array.isArray(raw.printLocations) && raw.printLocations.length
-      ? raw.printLocations.map(String)
-      : DEFAULT_CONFIGURATION.printLocations,
+    printLocations: Array.isArray(raw.printLocations) && raw.printLocations.length ? raw.printLocations.map(String) : DEFAULT_CONFIGURATION.printLocations,
     packages: Array.isArray(raw.packages) && raw.packages.length ? raw.packages.map((item, index) => ({
-      id: String(item?.id || `package-${index + 1}`),
-      label: String(item?.label || `${item?.quantity || 1} shirts`),
-      quantity: Math.max(1, Number(item?.quantity || 1)),
-      price: Math.max(0, Number(item?.price || 0)),
-      checkoutUrl: String(item?.checkoutUrl || "")
+      id: String(item?.id || `package-${index + 1}`), label: String(item?.label || `${item?.quantity || 1} shirts`), quantity: Math.max(1, Number(item?.quantity || 1)), price: Math.max(0, Number(item?.price || 0)), checkoutUrl: String(item?.checkoutUrl || "")
     })) : DEFAULT_CONFIGURATION.packages,
-    mockupImageUrl: raw.mockupImageUrl ? String(raw.mockupImageUrl) : undefined
+    mockupImageUrl: raw.mockupImageUrl ? String(raw.mockupImageUrl) : undefined,
+    supplier: supplierRaw?.provider === "ss-activewear" ? {
+      provider: "ss-activewear", styleId: String(supplierRaw.styleId), brandName: String(supplierRaw.brandName), styleName: String(supplierRaw.styleName), partNumber: supplierRaw.partNumber ? String(supplierRaw.partNumber) : undefined,
+      importedAt: String(supplierRaw.importedAt || new Date().toISOString()),
+      variants: Array.isArray(supplierRaw.variants) ? supplierRaw.variants.map((item: SupplierVariant) => ({ sku: String(item.sku), skuId: item.skuId ? String(item.skuId) : undefined, gtin: item.gtin ? String(item.gtin) : undefined, colorName: String(item.colorName), sizeName: String(item.sizeName), customerPrice: Math.max(0, Number(item.customerPrice || 0)), quantity: Math.max(0, Number(item.quantity || 0)) })) : []
+    } : undefined
   };
 }
 
 export function legacyProductFromSettings(settings: ShopSettings): CatalogProduct {
-  return {
-    id: "legacy-product",
-    slug: "custom-shirts",
-    name: settings.product.name,
-    description: settings.product.description ?? null,
-    active: true,
-    configuration: normalizeConfiguration({
-      sizes: settings.sizes,
-      colors: settings.colors,
-      printLocations: settings.printLocations,
-      packages: settings.packages
-    })
-  };
+  return { id: "legacy-product", slug: "custom-shirts", name: settings.product.name, description: settings.product.description ?? null, active: true, configuration: normalizeConfiguration({ sizes: settings.sizes, colors: settings.colors, printLocations: settings.printLocations, packages: settings.packages }) };
 }
