@@ -10,22 +10,14 @@ export async function GET() {
   return NextResponse.json({ pricing: normalizePricingProfile(data?.configuration || DEFAULT_PRICING_PROFILE), updatedAt: data?.updated_at });
 }
 
-export async function PATCH(request: Request) {
+async function save(request: Request) {
   const { supabase, membership, shop, user } = await getAdminContext();
   if (!membership || !shop) return NextResponse.json({ error: "No shop configured." }, { status: 403 });
   const configuration = normalizePricingProfile(await request.json());
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from("shop_pricing_profiles")
-    .upsert(
-      {
-        organization_id: membership.organization_id,
-        shop_id: shop.id,
-        configuration,
-        updated_at: now
-      },
-      { onConflict: "shop_id" }
-    )
+    .upsert({ organization_id: membership.organization_id, shop_id: shop.id, configuration, updated_at: now }, { onConflict: "shop_id" })
     .select("configuration,updated_at")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
@@ -35,7 +27,14 @@ export async function PATCH(request: Request) {
     action: "shop.pricing.updated",
     entity_type: "shop_pricing_profile",
     entity_id: shop.id,
-    metadata: { fees: ["setup", "design_optimization"], services: configuration.decorationServices.length, addOns: configuration.addOns.length }
+    metadata: {
+      garmentMarkupPercent: configuration.garmentMarkupPercent,
+      methods: [configuration.screenPrinting.active && "screen-print", configuration.dtf.active && "dtf", configuration.embroidery.active && "embroidery"].filter(Boolean),
+      addOns: configuration.addOns.length
+    }
   });
   return NextResponse.json({ pricing: normalizePricingProfile(data.configuration), updatedAt: data.updated_at });
 }
+
+export const PATCH = save;
+export const POST = save;

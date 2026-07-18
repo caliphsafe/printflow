@@ -2,8 +2,8 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { printAreaFor, pricingTierForQuantity, tierFullUnitPrice, tierHeartUnitPrice } from "@/lib/catalog";
-import { availableAddOns, calculateResolvedOrderPricing, decorationRuleFor, resolveDesignOptimizationFee } from "@/lib/pricing-settings";
+import { printAreaFor } from "@/lib/catalog";
+import { availableAddOns, calculateResolvedOrderPricing, resolveDesignOptimizationFee } from "@/lib/pricing-settings";
 import type {
   ArtworkPlacement,
   CatalogProduct,
@@ -101,6 +101,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const [printSizes, setPrintSizes] = useState<Record<DesignSide, PrintSize>>({ front: "heart", back: "heart" });
   const [sizes, setSizes] = useState<SizeQuantity[]>(firstProduct?.configuration.sizes.map((size) => ({ size, quantity: 0 })) || []);
   const [decoration, setDecoration] = useState(firstProduct?.configuration.customization.decorationMethods[0] || "Screen Print");
+  const [inkColors, setInkColors] = useState<Record<DesignSide, number>>({ front: 1, back: 1 });
   const [front, setFront] = useState<SideState>(freshSide());
   const [back, setBack] = useState<SideState>(freshSide());
   const [customer, setCustomer] = useState({ name: "", email: "", phone: "" });
@@ -128,23 +129,20 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const totalAssigned = useMemo(() => sizes.reduce((sum, item) => sum + item.quantity, 0), [sizes]);
   const minimum = product?.configuration.customization.minimumQuantity || 12;
   const selectedPrints = {
-    front: neededSides.includes("front") ? printSizes.front : undefined,
-    back: neededSides.includes("back") ? printSizes.back : undefined
+    front: neededSides.includes("front") ? { printSize: printSizes.front, placement: front.placement, inkColors: inkColors.front } : undefined,
+    back: neededSides.includes("back") ? { printSize: printSizes.back, placement: back.placement, inkColors: inkColors.back } : undefined
   };
+  const pricingSizes = totalAssigned > 0 ? sizes : sizes.map((item, index) => ({ ...item, quantity: index === 0 ? minimum : 0 }));
   const pricing = calculateResolvedOrderPricing({
     profile: shop.pricing,
     product,
-    quantity: totalAssigned || minimum,
+    sizes: pricingSizes,
+    color,
     printSelections: selectedPrints,
     decorationMethod: decoration,
     designOptimizationRequested,
     selectedAddOnIds
   });
-  const activeTier = pricingTierForQuantity(product?.configuration.packages || [], totalAssigned || minimum);
-  const decorationRule = decorationRuleFor(shop.pricing, product, decoration);
-  const decorationMultiplier = 1 + decorationRule.percentageAdjustment / 100;
-  const heartRate = Number(((activeTier ? tierHeartUnitPrice(activeTier) : 0) * decorationMultiplier).toFixed(2));
-  const fullRate = Number(((activeTier ? tierFullUnitPrice(activeTier) : 0) * decorationMultiplier).toFixed(2));
   const customerAddOns = availableAddOns(shop.pricing, product).filter((item) => item.customerSelectable);
   const designOptimizationAmount = resolveDesignOptimizationFee(shop.pricing, product);
   const totalPrice = pricing.totalPrice;
@@ -190,6 +188,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     setPrintSizes({ front: "heart", back: "heart" });
     setSizes(next.configuration.sizes.map((size) => ({ size, quantity: 0 })));
     setDecoration(next.configuration.customization.decorationMethods[0] || "Screen Print");
+    setInkColors({ front: 1, back: 1 });
     setDesignOptimizationRequested(false);
     setSelectedAddOnIds(availableAddOns(shop.pricing, next).filter((item) => item.customerSelectable && item.selectedByDefault).map((item) => item.id));
     setFront(freshSide());
@@ -402,7 +401,8 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             colorId: color.id,
             designMode: mode,
             decorationMethod: decoration,
-            printSizes: selectedPrints,
+            printSizes: { front: selectedPrints.front?.printSize, back: selectedPrints.back?.printSize },
+            inkColors,
             sizes,
             notes,
             totalPrice,
@@ -453,7 +453,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     }
   }
 
-  if (!products.length) return <main className="designer-empty"><h1>No products are available yet.</h1></main>;
+  if (!products.length) return <main className="designer-empty production-empty"><span>PF</span><h1>This storefront is being stocked.</h1><p>The print shop has not published any products yet. Please check back shortly.</p></main>;
 
   if (completed)
     return (
@@ -477,7 +477,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   return (
     <main
       className="designer-shell modern-customer-shell"
-      style={{ "--brand": shop.settings.brand.primaryColor, "--brand-text": shop.settings.brand.textColor } as React.CSSProperties}
+      style={{ "--brand": shop.settings.brand.primaryColor, "--brand-text": shop.settings.brand.textColor, "--brand-accent": shop.settings.brand.accentColor || "#d8ff5f", "--brand-surface": shop.settings.brand.surfaceColor || "#f4f4ef" } as React.CSSProperties}
     >
       <header className="customer-header modern">
         {shop.settings.brand.logoUrl ? <img src={shop.settings.brand.logoUrl} alt={shop.name} /> : <strong>{shop.name}</strong>}
@@ -492,15 +492,26 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       {step === "products" ? (
         <section className="product-first-flow modern">
           <div className="customer-intro">
-            <p className="eyebrow">START YOUR ORDER</p>
+            <p className="customer-hero-badge">{shop.settings.customerExperience?.heroBadge || "CUSTOM APPAREL, MADE EASY"}</p>
             <h1>{shop.settings.customerExperience?.headline || "Choose your blank. Make it yours."}</h1>
             <p>{shop.settings.customerExperience?.introduction || "Select a product to see colors, print options, and live pricing."}</p>
+            <div className="customer-trust-row">{(shop.settings.customerExperience?.trustMessage || "Secure checkout · Artwork review · Order confirmation").split("·").map((item)=><span key={item}>✓ {item.trim()}</span>)}</div>
           </div>
           <div className="customer-product-grid modern">
             {products.map((item) => {
               const firstColor = item.configuration.colors.find((candidate) => candidate.active !== false) || item.configuration.colors[0];
               const min = item.configuration.customization.minimumQuantity;
-              const price = calculateResolvedOrderPricing({ profile: shop.pricing, product: item, quantity: min, printSelections: { front: "heart" }, decorationMethod: item.configuration.customization.decorationMethods[0] || "Screen Print", designOptimizationRequested: false, selectedAddOnIds: availableAddOns(shop.pricing, item).filter((addOn) => addOn.customerSelectable && addOn.selectedByDefault).map((addOn) => addOn.id) });
+              const sampleColor = firstColor || item.configuration.colors[0];
+              const price = calculateResolvedOrderPricing({
+                profile: shop.pricing,
+                product: item,
+                sizes: item.configuration.sizes.map((size, index) => ({ size, quantity: index === 0 ? min : 0 })),
+                color: sampleColor,
+                printSelections: { front: { printSize: "heart", inkColors: 1 } },
+                decorationMethod: item.configuration.customization.decorationMethods[0] || "Screen Print",
+                designOptimizationRequested: false,
+                selectedAddOnIds: availableAddOns(shop.pricing, item).filter((addOn) => addOn.customerSelectable && addOn.selectedByDefault).map((addOn) => addOn.id)
+              });
               return (
                 <button className="customer-product-card modern" key={item.id} onClick={() => chooseProduct(item)}>
                   <div className="customer-product-image">
@@ -564,7 +575,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                               <b>{printSizeLabel(value)}</b>
                               <small>{area.widthInches}″ × {area.heightInches}″ max</small>
                             </span>
-                            <em>{value === "heart" ? `$${heartRate.toFixed(2)}` : `$${fullRate.toFixed(2)}`}</em>
+                            <em>Live quote</em>
                           </label>
                         );
                       })}
@@ -585,16 +596,26 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                   ))}
               </div>
             </WizardSection>
-            <WizardSection number="4" title="Decoration">
+            <WizardSection number="4" title="Decoration method">
               <select className="modern-select" value={decoration} onChange={(event) => setDecoration(event.target.value)}>
                 {product.configuration.customization.decorationMethods.map((item) => (
                   <option key={item}>{item}</option>
                 ))}
               </select>
+              {decoration.toLowerCase().includes("screen") && (
+                <div className="ink-color-estimator">
+                  <div><strong>Estimated ink colors</strong><small>Choose the number of printed colors on each side. The shop confirms the final count during artwork review.</small></div>
+                  {neededSides.map((target) => (
+                    <label key={target}><span>{target === "front" ? "Front" : "Back"}</span><select value={inkColors[target]} onChange={(event) => setInkColors((current) => ({ ...current, [target]: Number(event.target.value) }))}>{Array.from({ length: shop.pricing.screenPrinting.maximumColors }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{count} color{count === 1 ? "" : "s"}</option>)}</select></label>
+                  ))}
+                </div>
+              )}
+              {decoration.toLowerCase().includes("dtf") && <div className="method-explainer"><b>DTF prices from the actual artwork size.</b><span>Resize your design on the garment and the live quote updates using square inches.</span></div>}
+              {decoration.toLowerCase().includes("embroider") && <div className="method-explainer"><b>Embroidery uses an estimated stitch count.</b><span>The shop confirms the final stitch count and production file during artwork review.</span></div>}
             </WizardSection>
             <WizardSection number="5" title="Order services">
               <div className="customer-service-stack">
-                {pricing.setupFee > 0 && <div className="included-fee-card"><span>Included</span><div><b>{shop.pricing.setupFee.label}</b><small>${pricing.setupFee.toFixed(2)} once per order</small></div></div>}
+                {pricing.setupFee > 0 && <div className="included-fee-card"><span>Included</span><div><b>{shop.pricing.orderSetupFee.label}</b><small>${pricing.setupFee.toFixed(2)} once per order</small></div></div>}
                 {designOptimizationAmount > 0 && <label className={designOptimizationRequested ? "service-choice selected" : "service-choice"}><input type="checkbox" checked={designOptimizationRequested} onChange={(event) => setDesignOptimizationRequested(event.target.checked)}/><span className="fake-check">✓</span><span><b>{shop.pricing.designOptimizationFee.label}</b><small>{shop.pricing.designOptimizationFee.description}</small></span><em>+${designOptimizationAmount.toFixed(2)}</em></label>}
                 {customerAddOns.map((item) => <label key={item.id} className={selectedAddOnIds.includes(item.id) ? "service-choice selected" : "service-choice"}><input type="checkbox" checked={selectedAddOnIds.includes(item.id)} onChange={(event) => setSelectedAddOnIds((current) => event.target.checked ? [...new Set([...current, item.id])] : current.filter((id) => id !== item.id))}/><span className="fake-check">✓</span><span><b>{item.name}</b><small>{item.description || (item.pricingMode === "per_item" ? "Added per garment" : "Added once per order")}</small></span><em>+${item.amount.toFixed(2)}{item.pricingMode === "per_item" ? "/ea" : ""}</em></label>)}
               </div>
@@ -732,13 +753,12 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
               <small>{totalAssigned >= minimum ? "Minimum reached" : `${minimum - totalAssigned} more needed`}</small>
             </div>
             <div className="live-price-card component-breakdown">
-              <div><span>Blank garment</span><b>${pricing.garmentUnitPrice.toFixed(2)} / shirt</b></div>
-              {neededSides.includes("front") && <div><span>Front · {printSizeLabel(printSizes.front)}</span><b>${pricing.frontPrintUnitPrice.toFixed(2)} / shirt</b></div>}
-              {neededSides.includes("back") && <div><span>Back · {printSizeLabel(printSizes.back)}</span><b>${pricing.backPrintUnitPrice.toFixed(2)} / shirt</b></div>}
-              {pricing.decorationPercentage !== 0 && <div className="adjustment"><span>{decoration} adjustment</span><b>{pricing.decorationPercentage > 0 ? "+" : ""}{pricing.decorationPercentage}%</b></div>}
-              <div className="unit"><span>Unit merchandise</span><b>${pricing.unitPrice.toFixed(2)} each</b></div>
+              <div><span>Supplier garments + {pricing.garmentMarkupPercent}% markup</span><b>${pricing.garmentSubtotal.toFixed(2)}</b></div>
+              {pricing.printLines.map((line) => <div key={line.side}><span>{line.side === "front" ? "Front" : "Back"} · {printSizeLabel(line.printSize)}{line.inkColors ? ` · ${line.inkColors} color${line.inkColors === 1 ? "" : "s"}` : ""}</span><b>${line.unitPrice.toFixed(2)} / shirt</b></div>)}
+              <div className="adjustment"><span>{pricing.discountTierLabel}</span><b>{decoration}</b></div>
+              <div className="unit"><span>Average merchandise</span><b>${pricing.averageUnitPrice.toFixed(2)} each</b></div>
               <div><span>{totalAssigned || minimum} garments</span><b>${pricing.merchandiseSubtotal.toFixed(2)}</b></div>
-              {pricing.setupFee > 0 && <div><span>{shop.pricing.setupFee.label}</span><b>${pricing.setupFee.toFixed(2)}</b></div>}
+              {pricing.setupFee > 0 && <div><span>{shop.pricing.orderSetupFee.label}</span><b>${pricing.setupFee.toFixed(2)}</b></div>}
               {pricing.designOptimizationFee > 0 && <div><span>{shop.pricing.designOptimizationFee.label}</span><b>${pricing.designOptimizationFee.toFixed(2)}</b></div>}
               {pricing.addOns.map((item) => <div key={item.id}><span>{item.name}</span><b>${item.total.toFixed(2)}</b></div>)}
               <div className="total"><span>Estimated total</span><b>${totalPrice.toFixed(2)}</b></div>
@@ -752,9 +772,10 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                 <textarea rows={3} placeholder="Order notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
               </div>
             </details>
+            {!shop.paymentReady && <div className="customer-payment-warning"><b>Checkout is temporarily unavailable.</b><span>This shop has not connected a live payment provider yet.</span></div>}
             {error && <div className="error-message">{error}</div>}
             {submissionStatus && <div className="submission-status"><i /><span>{submissionStatus}</span></div>}
-            <button className="designer-primary full modern" disabled={submitting || totalAssigned < minimum} onClick={submit}>
+            <button className="designer-primary full modern" disabled={!shop.paymentReady || submitting || totalAssigned < minimum} onClick={submit}>
               {submitting ? "Saving your order…" : `Continue · $${totalPrice.toFixed(2)}`}
             </button>
             <small className="disclaimer">{shop.settings.customerExperience?.artworkDisclaimer}</small>

@@ -354,3 +354,15 @@ alter table public.shop_pricing_profiles enable row level security;
 drop policy if exists "Members manage shop pricing" on public.shop_pricing_profiles;
 create policy "Members manage shop pricing" on public.shop_pricing_profiles for all to authenticated
 using (public.is_organization_member(organization_id)) with check (public.is_organization_member(organization_id));
+
+-- Production Launch v8 additions (fresh-install parity)
+alter table public.shops add column if not exists onboarding_state jsonb not null default '{}'::jsonb;
+alter table public.shops add column if not exists onboarding_completed_at timestamptz;
+alter table public.designs add column if not exists payment_provider text;
+alter table public.designs add column if not exists payment_reference text;
+alter table public.designs add column if not exists payment_url text;
+alter table public.designs add column if not exists payment_status text not null default 'not_started';
+alter table public.designs add column if not exists paid_amount numeric(12,2);
+alter table public.designs add column if not exists currency text not null default 'usd';
+create index if not exists designs_payment_reference_idx on public.designs(payment_provider,payment_reference);
+create index if not exists designs_payment_status_idx on public.designs(shop_id,payment_status);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { makeDesignDisplayId } from "@/lib/design-id";
-import { legacyProductFromSettings, normalizeConfiguration } from "@/lib/catalog";
+import { normalizeConfiguration } from "@/lib/catalog";
 import { DEFAULT_PRICING_PROFILE, calculateResolvedOrderPricing, normalizePricingProfile } from "@/lib/pricing-settings";
 import { normalizeShopSettings } from "@/lib/shop-settings";
 import type { CatalogProduct, DesignMode, DesignSide, PrintSize, SizeQuantity } from "@/lib/types";
@@ -24,6 +24,7 @@ type Payload = {
     designMode: DesignMode;
     decorationMethod: string;
     printSizes: Partial<Record<DesignSide, PrintSize>>;
+    inkColors?: Partial<Record<DesignSide, number>>;
     sizes: SizeQuantity[];
     notes?: string;
     totalPrice: number;
@@ -58,8 +59,7 @@ export async function POST(request: Request) {
       supabase.from("shop_pricing_profiles").select("configuration").eq("shop_id", shop.id).maybeSingle()
     ]);
     const profile = normalizePricingProfile(pricingRow?.configuration || DEFAULT_PRICING_PROFILE);
-    const products: CatalogProduct[] = (rows || []).map((row: any) => ({ ...row, configuration: normalizeConfiguration(row.configuration) }));
-    if (!products.length) products.push(legacyProductFromSettings(settings));
+    const products: CatalogProduct[] = (rows || []).map((row: any) => ({ ...row, configuration: normalizeConfiguration(row.configuration) })).filter((item) => item.configuration.supplier?.sourceMode !== "demo");
 
     const product = products.find((item) => item.id === payload.configuration.productId);
     if (!product) return jsonError("Product is unavailable.");
@@ -89,8 +89,13 @@ export async function POST(request: Request) {
     const pricing = calculateResolvedOrderPricing({
       profile,
       product,
-      quantity: total,
-      printSelections: printSizes,
+      sizes,
+      color,
+      printSelections: Object.fromEntries(required.map((side) => [side, {
+        printSize: printSizes[side]!,
+        placement: payload.artworks[side]?.placement as any,
+        inkColors: Math.max(1, Number(payload.configuration.inkColors?.[side] || 1))
+      }])),
       decorationMethod: payload.configuration.decorationMethod,
       designOptimizationRequested: payload.configuration.designOptimizationRequested === true,
       selectedAddOnIds
@@ -169,7 +174,7 @@ export async function POST(request: Request) {
         preview_path: primary.previewPath,
         original_filename: primary.filename,
         original_mime_type: primary.mimeType,
-        checkout_url: product.configuration.packages.find((item) => item.id === pricing.tierId)?.checkoutUrl || `${new URL(request.url).origin}/s/${shop.slug}`,
+        checkout_url: `${new URL(request.url).origin}/order/${displayId}/success`,
         design_sides: sideData,
         design_configuration: {
           designMode: payload.configuration.designMode,
@@ -179,6 +184,15 @@ export async function POST(request: Request) {
           quantity: total,
           pricingTierId: pricing.tierId,
           garmentUnitPrice: pricing.garmentUnitPrice,
+          garmentMarkupPercent: pricing.garmentMarkupPercent,
+          supplierGarmentCost: pricing.supplierGarmentCost,
+          garmentMarkupAmount: pricing.garmentMarkupAmount,
+          garmentSubtotal: pricing.garmentSubtotal,
+          garmentLines: pricing.garmentLines,
+          printLines: pricing.printLines,
+          printSubtotal: pricing.printSubtotal,
+          discountTierLabel: pricing.discountTierLabel,
+          inkColors: payload.configuration.inkColors || {},
           baseFrontPrintUnitPrice: pricing.baseFrontPrintUnitPrice,
           baseBackPrintUnitPrice: pricing.baseBackPrintUnitPrice,
           frontPrintUnitPrice: pricing.frontPrintUnitPrice,
@@ -186,7 +200,7 @@ export async function POST(request: Request) {
           unitPrice: pricing.unitPrice,
           merchandiseSubtotal: pricing.merchandiseSubtotal,
           setupFee: pricing.setupFee,
-          setupFeeLabel: profile.setupFee.label,
+          setupFeeLabel: profile.orderSetupFee.label,
           designOptimizationRequested: pricing.designOptimizationRequested,
           designOptimizationFee: pricing.designOptimizationFee,
           designOptimizationLabel: profile.designOptimizationFee.label,

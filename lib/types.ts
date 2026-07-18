@@ -4,6 +4,8 @@ export type DesignMode = "front" | "back" | "front-back";
 export type PrintSize = "heart" | "full";
 export type PricingMode = "order" | "per_item";
 export type OverrideMode = "inherit" | "custom" | "disabled";
+export type PaymentProvider = "stripe" | "square";
+export type DecorationMethodId = "screen-print" | "dtf" | "embroidery" | string;
 
 export type SupplierVariant = {
   sku: string;
@@ -27,8 +29,8 @@ export type ShirtColor = {
 };
 
 /**
- * ProductPackage remains the persisted quantity-tier shape for backwards compatibility.
- * price is retained as the garment subtotal at the tier threshold.
+ * Legacy quantity-tier shape retained so older product JSON keeps loading.
+ * Release v8 does not use product packages for customer pricing.
  */
 export type ProductPackage = {
   id: string;
@@ -42,10 +44,9 @@ export type ProductPackage = {
 };
 
 /**
- * x/y/width/height define the outer customer movement zone on the 800 × 800 canvas.
- * artworkWidth/artworkHeight define the largest visual print inside that movement zone.
- * defaultX/defaultY define where newly uploaded art begins.
- * widthInches/heightInches are the physical production dimensions shown to the customer.
+ * x/y/width/height define the customer movement zone on the 800 × 800 canvas.
+ * artworkWidth/artworkHeight define the largest visual print inside that zone.
+ * widthInches/heightInches are the maximum physical production dimensions.
  */
 export type PrintArea = {
   x: number;
@@ -61,11 +62,8 @@ export type PrintArea = {
   defaultY?: number;
 };
 
-export type FeeOverride = {
-  mode: OverrideMode;
-  amount?: number;
-};
-
+/** Deprecated product overrides retained only for backwards-compatible JSON. */
+export type FeeOverride = { mode: OverrideMode; amount?: number };
 export type ProductPricingOverrides = {
   setupFee: FeeOverride;
   designOptimizationFee: FeeOverride;
@@ -79,12 +77,10 @@ export type ProductCustomization = {
   designModes: DesignMode[];
   frontEnabled: boolean;
   backEnabled: boolean;
-  /** Legacy order-level fields retained only so existing products normalize safely. */
   frontSurcharge: number;
   backSurcharge: number;
   twoSideSurcharge: number;
   minimumQuantity: number;
-  /** Legacy full-print areas retained for backwards compatibility. */
   frontPrintArea: PrintArea;
   backPrintArea: PrintArea;
   frontHeartArea: PrintArea;
@@ -113,6 +109,8 @@ export type ProductConfiguration = {
   printLocations: string[];
   packages: ProductPackage[];
   mockupImageUrl?: string;
+  /** Cost basis for a manually created product. Supplier imports use variant customerPrice. */
+  manualUnitCost?: number;
   supplier?: SupplierProductConfiguration;
   customization: ProductCustomization;
 };
@@ -133,11 +131,48 @@ export type CorePricingFee = {
   amount: number;
 };
 
-export type DecorationPricingRule = {
+export type QuantityDiscountTier = {
   id: string;
-  name: string;
-  percentageAdjustment: number;
+  minQuantity: number;
+  discountPercent: number;
+};
+
+export type ScreenPrintingPricing = {
   active: boolean;
+  label: string;
+  minimumQuantity: number;
+  maximumColors: number;
+  heartBasePerItem: number;
+  fullBasePerItem: number;
+  additionalColorPerItem: number;
+  setupPerScreen: number;
+  countWhiteUnderbase: boolean;
+  additionalLocationDiscountPercent: number;
+  quantityDiscounts: QuantityDiscountTier[];
+};
+
+export type DtfPricing = {
+  active: boolean;
+  label: string;
+  minimumQuantity: number;
+  ratePerSquareInch: number;
+  pressFeePerLocation: number;
+  minimumPerLocation: number;
+  setupFee: number;
+  quantityDiscounts: QuantityDiscountTier[];
+};
+
+export type EmbroideryPricing = {
+  active: boolean;
+  label: string;
+  minimumQuantity: number;
+  ratePerThousandStitches: number;
+  minimumPerLocation: number;
+  setupPerLocation: number;
+  digitizingFee: number;
+  heartEstimatedStitches: number;
+  fullEstimatedStitches: number;
+  quantityDiscounts: QuantityDiscountTier[];
 };
 
 export type PricingAddOn = {
@@ -151,16 +186,35 @@ export type PricingAddOn = {
   selectedByDefault: boolean;
 };
 
+/** Deprecated v6 rule retained for old imports; no longer used by the engine. */
+export type DecorationPricingRule = {
+  id: string;
+  name: string;
+  percentageAdjustment: number;
+  active: boolean;
+};
+
 export type ShopPricingProfile = {
-  setupFee: CorePricingFee;
+  currency: string;
+  garmentMarkupPercent: number;
+  orderSetupFee: CorePricingFee;
   designOptimizationFee: CorePricingFee;
-  decorationServices: DecorationPricingRule[];
+  screenPrinting: ScreenPrintingPricing;
+  dtf: DtfPricing;
+  embroidery: EmbroideryPricing;
   addOns: PricingAddOn[];
 };
 
 export type ShopSettings = {
-  brand: { primaryColor: string; textColor: string; logoUrl?: string };
+  brand: {
+    primaryColor: string;
+    textColor: string;
+    logoUrl?: string;
+    accentColor?: string;
+    surfaceColor?: string;
+  };
   business?: { contactEmail?: string; phone?: string; address?: string };
+  payment?: { provider?: PaymentProvider };
   customerExperience?: {
     headline?: string;
     introduction?: string;
@@ -168,6 +222,8 @@ export type ShopSettings = {
     turnaroundTime?: string;
     artworkDisclaimer?: string;
     confirmationMessage?: string;
+    trustMessage?: string;
+    heroBadge?: string;
   };
   product: { name: string; description?: string };
   sizes: string[];
@@ -184,7 +240,9 @@ export type PublicShop = {
   settings: ShopSettings;
   pricing: ShopPricingProfile;
   products: CatalogProduct[];
+  paymentReady?: boolean;
 };
+
 export type SizeQuantity = { size: string; quantity: number };
 export type ArtworkPlacement = { x: number; y: number; width: number; height: number; rotation?: number };
 
@@ -196,22 +254,57 @@ export type SelectedPricingAddOn = {
   total: number;
 };
 
+export type GarmentPricingLine = {
+  size: string;
+  quantity: number;
+  supplierUnitCost: number;
+  customerUnitPrice: number;
+  subtotal: number;
+};
+
+export type PrintPricingLine = {
+  side: DesignSide;
+  printSize: PrintSize;
+  method: DecorationMethodId;
+  quantity: number;
+  inkColors?: number;
+  widthInches?: number;
+  heightInches?: number;
+  squareInches?: number;
+  estimatedStitches?: number;
+  baseUnitPrice: number;
+  discountPercent: number;
+  unitPrice: number;
+  subtotal: number;
+};
+
 export type ResolvedOrderPricing = {
   tierId?: string;
   quantity: number;
-  garmentUnitPrice: number;
-  baseFrontPrintUnitPrice: number;
-  baseBackPrintUnitPrice: number;
+  currency: string;
+  garmentMarkupPercent: number;
+  garmentLines: GarmentPricingLine[];
+  supplierGarmentCost: number;
+  garmentMarkupAmount: number;
+  garmentSubtotal: number;
   decorationMethod: string;
-  decorationPercentage: number;
-  frontPrintUnitPrice: number;
-  backPrintUnitPrice: number;
-  unitPrice: number;
-  merchandiseSubtotal: number;
+  discountTierLabel: string;
+  printLines: PrintPricingLine[];
+  printSubtotal: number;
   setupFee: number;
   designOptimizationRequested: boolean;
   designOptimizationFee: number;
   addOns: SelectedPricingAddOn[];
   addOnTotal: number;
+  averageUnitPrice: number;
+  merchandiseSubtotal: number;
   totalPrice: number;
+  /** Legacy fields retained for existing order-detail rendering. */
+  garmentUnitPrice: number;
+  baseFrontPrintUnitPrice: number;
+  baseBackPrintUnitPrice: number;
+  decorationPercentage: number;
+  frontPrintUnitPrice: number;
+  backPrintUnitPrice: number;
+  unitPrice: number;
 };

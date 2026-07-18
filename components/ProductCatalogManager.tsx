@@ -8,23 +8,17 @@ import type {
   PrintArea,
   PrintSize,
   ProductConfiguration,
-  ProductPackage,
-  ProductPricingOverrides,
   ShirtColor,
   ShopPricingProfile
 } from "@/lib/types";
 import {
   DEFAULT_CONFIGURATION,
   normalizePrintArea,
-  pricingForPrintOrder,
-  slugify,
-  tierFullUnitPrice,
-  tierGarmentUnitPrice,
-  tierHeartUnitPrice
+  slugify
 } from "@/lib/catalog";
 
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
-const TABS = ["Basics", "Options", "Colors", "Print zones", "Pricing"] as const;
+const TABS = ["Basics", "Options", "Colors", "Print zones", "Cost basis"] as const;
 type Tab = (typeof TABS)[number];
 type UploadState = { busy: boolean; error?: string; success?: string };
 type ZoneKey = "frontHeartArea" | "frontFullArea" | "backHeartArea" | "backFullArea";
@@ -389,34 +383,37 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile 
                 </Panel>
               )}
 
-              {tab === "Pricing" && (
+              {tab === "Cost basis" && (
                 <>
                   <Panel
-                    title="Global fees & product overrides"
-                    description="This product inherits the shop-wide setup, design optimization, decoration, and add-on rules unless you override them here."
+                    title="Garment cost source"
+                    description="Customer pricing is no longer configured per product. PrintFlow uses the exact supplier cost for the selected color and size, then applies the global garment markup and production method rules."
                   >
-                    <ProductPricingOverridesEditor
-                      profile={pricingProfile}
-                      decorationMethods={draft.configuration.customization.decorationMethods}
-                      value={draft.configuration.customization.pricingOverrides}
-                      onChange={(pricingOverrides) => updateCustomization({ pricingOverrides })}
-                    />
+                    <div className="product-cost-source">
+                      {draft.configuration.supplier ? (
+                        <>
+                          <div><span>Supplier</span><strong>{draft.configuration.supplier.supplierName || draft.configuration.supplier.provider}</strong></div>
+                          <div><span>Style</span><strong>{draft.configuration.supplier.brandName} {draft.configuration.supplier.styleName}</strong></div>
+                          <div><span>Live variants</span><strong>{draft.configuration.supplier.variants.filter((item) => item.active !== false).length}</strong></div>
+                          <div><span>Shop garment markup</span><strong>{pricingProfile.garmentMarkupPercent}%</strong></div>
+                        </>
+                      ) : (
+                        <label className="manual-cost-field">
+                          <span>Manual blank cost per item</span>
+                          <div className="money-input"><span>$</span><input type="text" inputMode="decimal" value={draft.configuration.manualUnitCost || 0} onChange={(event) => updateConfiguration({ manualUnitCost: Math.max(0, Number(event.target.value) || 0) })}/></div>
+                          <small>This is the shop's cost, not the customer price. The global {pricingProfile.garmentMarkupPercent}% markup is added automatically.</small>
+                        </label>
+                      )}
+                    </div>
                   </Panel>
                   <Panel
-                    title="Per-shirt pricing formula"
-                    description="Every unit is calculated as blank garment + front print + back print. A side only adds cost when the customer prints on it."
+                    title="Global pricing controls this product"
+                    description="Screen printing, DTF, embroidery, setup, design optimization, quantity breaks, and add-ons are managed once for the entire shop."
                   >
-                    <PricingFormulaExample tiers={draft.configuration.packages} minimum={draft.configuration.customization.minimumQuantity} />
-                  </Panel>
-                  <Panel
-                    title="Quantity pricing tiers"
-                    description="Set the blank cost and both print costs per shirt at each quantity threshold. PrintFlow always applies the best eligible tier."
-                  >
-                    <ComponentTierEditor
-                      values={draft.configuration.packages}
-                      minimum={draft.configuration.customization.minimumQuantity}
-                      onChange={(packages) => updateConfiguration({ packages })}
-                    />
+                    <div className="global-pricing-callout">
+                      <div><span>$</span><div><strong>No duplicated product price tables</strong><p>Update production rates once and every active product immediately uses the same pricing logic while retaining its own supplier cost.</p></div></div>
+                      <a className="secondary-button" href="/dashboard/pricing">Open production pricing →</a>
+                    </div>
                   </Panel>
                 </>
               )}
@@ -946,210 +943,4 @@ function MeasurementInput({ label, value, min, max, onCommit }: { label: string;
       </div>
     </label>
   );
-}
-
-function PricingFormulaExample({ tiers, minimum }: { tiers: ProductPackage[]; minimum: number }) {
-  const example = pricingForPrintOrder(tiers, minimum, { front: "heart", back: "full" });
-  return (
-    <div className="pricing-formula-example">
-      <div className="formula-components">
-        <span><small>Blank garment</small><b>${example.garmentUnitPrice.toFixed(2)}</b></span>
-        <i>+</i>
-        <span><small>Front heart print</small><b>${example.frontPrintUnitPrice.toFixed(2)}</b></span>
-        <i>+</i>
-        <span><small>Back full print</small><b>${example.backPrintUnitPrice.toFixed(2)}</b></span>
-        <i>=</i>
-        <span className="result"><small>Unit price</small><b>${example.unitPrice.toFixed(2)}</b></span>
-      </div>
-      <p>
-        Example at {minimum} items: {minimum} × ${example.unitPrice.toFixed(2)} = <strong>${example.totalPrice.toFixed(2)}</strong>. Front and back can each independently use Heart Size or Full Size.
-      </p>
-    </div>
-  );
-}
-
-function DecimalMoneyInput({ value, onChange, ariaLabel }: { value: number; onChange: (value: number) => void; ariaLabel: string }) {
-  const [text, setText] = useState(Number(value || 0).toFixed(2));
-  useEffect(() => setText(Number(value || 0).toFixed(2)), [value]);
-  function commit() {
-    const next = Math.max(0, Number(text || 0));
-    setText(next.toFixed(2));
-    onChange(next);
-  }
-  return (
-    <div className="input-prefix component-money-input">
-      <span>$</span>
-      <input
-        aria-label={ariaLabel}
-        type="text"
-        inputMode="decimal"
-        value={text}
-        onChange={(event) => setText(event.target.value.replace(/[^0-9.]/g, ""))}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-        }}
-      />
-    </div>
-  );
-}
-
-function ComponentTierEditor({ values, minimum, onChange }: { values: ProductPackage[]; minimum: number; onChange: (values: ProductPackage[]) => void }) {
-  function update(index: number, next: Partial<ProductPackage>) {
-    onChange(
-      values
-        .map((item, itemIndex) => {
-          if (itemIndex !== index) return item;
-          const merged = { ...item, ...next };
-          const garmentUnitPrice = Math.max(0, Number(merged.garmentUnitPrice ?? tierGarmentUnitPrice(merged)));
-          return {
-            ...merged,
-            garmentUnitPrice,
-            heartPrintUnitPrice: Math.max(0, Number(merged.heartPrintUnitPrice ?? 0)),
-            fullPrintUnitPrice: Math.max(0, Number(merged.fullPrintUnitPrice ?? 0)),
-            price: Number((garmentUnitPrice * merged.quantity).toFixed(2)),
-            label: `${merged.quantity}+`
-          };
-        })
-        .sort((a, b) => a.quantity - b.quantity)
-    );
-  }
-
-  return (
-    <div className="component-tier-editor">
-      {values.map((tier, index) => {
-        const combo = tierGarmentUnitPrice(tier) + tierHeartUnitPrice(tier) + tierFullUnitPrice(tier);
-        return (
-          <article className="component-tier-card" key={tier.id}>
-            <header>
-              <div>
-                <span>Quantity tier</span>
-                <strong>{tier.quantity}+ items</strong>
-              </div>
-              <button className="icon-delete" aria-label={`Delete ${tier.quantity}+ tier`} onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))}>×</button>
-            </header>
-            <div className="component-tier-fields">
-              <label>
-                <span>Starts at</span>
-                <div className="input-suffix">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={tier.quantity}
-                    onChange={(event) => update(index, { quantity: Math.max(minimum, Number(event.target.value.replace(/\D/g, "") || minimum)) })}
-                  />
-                  <span>items</span>
-                </div>
-              </label>
-              <label>
-                <span>Blank garment / shirt</span>
-                <DecimalMoneyInput value={tierGarmentUnitPrice(tier)} ariaLabel="Blank garment cost" onChange={(garmentUnitPrice) => update(index, { garmentUnitPrice })} />
-              </label>
-              <label>
-                <span>Heart print / side</span>
-                <DecimalMoneyInput value={tierHeartUnitPrice(tier)} ariaLabel="Heart print cost" onChange={(heartPrintUnitPrice) => update(index, { heartPrintUnitPrice })} />
-              </label>
-              <label>
-                <span>Full print / side</span>
-                <DecimalMoneyInput value={tierFullUnitPrice(tier)} ariaLabel="Full print cost" onChange={(fullPrintUnitPrice) => update(index, { fullPrintUnitPrice })} />
-              </label>
-            </div>
-            <div className="tier-formula-strip">
-              <span>Heart front + full back</span>
-              <b>${tierGarmentUnitPrice(tier).toFixed(2)} + ${tierHeartUnitPrice(tier).toFixed(2)} + ${tierFullUnitPrice(tier).toFixed(2)} = ${combo.toFixed(2)} each</b>
-            </div>
-            <details>
-              <summary>Checkout destination</summary>
-              <input placeholder="Optional checkout URL" value={tier.checkoutUrl || ""} onChange={(event) => update(index, { checkoutUrl: event.target.value })} />
-            </details>
-          </article>
-        );
-      })}
-      <button
-        className="add-outline-button"
-        onClick={() => {
-          const last = values.at(-1);
-          const quantity = Math.max(minimum, (last?.quantity || minimum) + 12);
-          onChange([
-            ...values,
-            {
-              id: `tier-${Date.now()}`,
-              label: `${quantity}+`,
-              quantity,
-              price: Number((quantity * (last ? tierGarmentUnitPrice(last) : 3)).toFixed(2)),
-              checkoutUrl: last?.checkoutUrl || "",
-              garmentUnitPrice: last ? tierGarmentUnitPrice(last) : 3,
-              heartPrintUnitPrice: last ? tierHeartUnitPrice(last) : 3,
-              fullPrintUnitPrice: last ? tierFullUnitPrice(last) : 5
-            }
-          ]);
-        }}
-      >
-        + Add quantity tier
-      </button>
-    </div>
-  );
-}
-
-function ProductPricingOverridesEditor({
-  profile,
-  decorationMethods,
-  value,
-  onChange
-}: {
-  profile: ShopPricingProfile;
-  decorationMethods: string[];
-  value: ProductPricingOverrides;
-  onChange: (value: ProductPricingOverrides) => void;
-}) {
-  function patchFee(key: "setupFee" | "designOptimizationFee", next: Partial<ProductPricingOverrides["setupFee"]>) {
-    onChange({ ...value, [key]: { ...value[key], ...next } });
-  }
-  function serviceId(name: string) {
-    return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  }
-  return <div className="product-pricing-overrides">
-    <div className="override-fee-grid">
-      <OverrideFeeCard
-        title="Order setup"
-        globalAmount={profile.setupFee.enabled ? profile.setupFee.amount : 0}
-        value={value.setupFee}
-        onChange={(next) => patchFee("setupFee", next)}
-      />
-      <OverrideFeeCard
-        title="Design optimization"
-        globalAmount={profile.designOptimizationFee.enabled ? profile.designOptimizationFee.amount : 0}
-        value={value.designOptimizationFee}
-        onChange={(next) => patchFee("designOptimizationFee", next)}
-      />
-    </div>
-    <div className="product-service-overrides">
-      <div><strong>Decoration percentage overrides</strong><small>Leave a field blank to inherit the global service percentage.</small></div>
-      {decorationMethods.map((method) => {
-        const id = serviceId(method);
-        const global = profile.decorationServices.find((item) => item.id === id || item.name.toLowerCase() === method.toLowerCase());
-        const current = value.decorationAdjustments[id];
-        return <label key={method}>
-          <span><b>{method}</b><small>Global: {global?.percentageAdjustment || 0}%</small></span>
-          <div className="input-suffix"><input type="text" inputMode="decimal" placeholder="Inherit" value={current ?? ""} onChange={(event) => onChange({ ...value, decorationAdjustments: { ...value.decorationAdjustments, [id]: event.target.value === "" ? null : Number(event.target.value) || 0 } })}/><span>%</span></div>
-        </label>;
-      })}
-    </div>
-    {profile.addOns.length > 0 && <div className="product-addon-overrides">
-      <div><strong>Add-on availability</strong><small>Use global behavior, force an add-on on, or hide it for this product.</small></div>
-      {profile.addOns.map((item) => <label key={item.id}><span><b>{item.name}</b><small>${item.amount.toFixed(2)} {item.pricingMode === "per_item" ? "per garment" : "per order"}</small></span><select value={value.addOnModes[item.id] || "inherit"} onChange={(event) => onChange({ ...value, addOnModes: { ...value.addOnModes, [item.id]: event.target.value as "inherit" | "enabled" | "disabled" } })}><option value="inherit">Use global setting</option><option value="enabled">Always available</option><option value="disabled">Hidden for product</option></select></label>)}
-    </div>}
-  </div>;
-}
-
-function OverrideFeeCard({ title, globalAmount, value, onChange }: { title: string; globalAmount: number; value: ProductPricingOverrides["setupFee"]; onChange: (value: Partial<ProductPricingOverrides["setupFee"]>) => void }) {
-  return <article className="override-fee-card">
-    <div><strong>{title}</strong><small>Global default: ${globalAmount.toFixed(2)}</small></div>
-    <select value={value.mode} onChange={(event) => onChange({ mode: event.target.value as ProductPricingOverrides["setupFee"]["mode"] })}>
-      <option value="inherit">Use global default</option>
-      <option value="custom">Use custom amount</option>
-      <option value="disabled">Do not charge</option>
-    </select>
-    {value.mode === "custom" && <DecimalMoneyInput value={Number(value.amount || 0)} ariaLabel={`${title} custom amount`} onChange={(amount) => onChange({ amount })}/>} 
-  </article>;
 }

@@ -10,6 +10,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const { organization, shop } = await getAdminContext();
+  if (!organization || !shop) redirect("/onboarding");
 
   return (
     <div className="admin-shell">

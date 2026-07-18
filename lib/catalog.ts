@@ -199,6 +199,7 @@ export const DEFAULT_CONFIGURATION: ProductConfiguration = {
     { id: "white", name: "White", hex: "#f7f7f2" }
   ],
   printLocations: ["Front", "Back"],
+  manualUnitCost: 3,
   packages: [
     {
       id: "12-plus",
@@ -233,7 +234,7 @@ export const DEFAULT_CONFIGURATION: ProductConfiguration = {
   ],
   customization: {
     category: "T-Shirts",
-    decorationMethods: ["Screen Print"],
+    decorationMethods: ["Screen Print", "DTF", "Embroidery"],
     designModes: ["front", "back", "front-back"],
     frontEnabled: true,
     backEnabled: true,
@@ -299,10 +300,11 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
           .sort((a, b) => a.quantity - b.quantity)
       : DEFAULT_CONFIGURATION.packages,
     mockupImageUrl: raw.mockupImageUrl ? String(raw.mockupImageUrl) : undefined,
+    manualUnitCost: Math.max(0, Number(raw.manualUnitCost ?? 3)),
     customization: {
       category: String(custom.category || "T-Shirts"),
       decorationMethods:
-        Array.isArray(custom.decorationMethods) && custom.decorationMethods.length ? custom.decorationMethods.map(String) : ["Screen Print"],
+        Array.isArray(custom.decorationMethods) && custom.decorationMethods.length ? custom.decorationMethods.map(String) : ["Screen Print", "DTF", "Embroidery"],
       designModes: Array.isArray(custom.designModes) && custom.designModes.length ? custom.designModes : ["front", "back", "front-back"],
       frontEnabled: custom.frontEnabled !== false,
       backEnabled: custom.backEnabled !== false,

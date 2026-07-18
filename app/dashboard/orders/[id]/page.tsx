@@ -57,6 +57,11 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const config = o.design_configuration || {};
   const printSizes = config.printSizes || {};
   const addOns = Array.isArray(config.addOns) ? config.addOns : [];
+  const garmentSubtotal = Number(config.garmentSubtotal || 0);
+  const supplierGarmentCost = Number(config.supplierGarmentCost || 0);
+  const garmentMarkupAmount = Number(config.garmentMarkupAmount || 0);
+  const printSubtotal = Number(config.printSubtotal || 0);
+  const printLines = Array.isArray(config.printLines) ? config.printLines : [];
   const merchandiseSubtotal = Number(config.merchandiseSubtotal ?? Number(config.unitPrice || 0) * Number(o.package_quantity || 0));
   const setupFee = Number(config.setupFee || 0);
   const designFee = Number(config.designOptimizationFee || 0);
@@ -74,6 +79,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       <div><span>Color</span><strong>{o.shirt_color_name}</strong></div>
       <div><span>Decoration</span><strong>{config.decorationMethod || "—"}</strong></div>
       <div><span>Design</span><strong>{title(config.designMode || o.print_location)}</strong></div>
+      <div><span>Payment</span><strong>{title(o.payment_status || "not started")}{o.payment_provider ? ` · ${title(o.payment_provider)}` : ""}</strong></div>
     </section>
 
     <div className="detail-grid order-detail-grid">
@@ -91,16 +97,20 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       <section className="admin-card order-pricing-card">
         <div className="card-heading"><div><p className="section-kicker">CUSTOMER PRICING</p><h2>Verified total</h2></div><strong className="order-total-figure">${orderTotal.toFixed(2)}</strong></div>
         <div className="admin-price-breakdown">
-          <div><span>Blank garment</span><b>${Number(config.garmentUnitPrice || 0).toFixed(2)} / shirt</b></div>
-          {printSizes.front && <div><span>Front · {title(printSizes.front)}</span><b>${Number(config.frontPrintUnitPrice || 0).toFixed(2)} / shirt</b></div>}
-          {printSizes.back && <div><span>Back · {title(printSizes.back)}</span><b>${Number(config.backPrintUnitPrice || 0).toFixed(2)} / shirt</b></div>}
-          {Number(config.decorationPercentage || 0) !== 0 && <div><span>{config.decorationMethod} adjustment</span><b>{Number(config.decorationPercentage) > 0 ? "+" : ""}{Number(config.decorationPercentage)}%</b></div>}
+          <div><span>Supplier garment cost</span><b>${supplierGarmentCost.toFixed(2)}</b></div>
+          <div><span>Garment markup · {Number(config.garmentMarkupPercent || 0).toFixed(1)}%</span><b>${garmentMarkupAmount.toFixed(2)}</b></div>
+          <div className="subtotal"><span>Customer garment subtotal</span><b>${garmentSubtotal.toFixed(2)}</b></div>
+          {printLines.map((line: any) => <div key={`${line.side}-${line.printSize}`}><span>{title(line.side)} · {title(line.printSize)}{line.inkColors ? ` · ${line.inkColors} color${line.inkColors === 1 ? "" : "s"}` : ""}</span><b>${Number(line.unitPrice || 0).toFixed(2)} / shirt</b></div>)}
+          {config.discountTierLabel && <div><span>Production threshold</span><b>{config.discountTierLabel}</b></div>}
+          <div className="subtotal"><span>Print subtotal</span><b>${printSubtotal.toFixed(2)}</b></div>
           <div className="subtotal"><span>Merchandise · {o.package_quantity} items</span><b>${merchandiseSubtotal.toFixed(2)}</b></div>
           {setupFee > 0 && <div><span>{config.setupFeeLabel || "Order setup"}</span><b>${setupFee.toFixed(2)}</b></div>}
           {designFee > 0 && <div><span>{config.designOptimizationLabel || "Design optimization"}</span><b>${designFee.toFixed(2)}</b></div>}
           {addOns.map((item: any) => <div key={item.id}><span>{item.name}</span><b>${Number(item.total || 0).toFixed(2)}</b></div>)}
           {addOnTotal > 0 && <div className="subtotal"><span>Add-ons subtotal</span><b>${addOnTotal.toFixed(2)}</b></div>}
           <div className="total"><span>Customer total</span><b>${orderTotal.toFixed(2)}</b></div>
+          {o.paid_amount != null && <div className="paid-line"><span>Amount received</span><b>${Number(o.paid_amount).toFixed(2)}</b></div>}
+          {o.payment_reference && <div className="payment-reference"><span>Payment reference</span><code>{o.payment_reference}</code></div>}
         </div>
       </section>
     </div>

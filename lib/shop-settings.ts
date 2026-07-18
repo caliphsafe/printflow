@@ -19,6 +19,8 @@ export function normalizeShopSettings(input: unknown): ShopSettings {
     brand: {
       primaryColor: validHex(brand.primaryColor) ? brand.primaryColor : "#111111",
       textColor: validHex(brand.textColor) ? brand.textColor : "#ffffff",
+      accentColor: validHex(brand.accentColor) ? brand.accentColor : "#d8ff5f",
+      surfaceColor: validHex(brand.surfaceColor) ? brand.surfaceColor : "#f4f4ef",
       logoUrl: cleanOptional(brand.logoUrl)
     },
     business: {
@@ -32,8 +34,11 @@ export function normalizeShopSettings(input: unknown): ShopSettings {
       uploadInstructions: cleanOptional(experience.uploadInstructions) || "Upload a high-resolution PNG, JPG, WEBP or SVG for the best print quality.",
       turnaroundTime: cleanOptional(experience.turnaroundTime) || "Standard turnaround is confirmed by the print shop after artwork review.",
       artworkDisclaimer: cleanOptional(experience.artworkDisclaimer) || "Your preview is a placement guide. Final print size and color may be adjusted for production quality.",
-      confirmationMessage: cleanOptional(experience.confirmationMessage) || "Your design is attached and ready for checkout."
+      confirmationMessage: cleanOptional(experience.confirmationMessage) || "Your design is attached and ready for checkout.",
+      trustMessage: cleanOptional(experience.trustMessage) || "Secure checkout · Production artwork review · Order confirmation",
+      heroBadge: cleanOptional(experience.heroBadge) || "CUSTOM APPAREL, MADE EASY"
     },
+    payment: source.payment && typeof source.payment === "object" ? source.payment : {},
     product: source.product && typeof source.product === "object" ? source.product : { name: "Custom T-Shirt" },
     sizes: Array.isArray(source.sizes) ? source.sizes : [],
     colors: Array.isArray(source.colors) ? source.colors : [],

@@ -53,10 +53,14 @@ export async function POST(request: Request) {
   while ((await supabase.from("catalog_products").select("id").eq("shop_id", shop.id).eq("slug", slug).maybeSingle()).data) slug = `${baseSlug}-${suffix++}`;
   const configuration = {
     ...DEFAULT_CONFIGURATION,
-    category: String(style.category || "Apparel"),
     sizes,
     colors,
     mockupImageUrl: colors[0]?.frontImageUrl,
+    customization: {
+      ...DEFAULT_CONFIGURATION.customization,
+      category: String(style.category || "Apparel"),
+      decorationMethods: ["Screen Print", "DTF", "Embroidery"]
+    },
     supplier: {
       provider: "ss-activewear" as const,
       supplierName: "S&S Activewear",

@@ -87,6 +87,8 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
             <div className="settings-fields">
               <label><span>Primary color</span><div className="color-input-row"><input type="color" value={draft.settings.brand.primaryColor} onChange={e=>patchSettings("brand",{primaryColor:e.target.value})}/><input value={draft.settings.brand.primaryColor} onChange={e=>patchSettings("brand",{primaryColor:e.target.value})}/></div></label>
               <label><span>Button/text color</span><div className="color-input-row"><input type="color" value={draft.settings.brand.textColor} onChange={e=>patchSettings("brand",{textColor:e.target.value})}/><input value={draft.settings.brand.textColor} onChange={e=>patchSettings("brand",{textColor:e.target.value})}/></div></label>
+              <label><span>Accent color</span><div className="color-input-row"><input type="color" value={draft.settings.brand.accentColor || "#d8ff5f"} onChange={e=>patchSettings("brand",{accentColor:e.target.value})}/><input value={draft.settings.brand.accentColor || "#d8ff5f"} onChange={e=>patchSettings("brand",{accentColor:e.target.value})}/></div></label>
+              <label><span>Storefront surface</span><div className="color-input-row"><input type="color" value={draft.settings.brand.surfaceColor || "#f4f4ef"} onChange={e=>patchSettings("brand",{surfaceColor:e.target.value})}/><input value={draft.settings.brand.surfaceColor || "#f4f4ef"} onChange={e=>patchSettings("brand",{surfaceColor:e.target.value})}/></div></label>
             </div>
           </div>
         </section>
@@ -94,8 +96,10 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
         <section className="admin-card settings-editor-card">
           <div><p className="section-kicker">CUSTOMER EXPERIENCE</p><h2>Designer messaging</h2><p>Set expectations before artwork reaches production.</p></div>
           <div className="settings-fields">
+            <label><span>Hero badge</span><input value={experience.heroBadge || ""} onChange={e=>patchSettings("customerExperience",{heroBadge:e.target.value})}/></label>
             <label><span>Designer headline</span><input value={experience.headline || ""} onChange={e=>patchSettings("customerExperience",{headline:e.target.value})}/></label>
             <label><span>Introduction</span><textarea rows={3} value={experience.introduction || ""} onChange={e=>patchSettings("customerExperience",{introduction:e.target.value})}/></label>
+            <label><span>Trust message</span><input value={experience.trustMessage || ""} onChange={e=>patchSettings("customerExperience",{trustMessage:e.target.value})}/></label>
             <label><span>Artwork upload instructions</span><textarea rows={3} value={experience.uploadInstructions || ""} onChange={e=>patchSettings("customerExperience",{uploadInstructions:e.target.value})}/></label>
             <label><span>Turnaround time</span><input value={experience.turnaroundTime || ""} onChange={e=>patchSettings("customerExperience",{turnaroundTime:e.target.value})}/></label>
             <label><span>Artwork disclaimer</span><textarea rows={3} value={experience.artworkDisclaimer || ""} onChange={e=>patchSettings("customerExperience",{artworkDisclaimer:e.target.value})}/></label>
@@ -110,13 +114,13 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
       </div>
 
       <aside className="settings-preview-stack">
-        <section className="admin-card live-brand-preview" style={{"--preview-brand":draft.settings.brand.primaryColor,"--preview-text":draft.settings.brand.textColor} as CSSProperties}>
+        <section className="admin-card live-brand-preview" style={{"--preview-brand":draft.settings.brand.primaryColor,"--preview-text":draft.settings.brand.textColor,"--preview-accent":draft.settings.brand.accentColor || "#d8ff5f","--preview-surface":draft.settings.brand.surfaceColor || "#f4f4ef"} as CSSProperties}>
           <p className="section-kicker">LIVE PREVIEW</p>
           <div className="mini-designer-header">
             {draft.settings.brand.logoUrl ? <img src={draft.settings.brand.logoUrl} alt=""/> : <span className="mini-logo-mark">{draft.name.slice(0,1).toUpperCase()}</span>}
-            <h3>{experience.headline || "Design your custom shirts"}</h3>
+            <small className="mini-hero-badge">{experience.heroBadge || "CUSTOM APPAREL, MADE EASY"}</small><h3>{experience.headline || "Design your custom shirts"}</h3>
             <p>{experience.introduction}</p>
-            <button type="button">Save design & continue</button>
+            <div className="mini-trust-message">{experience.trustMessage}</div><button type="button">Start my order</button>
           </div>
         </section>
         <section className="admin-card embed-card"><p className="section-kicker">INSTALLATION</p><h2>One-line embed</h2><pre className="code-block polished-code">{embed}</pre><p className="small-muted">Shop slug: <code>{shop.slug}</code></p></section>
