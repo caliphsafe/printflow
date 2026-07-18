@@ -15,11 +15,30 @@ export function ssCredentials(row: ConnectionRow) {
   };
 }
 
+function errorMessage(data: unknown, status: number) {
+  if (typeof data === "object" && data) {
+    const record = data as Record<string, unknown>;
+    if (typeof record.message === "string" && record.message.trim()) return record.message;
+    if (Array.isArray(record.errors)) {
+      const messages = record.errors
+        .map((item) => {
+          if (!item || typeof item !== "object") return "";
+          const entry = item as Record<string, unknown>;
+          return [entry.field, entry.message].filter(Boolean).map(String).join(": ");
+        })
+        .filter(Boolean);
+      if (messages.length) return messages.join(" · ");
+    }
+  }
+  return `S&S request failed (${status}).`;
+}
+
 export async function ssRequest<T>(row: ConnectionRow, path: string, init: RequestInit = {}): Promise<T> {
   const { accountNumber, apiKey } = ssCredentials(row);
   const response = await fetch(`${BASE_URL}${path}`, {
     ...init,
     cache: "no-store",
+    signal: init.signal || AbortSignal.timeout(30000),
     headers: {
       Authorization: `Basic ${Buffer.from(`${accountNumber}:${apiKey}`).toString("base64")}`,
       Accept: "application/json",
@@ -30,10 +49,7 @@ export async function ssRequest<T>(row: ConnectionRow, path: string, init: Reque
   const text = await response.text();
   let data: unknown = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  if (!response.ok) {
-    const message = typeof data === "object" && data && "message" in data ? String((data as {message?: unknown}).message) : `S&S request failed (${response.status}).`;
-    throw new Error(message);
-  }
+  if (!response.ok) throw new Error(errorMessage(data, response.status));
   return data as T;
 }
 
@@ -50,13 +66,17 @@ export function asNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function safeImageUrl(value: unknown) {
+export function safeImageUrl(value: unknown, size: "source" | "large" | "small" = "source") {
   const text = String(value || "").trim();
   if (!text) return "";
   try {
-    const absolute = text.startsWith("Images/") || text.startsWith("/Images/")
+    let absolute = text.startsWith("Images/") || text.startsWith("/Images/")
       ? `https://www.ssactivewear.com/${text.replace(/^\//, "")}`
       : text.startsWith("//") ? `https:${text}` : text;
+    if (size !== "source") {
+      const token = size === "large" ? "_fl" : "_fs";
+      absolute = absolute.replace(/_fm(?=\.[a-z0-9]+(?:\?|$))/i, token);
+    }
     const url = new URL(absolute);
     return url.protocol === "https:" ? url.toString() : "";
   } catch { return ""; }

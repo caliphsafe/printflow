@@ -1,0 +1,2 @@
+PrintFlow S&S Live Catalog v7 requires no Supabase schema or migration changes.
+Do not rerun schema.sql or any prior migration.
