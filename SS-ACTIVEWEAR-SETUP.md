@@ -1,28 +1,33 @@
-# S&S Activewear Phase 1 setup
+# S&S Activewear — Production Setup
 
-## Credentials required
-S&S documents HTTP Basic authentication where the **username is your S&S account number** and the **password is your API key**. This is not your ordinary website password and S&S does not document an OAuth login flow.
+S&S REST authentication uses the shop’s account number and API key. PrintFlow encrypts both values with `PRINTFLOW_ENCRYPTION_KEY`.
 
-1. Sign in to your S&S Activewear customer account.
-2. Find the API / integrations area and create or copy the API key associated with your account.
-3. If the key is not visible, contact `api@ssactivewear.com` and request REST API access for your account number.
-4. In PrintFlow, open **Dashboard → Integrations → S&S Activewear**.
-5. Enter the account number and API key. PrintFlow tests them against the S&S Categories endpoint before saving.
+## Connect
 
-## Required Vercel environment variable
-Add `PRINTFLOW_ENCRYPTION_KEY` in Vercel → Project Settings → Environment Variables. Use a long random value (at least 32 characters) and enable it for Production, Preview and Development. Redeploy after adding it.
+1. Open Dashboard → Integrations → S&S Activewear.
+2. Choose Manage live connection.
+3. Enter the S&S account number and API key.
+4. PrintFlow verifies the credentials before storing them.
+5. Open Dashboard → Suppliers → Catalog to browse real products.
 
-Do not change this encryption key after shops connect S&S. Changing it makes existing encrypted supplier credentials unreadable and each shop would need to reconnect.
+## Import
 
-## Safe ordering default
-The integration defaults to **Test orders**. S&S documents that test orders are created and canceled. Keep this enabled while testing imports and order submission. A shop owner must explicitly switch to **Live wholesale orders** before PrintFlow will submit a live purchase.
+A live import preserves:
 
-## Phase 1 behavior
-- Search styles from the dashboard.
-- Import selected colors and all available size SKUs.
-- Save S&S front, back and swatch image URLs with the PrintFlow product.
-- Display the selected color's real front image in the public designer.
-- Save exact supplier SKUs and cost/inventory snapshots with the customer design.
-- Show an Order Blanks control on paid orders.
+- style, brand, category, and part number
+- selected colors
+- front and back garment images
+- size-specific SKUs and GTINs
+- account wholesale cost
+- inventory snapshot
 
-Front/back artwork editing is Phase 2. Phase 1 stores the back images now so that upgrade will not require re-importing products.
+Imported products start with Screen Print, DTF, and Embroidery enabled. Review their images, sizes, print zones, and availability before publishing.
+
+## Ordering mode
+
+The supplier connection retains a test/live order switch:
+
+- Test mode validates the order payload without purchasing blanks.
+- Live mode can create a real wholesale S&S order from a paid PrintFlow job.
+
+Keep test mode on during validation. Turn it off only after the shop has verified its shipping address, payment profile, warehouse settings, and a complete paid-order test.
