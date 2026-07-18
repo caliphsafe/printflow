@@ -9,7 +9,7 @@ export default async function OrdersPage(){
  const {data:orders}=await supabase.from('designs').select('id, display_id, customer_name, customer_email, package_label, package_price, shirt_color_name, status, created_at').eq('shop_id',shop.id).order('created_at',{ascending:false});
  const items=orders||[];
  return <>
-  <header className="admin-header"><div><p className="eyebrow">ORDER MANAGEMENT</p><h1>Design submissions</h1><p>Track every saved design from customer upload through delivery.</p></div><a className="secondary-button" href={`/s/${shop.slug}`} target="_blank" rel="noreferrer">Create test order ↗</a></header>
+  <header className="admin-header"><div><p className="eyebrow">ORDER MANAGEMENT</p><h1>Design submissions</h1><p>Track every saved design from customer upload through delivery.</p></div><a className="secondary-button" href="/preview/storefront" target="_blank" rel="noreferrer">Preview order flow ↗</a></header>
   <section className="order-summary-strip"><div><strong>{items.length}</strong><span>Total</span></div><div><strong>{items.filter(o=>o.status==='awaiting_payment').length}</strong><span>Awaiting payment</span></div><div><strong>{items.filter(o=>o.status==='paid').length}</strong><span>Paid</span></div><div><strong>{items.filter(o=>o.status==='delivered').length}</strong><span>Delivered</span></div></section>
   <section className="admin-card orders-page-card">
    <div className="card-heading"><div><p className="section-kicker">ALL ORDERS</p><h2>Customer designs</h2></div><span className="table-count">{items.length} records</span></div>

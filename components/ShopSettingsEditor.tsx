@@ -61,12 +61,16 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
   }
 
   return <>
-    <header className="admin-header"><div><p className="eyebrow">SHOP SETUP</p><h1>Brand your storefront</h1><p>Control how customers experience your embedded designer without editing database JSON.</p></div><a className="secondary-button" href={`/s/${shop.slug}`} target="_blank" rel="noreferrer">Preview shop ↗</a></header>
+    <header className="admin-header"><div><p className="eyebrow">SHOP SETUP</p><h1>Brand your storefront</h1><p>Control how customers experience your public order page without editing code.</p></div><div className="admin-header-actions"><a className="secondary-button" href="/preview/storefront" target="_blank" rel="noreferrer">Preview storefront ↗</a>{shop.active && <a className="ghost-button" href={`/s/${shop.slug}`} target="_blank" rel="noreferrer">Open live storefront ↗</a>}</div></header>
 
     <div className="settings-editor-layout">
       <div className="settings-form-stack">
+        <section className={draft.active ? "setup-guidance-card ready" : "setup-guidance-card"}>
+          <div><span>{draft.active ? "✓" : "1"}</span><div><strong>{draft.active ? "Storefront is published" : "Publish when you are ready"}</strong><p>The private preview works at any time. Turn on Storefront active and save when customers should be able to visit the public link.</p></div></div>
+          <a href="/preview/storefront" target="_blank" rel="noreferrer">Open private preview</a>
+        </section>
         <section className="admin-card settings-editor-card">
-          <div className="card-heading"><div><p className="section-kicker">IDENTITY</p><h2>Company profile</h2></div><label className="toggle-row"><input type="checkbox" checked={draft.active} onChange={e=>setDraft(c=>({...c,active:e.target.checked}))}/><span>Storefront active</span></label></div>
+          <div className="card-heading"><div><p className="section-kicker">IDENTITY</p><h2>Company profile</h2></div><label className="toggle-row"><input type="checkbox" checked={draft.active} onChange={e=>setDraft(c=>({...c,active:e.target.checked}))}/><span>Storefront active <small>Public customers can open your shop link after you save.</small></span></label></div>
           <div className="settings-fields two-column-fields">
             <label><span>Shop name</span><input value={draft.name} onChange={e=>setDraft(c=>({...c,name:e.target.value}))}/></label>
             <label><span>Organization</span><input value={organizationName} disabled/></label>

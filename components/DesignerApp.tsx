@@ -91,6 +91,7 @@ function fitPlacementToArea(placement: ArtworkPlacement, area: PrintArea) {
 }
 
 export default function DesignerApp({ shop }: { shop: PublicShop }) {
+  const previewMode = Boolean(shop.previewMode);
   const products = shop.products.filter((item) => item.active);
   const firstProduct = products[0];
   const [step, setStep] = useState<"products" | "customize">("products");
@@ -453,7 +454,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     }
   }
 
-  if (!products.length) return <main className="designer-empty production-empty"><span>PF</span><h1>This storefront is being stocked.</h1><p>The print shop has not published any products yet. Please check back shortly.</p></main>;
+  if (!products.length) return <main className="designer-empty production-empty"><span>PF</span><h1>{previewMode ? "Your storefront needs a published product." : "This storefront is being stocked."}</h1><p>{previewMode ? "Activate at least one product in Dashboard → Products, then refresh this preview." : "The print shop has not published any products yet. Please check back shortly."}</p>{previewMode && <a className="designer-primary" href="/dashboard/products">Open Products</a>}</main>;
 
   if (completed)
     return (
@@ -479,6 +480,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       className="designer-shell modern-customer-shell"
       style={{ "--brand": shop.settings.brand.primaryColor, "--brand-text": shop.settings.brand.textColor, "--brand-accent": shop.settings.brand.accentColor || "#d8ff5f", "--brand-surface": shop.settings.brand.surfaceColor || "#f4f4ef" } as React.CSSProperties}
     >
+      {previewMode && <div className="storefront-preview-banner"><div><strong>Storefront preview</strong><span>This is visible only to your shop account. Checkout is disabled until you open the live storefront.</span></div><a href="/dashboard/settings">Back to Shop setup</a></div>}
       <header className="customer-header modern">
         {shop.settings.brand.logoUrl ? <img src={shop.settings.brand.logoUrl} alt={shop.name} /> : <strong>{shop.name}</strong>}
         <div>
@@ -772,11 +774,11 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                 <textarea rows={3} placeholder="Order notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
               </div>
             </details>
-            {!shop.paymentReady && <div className="customer-payment-warning"><b>Checkout is temporarily unavailable.</b><span>This shop has not connected a live payment provider yet.</span></div>}
+            {previewMode ? <div className="customer-payment-warning preview"><b>Preview mode</b><span>You can test the full customer experience, but this preview cannot create a real order or payment.</span></div> : !shop.paymentReady && <div className="customer-payment-warning"><b>Checkout is temporarily unavailable.</b><span>This shop has not connected a live payment provider yet.</span></div>}
             {error && <div className="error-message">{error}</div>}
             {submissionStatus && <div className="submission-status"><i /><span>{submissionStatus}</span></div>}
-            <button className="designer-primary full modern" disabled={!shop.paymentReady || submitting || totalAssigned < minimum} onClick={submit}>
-              {submitting ? "Saving your order…" : `Continue · $${totalPrice.toFixed(2)}`}
+            <button className="designer-primary full modern" disabled={previewMode || !shop.paymentReady || submitting || totalAssigned < minimum} onClick={submit}>
+              {previewMode ? "Preview mode · checkout disabled" : submitting ? "Saving your order…" : `Continue · $${totalPrice.toFixed(2)}`}
             </button>
             <small className="disclaimer">{shop.settings.customerExperience?.artworkDisclaimer}</small>
           </aside>

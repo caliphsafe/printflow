@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type {
   CorePricingFee,
   DtfPricing,
@@ -15,7 +16,8 @@ const money = (value: number) => Number(Math.max(0, Number(value || 0)).toFixed(
 const tabs = ["Foundation", "Screen printing", "DTF", "Embroidery", "Add-ons"] as const;
 type Tab = (typeof tabs)[number];
 
-export default function PricingSettingsManager({ initialPricing }: { initialPricing: ShopPricingProfile }) {
+export default function PricingSettingsManager({ initialPricing, returnTo = "/dashboard/products" }: { initialPricing: ShopPricingProfile; returnTo?: string }) {
+  const router = useRouter();
   const [draft, setDraft] = useState(initialPricing);
   const [tab, setTab] = useState<Tab>("Foundation");
   const [busy, setBusy] = useState(false);
@@ -26,7 +28,7 @@ export default function PricingSettingsManager({ initialPricing }: { initialPric
   const exampleScreen = draft.screenPrinting.heartBasePerItem;
   const exampleUnit = exampleGarment + exampleScreen;
 
-  async function save() {
+  async function save(returnAfter = false) {
     setBusy(true);
     setMessage("");
     setError("");
@@ -40,6 +42,7 @@ export default function PricingSettingsManager({ initialPricing }: { initialPric
       if (!response.ok) throw new Error(data.error || "Unable to save pricing.");
       setDraft(data.pricing);
       setMessage("Pricing engine published. Customer quotes now use these production rules.");
+      if (returnAfter) router.push(returnTo);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save pricing.");
     } finally {
@@ -86,7 +89,7 @@ export default function PricingSettingsManager({ initialPricing }: { initialPric
 
       {error && <div className="error-message settings-message">{error}</div>}
       {message && <div className="success-message settings-message">{message}</div>}
-      <div className="pricing-v8-savebar"><div><strong>One pricing engine for every product.</strong><span>Supplier costs update automatically; print rules remain controlled by the shop.</span></div><button className="primary-button" type="button" disabled={busy} onClick={save}>{busy ? "Publishing…" : "Publish pricing"}</button></div>
+      <div className="pricing-v8-savebar"><div><strong>One pricing engine for every product.</strong><span>Supplier costs update automatically; print rules remain controlled by the shop.</span></div><div className="pricing-save-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => router.push(returnTo)}>Back without saving</button><button className="primary-button" type="button" disabled={busy} onClick={() => void save(true)}>{busy ? "Publishing…" : "Publish & return"}</button></div></div>
     </div>
   );
 }

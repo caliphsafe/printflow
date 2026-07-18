@@ -2,6 +2,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useRouter } from "next/navigation";
 import type {
   CatalogProduct,
   DesignSide,
@@ -19,7 +20,8 @@ import {
 
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const TABS = ["Basics", "Options", "Colors", "Print zones", "Cost basis"] as const;
-type Tab = (typeof TABS)[number];
+export type ProductEditorTab = (typeof TABS)[number];
+type Tab = ProductEditorTab;
 type UploadState = { busy: boolean; error?: string; success?: string };
 type ZoneKey = "frontHeartArea" | "frontFullArea" | "backHeartArea" | "backFullArea";
 
@@ -69,15 +71,17 @@ function sizeTitle(size: PrintSize) {
   return size === "heart" ? "Heart size" : "Full size";
 }
 
-export default function ProductCatalogManager({ initialProducts, pricingProfile }: { initialProducts: CatalogProduct[]; pricingProfile: ShopPricingProfile }) {
+export default function ProductCatalogManager({ initialProducts, pricingProfile, initialSelectedId, initialTab }: { initialProducts: CatalogProduct[]; pricingProfile: ShopPricingProfile; initialSelectedId?: string; initialTab?: Tab }) {
+  const router = useRouter();
+  const startingProduct = initialProducts.find((item) => item.id === initialSelectedId) || initialProducts[0];
   const [products, setProducts] = useState(initialProducts);
-  const [selectedId, setSelectedId] = useState(initialProducts[0]?.id || "");
-  const [draft, setDraft] = useState<CatalogProduct | null>(initialProducts[0] ? copy(initialProducts[0]) : null);
-  const [tab, setTab] = useState<Tab>("Basics");
+  const [selectedId, setSelectedId] = useState(startingProduct?.id || "");
+  const [draft, setDraft] = useState<CatalogProduct | null>(startingProduct ? copy(startingProduct) : null);
+  const [tab, setTab] = useState<Tab>(initialTab && TABS.includes(initialTab) ? initialTab : "Basics");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
-  const [previewColorId, setPreviewColorId] = useState(initialProducts[0]?.configuration.colors[0]?.id || "");
+  const [previewColorId, setPreviewColorId] = useState(startingProduct?.configuration.colors[0]?.id || "");
   const [previewSide, setPreviewSide] = useState<DesignSide>("front");
   const [previewSize, setPreviewSize] = useState<PrintSize>("full");
 
@@ -118,8 +122,8 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile 
     });
   }
 
-  async function save() {
-    if (!draft) return;
+  async function save(options: { quiet?: boolean } = {}): Promise<CatalogProduct | null> {
+    if (!draft) return null;
     setBusy(true);
     setMessage("");
     try {
@@ -135,12 +139,21 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile 
       setProducts((current) => (isNew ? [...current, saved] : current.map((item) => (item.id === saved.id ? saved : item))));
       setSelectedId(saved.id);
       setDraft(copy(saved));
-      setMessage("Saved. Pricing, print zones, and customer options are live.");
+      if (!options.quiet) setMessage("Saved. Pricing, print zones, and customer options are live.");
+      return saved;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to save product.");
+      return null;
     } finally {
       setBusy(false);
     }
+  }
+
+  async function openPricing() {
+    const saved = await save({ quiet: true });
+    if (!saved) return;
+    const returnTo = `/dashboard/products?product=${encodeURIComponent(saved.id)}&tab=${encodeURIComponent("Cost basis")}`;
+    router.push(`/dashboard/pricing?returnTo=${encodeURIComponent(returnTo)}`);
   }
 
   async function remove() {
@@ -412,7 +425,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile 
                   >
                     <div className="global-pricing-callout">
                       <div><span>$</span><div><strong>No duplicated product price tables</strong><p>Update production rates once and every active product immediately uses the same pricing logic while retaining its own supplier cost.</p></div></div>
-                      <a className="secondary-button" href="/dashboard/pricing">Open production pricing →</a>
+                      <button className="secondary-button" type="button" disabled={busy} onClick={openPricing}>{busy ? "Saving product…" : "Save & open production pricing →"}</button>
                     </div>
                   </Panel>
                 </>
@@ -427,7 +440,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile 
                 </button>
               )}
               <span>{draft.active ? "Changes will appear in the customer catalog." : "This product is hidden from customers."}</span>
-              <button className="primary-button fit-button" disabled={busy} onClick={save}>
+              <button className="primary-button fit-button" disabled={busy} onClick={() => void save()}>
                 {busy ? "Saving…" : "Save product"}
               </button>
             </div>

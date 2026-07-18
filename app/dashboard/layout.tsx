@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createSupabaseServer } from "@/lib/supabase-server";
 import SignOutButton from "@/components/SignOutButton";
 import DashboardNav from "@/components/DashboardNav";
+import DashboardHelp from "@/components/DashboardHelp";
 import { getAdminContext } from "@/lib/admin-data";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -25,8 +26,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <SignOutButton />
         </div>
       </aside>
-      <div className="admin-mobile-bar"><Link href="/dashboard" className="mobile-brand">PRINTFLOW</Link><a href={shop ? `/s/${shop.slug}` : "#"} target="_blank" rel="noreferrer">Open designer</a></div>
+      <div className="admin-mobile-bar"><Link href="/dashboard" className="mobile-brand">PRINTFLOW</Link><a href="/preview/storefront" target="_blank" rel="noreferrer">Preview storefront</a></div>
       <main className="admin-main">{children}</main>
+      <DashboardHelp />
     </div>
   );
 }

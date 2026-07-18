@@ -241,6 +241,8 @@ export type PublicShop = {
   pricing: ShopPricingProfile;
   products: CatalogProduct[];
   paymentReady?: boolean;
+  /** True when an authenticated shop owner is reviewing an unpublished storefront. */
+  previewMode?: boolean;
 };
 
 export type SizeQuantity = { size: string; quantity: number };
