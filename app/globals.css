@@ -2921,3 +2921,346 @@ html,body{max-width:100%;overflow-x:hidden}
 @media(max-width:1180px){.onboarding-stage-layout{grid-template-columns:1fr}.onboarding-coach-card{position:relative;top:auto}.platform-admin-metrics{grid-template-columns:repeat(3,1fr)}.platform-growth-grid{grid-template-columns:1fr}.platform-user-management{grid-template-columns:1fr}.platform-user-directory,.platform-danger-zone{grid-column:auto;grid-row:auto}}
 @media(max-width:900px){.onboarding-shell-v11{display:block}.onboarding-shell-v11 .onboarding-rail{position:sticky;top:0;display:block;width:100%;height:auto;padding:12px;overflow:hidden}.onboarding-shell-v11 .onboarding-rail .launch-wordmark{display:none}.onboarding-progress-copy{margin:0 0 9px;padding:9px 11px}.onboarding-progress-copy p{display:none}.onboarding-shell-v11 .onboarding-rail nav{display:flex;gap:6px;overflow-x:auto}.onboarding-shell-v11 .onboarding-rail nav button{min-width:120px;padding:8px}.onboarding-shell-v11 .onboarding-rail nav small{display:none}.onboarding-rail-note{display:none}.onboarding-shell-v11 .onboarding-main{width:calc(100% - 30px);margin:0 auto;padding:30px 0 90px}.onboarding-choice-grid{grid-template-columns:1fr}.product-readiness-checklist{grid-template-columns:1fr 1fr}.platform-growth-card>header{align-items:flex-start}.platform-view-tabs{width:100%}.platform-view-tabs button{flex:1}.platform-user-row{grid-template-columns:1.2fr 1fr .65fr}.platform-user-row>span:nth-child(4),.platform-user-row>span:nth-child(5){display:none}}
 @media(max-width:680px){.launch-auth-shell{padding:14px}.launch-auth-card{padding:20px}.signup-two-column{grid-template-columns:1fr!important}.verification-panel{text-align:center}.verification-icon{margin:auto}.onboarding-page-heading{display:grid}.onboarding-page-heading .secondary-button{width:max-content}.onboarding-section-heading{display:grid;align-items:start}.onboarding-section-heading>span{text-align:left}.product-readiness-checklist{grid-template-columns:1fr}.launch-review-grid{grid-template-columns:1fr 1fr}.onboarding-tooltip:after{left:auto;right:-10px;transform:translateY(5px)}.onboarding-tooltip:hover:after,.onboarding-tooltip:focus:after{transform:translateY(0)}.platform-admin-metrics{grid-template-columns:1fr 1fr}.platform-admin-metrics article:last-child{grid-column:auto}.platform-section-header{align-items:stretch;flex-direction:column}.platform-growth-card{padding:16px}.cadence-metric-grid{grid-template-columns:1fr}.platform-growth-card>header{display:grid}.platform-growth-card footer{display:grid}.platform-create-grid{grid-template-columns:1fr}.platform-create-grid label.full{grid-column:auto}.platform-user-row{grid-template-columns:1fr .55fr}.platform-user-row>span:nth-child(2),.platform-user-row>span:nth-child(3){display:none}.platform-header-actions{width:100%;justify-content:stretch}.platform-header-actions>*{flex:1}.platform-view-tabs button{padding:9px 10px;font-size:.72rem}}
+
+/* ============================================================
+   PrintFlow Layout + Contrast Repair v10.2.1
+   Onboarding width, platform user management, modal contrast,
+   and cross-application light/dark surface guardrails.
+   ============================================================ */
+
+/* ---------- Guided onboarding: use the full available canvas ---------- */
+.onboarding-shell-v11 {
+  display: block;
+  min-height: 100dvh;
+  padding-left: 286px;
+  overflow-x: clip;
+  box-sizing: border-box;
+}
+
+.onboarding-shell-v11 .onboarding-main {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 52px clamp(28px, 4.5vw, 72px) 110px;
+  box-sizing: border-box;
+}
+
+.onboarding-shell-v11 .onboarding-page-heading,
+.onboarding-shell-v11 .onboarding-stage-layout,
+.onboarding-shell-v11 .onboarding-primary-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.onboarding-shell-v11 .onboarding-page-heading h1 {
+  max-width: 900px;
+  margin: 8px 0 12px;
+  font-size: clamp(3.1rem, 6vw, 5.5rem);
+  line-height: .91;
+  letter-spacing: -.062em;
+  text-wrap: balance;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.onboarding-shell-v11 .onboarding-page-heading > div > p:not(.eyebrow) {
+  max-width: 680px;
+  font-size: 1rem;
+  line-height: 1.58;
+}
+
+.onboarding-shell-v11 .onboarding-stage-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 320px);
+  gap: clamp(18px, 2vw, 28px);
+}
+
+.onboarding-shell-v11 .onboarding-card,
+.onboarding-shell-v11 .onboarding-coach-card {
+  color: #171717;
+  color-scheme: light;
+}
+
+.onboarding-shell-v11 .onboarding-card {
+  overflow: visible;
+}
+
+.onboarding-shell-v11 .onboarding-grid > *,
+.onboarding-shell-v11 .onboarding-choice-grid > *,
+.onboarding-shell-v11 .onboarding-storefront-layout > * {
+  min-width: 0;
+}
+
+.onboarding-shell-v11 .onboarding-card input,
+.onboarding-shell-v11 .onboarding-card select,
+.onboarding-shell-v11 .onboarding-card textarea {
+  color: #171717;
+  background: #fff;
+  -webkit-text-fill-color: #171717;
+}
+
+.onboarding-shell-v11 .onboarding-card input::placeholder,
+.onboarding-shell-v11 .onboarding-card textarea::placeholder {
+  color: #8a8a83;
+  opacity: 1;
+}
+
+.onboarding-shell-v11 .onboarding-card select option {
+  color: #171717;
+  background: #fff;
+}
+
+/* Put the coach below the form before the working canvas becomes cramped. */
+@media (max-width: 1320px) {
+  .onboarding-shell-v11 .onboarding-stage-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .onboarding-shell-v11 .onboarding-coach-card {
+    position: relative;
+    top: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .onboarding-shell-v11 {
+    padding-left: 0;
+    overflow-x: hidden;
+  }
+  .onboarding-shell-v11 .onboarding-main {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 30px 18px 100px;
+  }
+  .onboarding-shell-v11 .onboarding-page-heading h1 {
+    max-width: 760px;
+    font-size: clamp(2.75rem, 10vw, 4.7rem);
+  }
+}
+
+@media (max-width: 560px) {
+  .onboarding-shell-v11 .onboarding-main {
+    padding-inline: 14px;
+  }
+  .onboarding-shell-v11 .onboarding-page-heading h1 {
+    font-size: clamp(2.55rem, 14vw, 4rem);
+  }
+  .onboarding-shell-v11 .onboarding-card {
+    padding: 20px;
+  }
+}
+
+/* ---------- Platform admin: light cards must always use dark copy ---------- */
+.platform-user-management .admin-card,
+.platform-create-modal {
+  color: #171717;
+  color-scheme: light;
+}
+
+.platform-user-management .platform-create-account-card,
+.platform-user-management .platform-user-directory {
+  border-color: rgba(255,255,255,.16);
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 24px 70px rgba(0,0,0,.22);
+}
+
+.platform-user-management .platform-danger-zone {
+  border-color: #efcaca;
+  background: #fff5f5;
+  color: #351515;
+  box-shadow: 0 24px 70px rgba(0,0,0,.18);
+}
+
+.platform-user-management h2,
+.platform-user-management h3,
+.platform-create-modal h2,
+.platform-create-modal h3,
+.platform-user-management strong,
+.platform-create-modal strong,
+.platform-user-management label > span,
+.platform-create-modal label > span {
+  color: #171717;
+}
+
+.platform-user-management .eyebrow,
+.platform-create-modal .eyebrow {
+  color: #66665f;
+}
+
+.platform-user-management p,
+.platform-create-modal > p:not(.eyebrow) {
+  color: #66665f;
+}
+
+.platform-user-management input,
+.platform-user-management select,
+.platform-user-management textarea,
+.platform-create-modal input,
+.platform-create-modal select,
+.platform-create-modal textarea {
+  color: #171717;
+  background: #fff;
+  -webkit-text-fill-color: #171717;
+  border-color: #d6d6cf;
+}
+
+.platform-user-management input::placeholder,
+.platform-user-management textarea::placeholder,
+.platform-create-modal input::placeholder,
+.platform-create-modal textarea::placeholder {
+  color: #8a8a83;
+  opacity: 1;
+}
+
+.platform-user-management select option,
+.platform-create-modal select option {
+  color: #171717;
+  background: #fff;
+}
+
+.platform-user-management .platform-create-account-card > .primary-button {
+  align-self: end;
+  justify-self: start;
+  min-height: 46px;
+  padding-inline: 18px;
+}
+
+.platform-create-modal > .primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+}
+
+.platform-header-actions {
+  align-items: center;
+}
+
+.platform-header-actions > a,
+.platform-header-actions > button,
+.platform-growth-card footer > button,
+.platform-action-row > button {
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+}
+
+.platform-user-directory {
+  min-width: 0;
+}
+
+.platform-user-table {
+  width: 100%;
+  background: #fff;
+}
+
+.platform-user-row,
+.platform-user-row.heading {
+  color: #171717;
+}
+
+.platform-user-row > span,
+.platform-user-row strong {
+  color: #252522;
+}
+
+.platform-user-row small {
+  color: #6d6d67;
+}
+
+.platform-user-row.heading > span {
+  color: #686861;
+}
+
+.platform-user-row:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid rgba(95,130,255,.35);
+  outline-offset: -3px;
+}
+
+.platform-danger-zone input {
+  color: #351515;
+  background: #fff;
+  -webkit-text-fill-color: #351515;
+}
+
+/* ---------- Cross-application surface contrast guardrails ---------- */
+.launch-auth-card,
+.onboarding-card,
+.supplier-modal,
+.integration-modal,
+.platform-create-modal,
+.dashboard-help-panel,
+.storefront-help aside,
+.storefront-offline-card,
+.setup-guidance-card,
+.designer-step-panel,
+.modern-order-panel,
+.editor-panel,
+.print-zone-controls,
+.component-tier-card {
+  color: #171717;
+  color-scheme: light;
+}
+
+.supplier-modal input,
+.supplier-modal select,
+.supplier-modal textarea,
+.integration-modal input,
+.integration-modal select,
+.integration-modal textarea,
+.launch-auth-card input,
+.launch-auth-card select,
+.launch-auth-card textarea {
+  color: #171717;
+  background: #fff;
+  -webkit-text-fill-color: #171717;
+}
+
+.supplier-modal input::placeholder,
+.supplier-modal textarea::placeholder,
+.integration-modal input::placeholder,
+.integration-modal textarea::placeholder,
+.launch-auth-card input::placeholder,
+.launch-auth-card textarea::placeholder {
+  color: #8a8a83;
+  opacity: 1;
+}
+
+.supplier-modal select option,
+.integration-modal select option,
+.launch-auth-card select option {
+  color: #171717;
+  background: #fff;
+}
+
+/* Preserve intentional dark surfaces after the light-surface safeguards. */
+.admin-sidebar,
+.pulse-card,
+.supplier-hero,
+.platform-command-center,
+.platform-control-layout > .admin-card,
+.platform-growth-card {
+  color: #fff;
+  color-scheme: dark;
+}
+
+.platform-control-layout input,
+.platform-control-layout select,
+.platform-control-layout textarea {
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+}
+
+.platform-control-layout input::placeholder,
+.platform-control-layout textarea::placeholder {
+  color: rgba(255,255,255,.42);
+  opacity: 1;
+}
+
+.platform-control-layout select option {
+  color: #171717;
+  background: #fff;
+}
