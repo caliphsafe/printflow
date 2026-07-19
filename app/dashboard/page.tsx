@@ -1,5 +1,6 @@
 import Link from "next/link";
 import SupplierInsights from "@/components/SupplierInsights";
+import AdminIcon, { type AdminIconName } from "@/components/AdminIcon";
 import { getAdminContext } from "@/lib/admin-data";
 import { DEFAULT_PRICING_PROFILE, normalizePricingProfile } from "@/lib/pricing-settings";
 
@@ -39,6 +40,14 @@ export default async function DashboardPage() {
     { label: "Customize storefront", done: Boolean(shop.settings?.brand?.primaryColor && shop.settings?.customerExperience?.headline), href: "/dashboard/settings", copy: shop.active ? "Storefront is active" : "Review and activate storefront" }
   ];
   const completion = Math.round(readiness.filter(item=>item.done).length / readiness.length * 100);
+  const quickActions: { href: string; label: string; copy: string; icon: AdminIconName }[] = [
+    { href: "/dashboard/suppliers/cart", label: "Supplier cart", copy: `${supplierCart.count || 0} job${supplierCart.count === 1 ? "" : "s"} ready for purchasing`, icon: "cart" },
+    { href: "/dashboard/suppliers/catalog", label: "S&S catalog", copy: "Live styles, colors, costs, and SKUs", icon: "suppliers" },
+    { href: "/dashboard/pricing", label: "Production pricing", copy: "Screen Print, DTF, and Embroidery", icon: "pricing" },
+    { href: "/dashboard/integrations", label: "Connected services", copy: "Stripe, Square, and S&S", icon: "integrations" },
+    { href: "/dashboard/settings", label: "Storefront setup", copy: "Brand, messaging, and launch status", icon: "settings" },
+    { href: "/dashboard/account", label: "Account & billing", copy: "Profile, plan, and subscription", icon: "account" }
+  ];
 
   return <>
     <header className="admin-header admin-hero-header"><div><p className="eyebrow">{organization.name}</p><h1>Run the shop with confidence.</h1><p>See what is selling, watch supplier opportunities, review pricing, and move every job toward production.</p></div><div className="header-actions"><Link className="ghost-button" href="/dashboard/products">Products</Link><a className="secondary-button" href={shop.active ? `/s/${shop.slug}` : "/preview/storefront"} target="_blank" rel="noreferrer">{shop.active ? "Storefront ↗" : "Preview storefront ↗"}</a></div></header>
@@ -62,7 +71,7 @@ export default async function DashboardPage() {
     <div className="dashboard-content-grid overview-activity-grid">
       <section className="admin-card dashboard-orders-card"><div className="card-heading"><div><p className="section-kicker">RECENT ORDERS</p><h2>Latest customer activity</h2></div><Link href="/dashboard/orders">All orders</Link></div>
       {recent.data?.length ? <div className="dashboard-table"><div className="dashboard-table-head"><span>Order</span><span>Customer</span><span>Product</span><span>Status</span><span>Date</span></div>{recent.data.map(item=><Link key={item.id} href={`/dashboard/orders/${item.id}`} className="dashboard-table-row"><span><strong>{item.display_id}</strong><small>{item.package_quantity} pcs · ${Number(item.package_price).toFixed(2)}</small></span><span><strong>{item.customer_name}</strong><small>{item.customer_email}</small></span><span>{item.product_name}</span><span><em className={`status-badge status-${item.status}`}>{statusLabel(item.payment_status === "paid" ? "paid" : item.status)}</em></span><span>{formatDate(item.created_at)}</span></Link>)}</div> : <div className="dashboard-empty"><span>01</span><h3>Your first order starts at the storefront.</h3><p>Once payments and products are live, customers can build, upload, and pay in one flow.</p><a className="secondary-button" href={shop.active ? `/s/${shop.slug}` : "/preview/storefront"} target="_blank" rel="noreferrer">{shop.active ? "Storefront" : "Preview storefront"}</a></div>}</section>
-      <aside className="dashboard-side-stack"><section className="admin-card quick-actions-card"><p className="section-kicker">QUICK ACTIONS</p><h2>Keep moving</h2><div className="quick-action-list"><Link href="/dashboard/suppliers/cart"><span>▣</span><div><strong>Supplier cart</strong><small>{supplierCart.count || 0} job{supplierCart.count === 1 ? "" : "s"} ready for purchasing</small></div></Link><Link href="/dashboard/suppliers/catalog"><span>↗</span><div><strong>S&amp;S catalog</strong><small>Live styles, colors, costs, and SKUs</small></div></Link><Link href="/dashboard/pricing"><span>$</span><div><strong>Production pricing</strong><small>Screen Print, DTF, and Embroidery</small></div></Link><Link href="/dashboard/integrations"><span>⌁</span><div><strong>Connected services</strong><small>Stripe, Square, and S&amp;S</small></div></Link><Link href="/dashboard/settings"><span>✦</span><div><strong>Storefront setup</strong><small>Brand, messaging, and launch status</small></div></Link><Link href="/dashboard/account"><span>◎</span><div><strong>Account & billing</strong><small>Profile, plan, and subscription</small></div></Link></div></section></aside>
+      <aside className="dashboard-side-stack"><section className="admin-card quick-actions-card"><p className="section-kicker">QUICK ACTIONS</p><h2>Keep moving</h2><div className="quick-action-list">{quickActions.map((action) => <Link href={action.href} key={action.href}><span><AdminIcon name={action.icon} size={18}/></span><div><strong>{action.label}</strong><small>{action.copy}</small></div></Link>)}</div></section></aside>
     </div>
   </>;
 }

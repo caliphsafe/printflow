@@ -1,3 +1,4 @@
+import Link from "next/link";
 import PageBackLink from "@/components/PageBackLink";
 import { notFound } from "next/navigation";
 import { getAdminContext } from "@/lib/admin-data";
@@ -27,6 +28,11 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     supabase.from("supplier_order_drafts").select("provider,status,estimated_total").eq("design_id", id).in("status", ["cart", "ready"])
   ]);
   if (!o) notFound();
+
+  const [{ data: previousOrder }, { data: nextOrder }] = await Promise.all([
+    supabase.from("designs").select("id,display_id").eq("shop_id", shop.id).lt("created_at", o.created_at).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("designs").select("id,display_id").eq("shop_id", shop.id).gt("created_at", o.created_at).order("created_at", { ascending: true }).limit(1).maybeSingle()
+  ]);
 
   const sides = o.design_sides && Object.keys(o.design_sides).length
     ? o.design_sides
@@ -72,6 +78,13 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const orderTotal = Number(config.totalPrice ?? o.package_price ?? 0);
 
   return <>
+    <nav className="order-record-navigation" aria-label="Order navigation">
+      <PageBackLink href="/dashboard/orders" label="Back to orders" />
+      <div>
+        {previousOrder ? <Link href={`/dashboard/orders/${previousOrder.id}`}><span>←</span><small>Previous</small><strong>{previousOrder.display_id}</strong></Link> : <span className="disabled"><span>←</span><small>Previous</small><strong>First order</strong></span>}
+        {nextOrder ? <Link href={`/dashboard/orders/${nextOrder.id}`}><small>Next</small><strong>{nextOrder.display_id}</strong><span>→</span></Link> : <span className="disabled"><small>Next</small><strong>Latest order</strong><span>→</span></span>}
+      </div>
+    </nav>
     <header className="admin-header order-detail-header">
       <div><p className="eyebrow">{o.display_id}</p><h1>{o.customer_name}</h1><p>{o.customer_email} {o.customer_phone ? `· ${o.customer_phone}` : ""}</p></div>
       <div className="order-header-meta"><span className="status-pill">{o.status.replaceAll("_", " ")}</span><strong>${orderTotal.toFixed(2)}</strong><small>{Number(o.package_quantity || 0)} garments</small></div>

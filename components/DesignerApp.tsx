@@ -555,88 +555,6 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
         </section>
       ) : (
         <section className="modern-designer-layout">
-          <aside className="designer-step-panel">
-            <div className="designer-step-heading">
-              <p className="eyebrow">CUSTOMIZE</p>
-              <h1>{product.name}</h1>
-              <p>{product.description}</p>
-            </div>
-            <WizardSection number="1" title="Print sides">
-              <div className="radio-card-grid">
-                {product.configuration.customization.designModes.map((value) => (
-                  <label key={value} className={mode === value ? "radio-card selected" : "radio-card"}>
-                    <input type="radio" name="mode" checked={mode === value} onChange={() => chooseMode(value)} />
-                    <span>
-                      <b>{modeLabel(value)}</b>
-                      <small>{value === "front-back" ? "Choose a separate print size and design for both sides." : `Artwork on the ${value} only.`}</small>
-                    </span>
-                    <i />
-                  </label>
-                ))}
-              </div>
-            </WizardSection>
-            <WizardSection number="2" title="Print sizes">
-              <div className="side-print-size-stack">
-                {neededSides.map((target) => (
-                  <div className="side-print-size-group" key={target}>
-                    <span>{target === "front" ? "Front" : "Back"}</span>
-                    <div className="print-size-choice-grid">
-                      {(["heart", "full"] as PrintSize[]).map((value) => {
-                        const area = printAreaFor(product.configuration, target, value);
-                        return (
-                          <label key={value} className={printSizes[target] === value ? "print-size-choice selected" : "print-size-choice"}>
-                            <input type="radio" name={`${target}-print-size`} checked={printSizes[target] === value} onChange={() => choosePrintSize(target, value)} />
-                            <span>
-                              <b>{printSizeLabel(value)}</b>
-                              <small>{area.widthInches}″ × {area.heightInches}″ max</small>
-                            </span>
-                            <em>Live quote</em>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </WizardSection>
-            <WizardSection number="3" title="Garment color">
-              <div className="modern-color-picker">
-                {product.configuration.colors
-                  .filter((item) => item.active !== false)
-                  .map((item) => (
-                    <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => setColor(item)} title={item.name}>
-                      <i style={{ background: item.hex }} />
-                      <span>{item.name}</span>
-                    </button>
-                  ))}
-              </div>
-            </WizardSection>
-            <WizardSection number="4" title="Decoration method">
-              <select className="modern-select" value={decoration} onChange={(event) => setDecoration(event.target.value)}>
-                {product.configuration.customization.decorationMethods.map((item) => (
-                  <option key={item}>{item}</option>
-                ))}
-              </select>
-              {decoration.toLowerCase().includes("screen") && (
-                <div className="ink-color-estimator">
-                  <div><strong>Estimated ink colors</strong><small>Choose the number of printed colors on each side. The shop confirms the final count during artwork review.</small></div>
-                  {neededSides.map((target) => (
-                    <label key={target}><span>{target === "front" ? "Front" : "Back"}</span><select value={inkColors[target]} onChange={(event) => setInkColors((current) => ({ ...current, [target]: Number(event.target.value) }))}>{Array.from({ length: shop.pricing.screenPrinting.maximumColors }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{count} color{count === 1 ? "" : "s"}</option>)}</select></label>
-                  ))}
-                </div>
-              )}
-              {decoration.toLowerCase().includes("dtf") && <div className="method-explainer"><b>DTF prices from the actual artwork size.</b><span>Resize your design on the garment and the live quote updates using square inches.</span></div>}
-              {decoration.toLowerCase().includes("embroider") && <div className="method-explainer"><b>Embroidery uses an estimated stitch count.</b><span>The shop confirms the final stitch count and production file during artwork review.</span></div>}
-            </WizardSection>
-            <WizardSection number="5" title="Order services">
-              <div className="customer-service-stack">
-                {pricing.setupFee > 0 && <div className="included-fee-card"><span>Included</span><div><b>{shop.pricing.orderSetupFee.label}</b><small>${pricing.setupFee.toFixed(2)} once per order</small></div></div>}
-                {designOptimizationAmount > 0 && <label className={designOptimizationRequested ? "service-choice selected" : "service-choice"}><input type="checkbox" checked={designOptimizationRequested} onChange={(event) => setDesignOptimizationRequested(event.target.checked)}/><span className="fake-check">✓</span><span><b>{shop.pricing.designOptimizationFee.label}</b><small>{shop.pricing.designOptimizationFee.description}</small></span><em>+${designOptimizationAmount.toFixed(2)}</em></label>}
-                {customerAddOns.map((item) => <label key={item.id} className={selectedAddOnIds.includes(item.id) ? "service-choice selected" : "service-choice"}><input type="checkbox" checked={selectedAddOnIds.includes(item.id)} onChange={(event) => setSelectedAddOnIds((current) => event.target.checked ? [...new Set([...current, item.id])] : current.filter((id) => id !== item.id))}/><span className="fake-check">✓</span><span><b>{item.name}</b><small>{item.description || (item.pricingMode === "per_item" ? "Added per garment" : "Added once per order")}</small></span><em>+${item.amount.toFixed(2)}{item.pricingMode === "per_item" ? "/ea" : ""}</em></label>)}
-              </div>
-            </WizardSection>
-          </aside>
-
           <div className="modern-stage-column">
             <div className="stage-topbar">
               <div className="side-tabs modern">
@@ -744,6 +662,89 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             </div>
           </div>
 
+          <div className="modern-config-column">
+          <aside className="designer-step-panel">
+            <div className="designer-step-heading">
+              <p className="eyebrow">CUSTOMIZE</p>
+              <h1>{product.name}</h1>
+              <p>{product.description}</p>
+            </div>
+            <WizardSection number="1" title="Print sides">
+              <div className="radio-card-grid">
+                {product.configuration.customization.designModes.map((value) => (
+                  <label key={value} className={mode === value ? "radio-card selected" : "radio-card"}>
+                    <input type="radio" name="mode" checked={mode === value} onChange={() => chooseMode(value)} />
+                    <span>
+                      <b>{modeLabel(value)}</b>
+                      <small>{value === "front-back" ? "Choose a separate print size and design for both sides." : `Artwork on the ${value} only.`}</small>
+                    </span>
+                    <i />
+                  </label>
+                ))}
+              </div>
+            </WizardSection>
+            <WizardSection number="2" title="Print sizes">
+              <div className="side-print-size-stack">
+                {neededSides.map((target) => (
+                  <div className="side-print-size-group" key={target}>
+                    <span>{target === "front" ? "Front" : "Back"}</span>
+                    <div className="print-size-choice-grid">
+                      {(["heart", "full"] as PrintSize[]).map((value) => {
+                        const area = printAreaFor(product.configuration, target, value);
+                        return (
+                          <label key={value} className={printSizes[target] === value ? "print-size-choice selected" : "print-size-choice"}>
+                            <input type="radio" name={`${target}-print-size`} checked={printSizes[target] === value} onChange={() => choosePrintSize(target, value)} />
+                            <span>
+                              <b>{printSizeLabel(value)}</b>
+                              <small>{area.widthInches}″ × {area.heightInches}″ max</small>
+                            </span>
+                            <em>Live quote</em>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </WizardSection>
+            <WizardSection number="3" title="Garment color">
+              <div className="modern-color-picker">
+                {product.configuration.colors
+                  .filter((item) => item.active !== false)
+                  .map((item) => (
+                    <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => setColor(item)} title={item.name}>
+                      <i style={{ background: item.hex }} />
+                      <span>{item.name}</span>
+                    </button>
+                  ))}
+              </div>
+            </WizardSection>
+            <WizardSection number="4" title="Decoration method">
+              <select className="modern-select" value={decoration} onChange={(event) => setDecoration(event.target.value)}>
+                {product.configuration.customization.decorationMethods.map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+              {decoration.toLowerCase().includes("screen") && (
+                <div className="ink-color-estimator">
+                  <div><strong>Estimated ink colors</strong><small>Choose the number of printed colors on each side. The shop confirms the final count during artwork review.</small></div>
+                  {neededSides.map((target) => (
+                    <label key={target}><span>{target === "front" ? "Front" : "Back"}</span><select value={inkColors[target]} onChange={(event) => setInkColors((current) => ({ ...current, [target]: Number(event.target.value) }))}>{Array.from({ length: shop.pricing.screenPrinting.maximumColors }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{count} color{count === 1 ? "" : "s"}</option>)}</select></label>
+                  ))}
+                </div>
+              )}
+              {decoration.toLowerCase().includes("dtf") && <div className="method-explainer"><b>DTF prices from the actual artwork size.</b><span>Resize your design on the garment and the live quote updates using square inches.</span></div>}
+              {decoration.toLowerCase().includes("embroider") && <div className="method-explainer"><b>Embroidery uses an estimated stitch count.</b><span>The shop confirms the final stitch count and production file during artwork review.</span></div>}
+            </WizardSection>
+            <WizardSection number="5" title="Order services">
+              <div className="customer-service-stack">
+                {pricing.setupFee > 0 && <div className="included-fee-card"><span>Included</span><div><b>{shop.pricing.orderSetupFee.label}</b><small>${pricing.setupFee.toFixed(2)} once per order</small></div></div>}
+                {designOptimizationAmount > 0 && <label className={designOptimizationRequested ? "service-choice selected" : "service-choice"}><input type="checkbox" checked={designOptimizationRequested} onChange={(event) => setDesignOptimizationRequested(event.target.checked)}/><span className="fake-check">✓</span><span><b>{shop.pricing.designOptimizationFee.label}</b><small>{shop.pricing.designOptimizationFee.description}</small></span><em>+${designOptimizationAmount.toFixed(2)}</em></label>}
+                {customerAddOns.map((item) => <label key={item.id} className={selectedAddOnIds.includes(item.id) ? "service-choice selected" : "service-choice"}><input type="checkbox" checked={selectedAddOnIds.includes(item.id)} onChange={(event) => setSelectedAddOnIds((current) => event.target.checked ? [...new Set([...current, item.id])] : current.filter((id) => id !== item.id))}/><span className="fake-check">✓</span><span><b>{item.name}</b><small>{item.description || (item.pricingMode === "per_item" ? "Added per garment" : "Added once per order")}</small></span><em>+${item.amount.toFixed(2)}{item.pricingMode === "per_item" ? "/ea" : ""}</em></label>)}
+              </div>
+            </WizardSection>
+          </aside>
+
           <aside className="modern-order-panel">
             <div>
               <p className="eyebrow">ORDER DETAILS</p>
@@ -793,6 +794,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             </button>
             <small className="disclaimer">{shop.settings.customerExperience?.artworkDisclaimer}</small>
           </aside>
+          </div>
         </section>
       )}
       <div className={helpOpen ? "storefront-help open" : "storefront-help"}>

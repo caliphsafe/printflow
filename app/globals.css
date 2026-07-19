@@ -2484,3 +2484,425 @@ html,body{max-width:100%;overflow-x:hidden}
 .integration-live-grid,.supplier-equal-grid{gap:20px}.integration-live-card,.supplier-equal-card{display:flex;min-height:300px;flex-direction:column;padding:23px;border:1px solid rgba(17,24,39,.09);border-radius:24px;background:rgba(255,255,255,.76);box-shadow:var(--soft-shadow);backdrop-filter:blur(24px);overflow:hidden}.integration-live-card>header,.supplier-equal-card>header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;min-height:70px}.integration-live-copy,.supplier-equal-card>div{min-width:0}.integration-live-copy h2,.supplier-equal-card h2{margin:15px 0 8px;font-size:1.15rem;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.integration-live-copy>p:not(.eyebrow),.supplier-equal-card>div>p:not(.eyebrow){color:#737a83;line-height:1.55}.integration-live-card>footer,.supplier-equal-card>footer{display:grid;gap:11px;margin-top:auto;padding-top:18px}.integration-live-card>footer .integration-card-action,.supplier-equal-card>footer .secondary-button{width:100%;justify-content:center;text-align:center}.supplier-equal-card footer .text-button{justify-self:center}.supplier-card-note{color:#858b93;font-size:.68rem;line-height:1.45}.integration-capability{display:flex;gap:8px;padding:10px 11px;border-radius:13px;background:#f4f5f2}.integration-capability span{color:#287b49}.integration-capability small{color:#646b74;line-height:1.35}.integration-account-label{display:block;margin-top:10px;font-size:.72rem}.production-suppliers{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(max-width:980px){.production-suppliers{grid-template-columns:1fr 1fr}.production-suppliers article:last-child{grid-column:1/-1}}
 @media(max-width:620px){.production-suppliers{grid-template-columns:1fr}.production-suppliers article:last-child{grid-column:auto}.integration-live-card,.supplier-equal-card{min-height:0}}
+
+/* ============================================================
+   PrintFlow Aesthetic Refinement v10.1
+   Fixed application rail, aligned actions, stable previews
+   ============================================================ */
+
+/* The desktop sidebar is a true application rail. The page scrolls independently. */
+@media (min-width: 961px) {
+  .admin-shell {
+    display: block;
+    min-height: 100dvh;
+    padding-left: var(--admin-rail);
+  }
+
+  .admin-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--admin-rail);
+    height: 100dvh;
+    min-height: 0;
+    padding: 20px 14px max(18px, env(safe-area-inset-bottom));
+    overflow: hidden;
+    background: linear-gradient(180deg, #07080a 0%, #101218 58%, #090a0d 100%);
+  }
+
+  .sidebar-top {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .admin-nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin-right: -5px;
+    padding: 4px 5px 28px 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,.2) transparent;
+  }
+
+  .admin-nav::-webkit-scrollbar { width: 5px; }
+  .admin-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 999px; }
+
+  .sidebar-footer {
+    position: relative;
+    z-index: 2;
+    flex: 0 0 auto;
+    margin: 0 -2px;
+    padding: 15px 2px 2px;
+    background: linear-gradient(180deg, rgba(9,10,13,0), #090a0d 18%);
+  }
+
+  .sidebar-footer .account-chip {
+    padding: 9px;
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 13px;
+    background: rgba(255,255,255,.045);
+  }
+
+  .sidebar-footer .text-button {
+    width: 100%;
+    min-height: 38px;
+    padding: 9px 11px;
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 11px;
+    color: rgba(255,255,255,.7);
+    background: rgba(255,255,255,.035);
+    text-align: center;
+  }
+
+  .sidebar-footer .text-button:hover {
+    color: #fff;
+    background: rgba(255,255,255,.08);
+  }
+
+  .admin-main {
+    width: 100%;
+    min-height: 100dvh;
+    margin: 0;
+  }
+}
+
+/* Mobile account controls remain inside the black navigation surface. */
+.mobile-account-panel {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(255,255,255,.09);
+}
+.mobile-account-panel .account-chip {
+  display: flex;
+  padding: 10px;
+  border-radius: 13px;
+  background: rgba(255,255,255,.055);
+}
+.mobile-account-panel .text-button {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 11px;
+  color: #fff;
+  background: rgba(255,255,255,.05);
+  text-align: center;
+}
+
+/* Save and Help sit on one shared baseline instead of covering one another. */
+.floating-save-bar {
+  left: calc(var(--admin-rail) + 24px);
+  right: 154px;
+  bottom: 20px;
+  width: auto;
+  max-width: 1080px;
+  margin-left: auto;
+}
+.dashboard-help {
+  right: 24px;
+  bottom: 20px;
+}
+.dashboard-help-panel {
+  bottom: 58px;
+}
+.dashboard-help-trigger,
+.floating-save-bar {
+  min-height: 54px;
+}
+
+/* Overview action buttons share one height and baseline. */
+.supplier-intelligence-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.compact-action-button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 13px;
+  border: 1px solid rgba(17,24,39,.12);
+  border-radius: 11px;
+  color: #333a43;
+  background: rgba(255,255,255,.82);
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.compact-action-button:hover { background: #fff; border-color: rgba(17,24,39,.22); }
+.compact-action-button.primary { color: #fff; background: #111318; border-color: #111318; }
+.compact-action-button:disabled { opacity: .55; cursor: wait; }
+
+/* Keep Moving now uses the same icon language as the sidebar. */
+.quick-action-list a > span {
+  display: grid;
+  place-items: center;
+}
+.quick-action-list a > span svg { width: 18px; height: 18px; }
+
+/* Order-level navigation is always visible above the detail header. */
+.order-record-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.order-record-navigation .page-back-link { margin: 0; }
+.order-record-navigation > div {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.order-record-navigation > div > a,
+.order-record-navigation > div > span {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 8px;
+  min-width: 132px;
+  padding: 9px 11px;
+  border: 1px solid rgba(17,24,39,.09);
+  border-radius: 12px;
+  color: #343a43;
+  background: rgba(255,255,255,.74);
+  text-decoration: none;
+  backdrop-filter: blur(18px);
+}
+.order-record-navigation > div > a:first-child > span,
+.order-record-navigation > div > span:first-child > span { grid-row: 1 / span 2; }
+.order-record-navigation > div > a:last-child > span,
+.order-record-navigation > div > span:last-child > span { grid-column: 2; grid-row: 1 / span 2; }
+.order-record-navigation small { color: #8a9098; font-size: .58rem; text-transform: uppercase; letter-spacing: .08em; }
+.order-record-navigation strong { font-size: .7rem; }
+.order-record-navigation a:hover { background: #fff; border-color: rgba(17,24,39,.2); }
+.order-record-navigation .disabled { color: #a7abb0; background: rgba(255,255,255,.4); }
+
+/* Integration cards keep logos compact and copy completely separate. */
+.integration-live-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+.integration-live-card {
+  min-height: 310px;
+  padding: 21px;
+}
+.integration-live-card > header {
+  min-height: 46px;
+  align-items: center;
+}
+.integration-live-logo {
+  width: 90px;
+  height: 42px;
+  padding: 7px 9px;
+  flex: 0 0 90px;
+  border-radius: 12px;
+}
+.integration-live-logo img {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.integration-live-copy {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  padding-top: 12px;
+}
+.integration-live-copy .eyebrow { margin: 0; }
+.integration-live-copy h2 {
+  margin: 7px 0 8px;
+  font-size: 1.03rem;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.integration-live-copy > p:not(.eyebrow) {
+  min-height: 46px;
+  margin: 0 0 13px;
+}
+.integration-live-card > footer { padding-top: 16px; }
+
+/* Shop Setup keeps a real preview visible while its form scrolls. */
+@media (min-width: 961px) {
+  .settings-preview-stack {
+    position: sticky;
+    top: 20px;
+    height: calc(100dvh - 40px);
+    max-height: calc(100dvh - 40px);
+    overflow: hidden;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .live-brand-preview {
+    min-height: 0;
+    height: 100%;
+  }
+  .mini-designer-header { min-height: 100%; }
+  .embed-card { max-height: 150px; }
+}
+
+/* Customer customization: garment stays put; only configuration scrolls. */
+@media (min-width: 961px) {
+  .modern-designer-layout {
+    height: calc(100dvh - 112px);
+    min-height: 620px;
+    grid-template-columns: minmax(500px, 1.12fr) minmax(370px, .88fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    overflow: hidden;
+  }
+  .modern-stage-column {
+    grid-column: 1;
+    grid-row: 1;
+    position: relative;
+    top: auto;
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .modern-stage-column .design-stage.modern {
+    display: flex;
+    min-height: 0;
+    max-height: none;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+  .modern-stage-column .design-stage.modern svg {
+    min-height: 0;
+    max-height: none;
+    flex: 1 1 auto;
+  }
+  .stage-guidance { flex: 0 0 auto; }
+  .modern-config-column {
+    grid-column: 2;
+    grid-row: 1;
+    display: grid;
+    align-content: start;
+    gap: 18px;
+    height: 100%;
+    min-height: 0;
+    padding-right: 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(17,24,39,.22) transparent;
+  }
+  .modern-config-column::-webkit-scrollbar { width: 6px; }
+  .modern-config-column::-webkit-scrollbar-thumb { background: rgba(17,24,39,.2); border-radius: 999px; }
+  .designer-step-panel,
+  .modern-order-panel {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 960px) {
+  .admin-shell { padding-left: 0; }
+  .floating-save-bar {
+    left: 14px;
+    right: 72px;
+    bottom: 12px;
+    width: auto;
+    min-height: 52px;
+    padding: 8px 9px 8px 12px;
+  }
+  .dashboard-help { right: 12px; bottom: 12px; }
+  .dashboard-help-trigger { width: 48px; min-width: 48px; min-height: 48px; padding: 0; justify-content: center; }
+  .dashboard-help-trigger > b { display: none; }
+  .dashboard-help-panel { bottom: 56px; }
+
+  .settings-editor-layout { display: flex; flex-direction: column; }
+  .settings-preview-stack {
+    order: -1;
+    position: sticky;
+    top: 68px;
+    z-index: 15;
+    width: 100%;
+    max-height: 46dvh;
+    overflow: hidden;
+    grid-template-columns: 1fr;
+  }
+  .settings-preview-stack .live-brand-preview { min-height: 0; max-height: 46dvh; }
+  .settings-preview-stack .mini-designer-header { min-height: 0; height: 100%; }
+  .settings-preview-stack .embed-card { display: none; }
+
+  .modern-designer-layout {
+    display: flex;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    flex-direction: column;
+  }
+  .modern-stage-column {
+    order: 1;
+    position: sticky;
+    top: 104px;
+    z-index: 22;
+    width: 100%;
+    max-height: 48dvh;
+    overflow: hidden;
+    box-shadow: 0 18px 48px rgba(17,24,39,.16);
+  }
+  .modern-stage-column .design-stage.modern { min-height: 0; max-height: calc(48dvh - 92px); }
+  .modern-stage-column .design-stage.modern svg { max-height: calc(48dvh - 150px); }
+  .modern-stage-column .stage-guidance { display: none; }
+  .modern-config-column {
+    order: 2;
+    display: grid;
+    gap: 13px;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  .integration-live-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 680px) {
+  .floating-save-bar {
+    align-items: center;
+    flex-direction: row;
+    gap: 7px;
+  }
+  .floating-save-status { min-width: 0; flex: 1 1 auto; }
+  .floating-save-status small { display: none; }
+  .floating-save-status strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .7rem; }
+  .floating-save-actions { width: auto; flex: 0 0 auto; }
+  .floating-save-button { min-width: 72px; flex: 0 0 auto; }
+  .floating-delete-button { padding-inline: 9px; }
+
+  .supplier-intelligence-heading { align-items: stretch; flex-direction: column; }
+  .supplier-intelligence-actions { width: 100%; }
+  .supplier-intelligence-actions .compact-action-button { flex: 1; }
+
+  .order-record-navigation { align-items: stretch; flex-direction: column; }
+  .order-record-navigation > div { display: grid; grid-template-columns: 1fr 1fr; }
+  .order-record-navigation > div > a,
+  .order-record-navigation > div > span { min-width: 0; }
+
+  .integration-live-card { min-height: 0; }
+  .integration-live-logo { width: 78px; height: 38px; flex-basis: 78px; }
+
+  .settings-preview-stack { top: 62px; max-height: 42dvh; }
+  .settings-preview-stack .live-brand-preview { max-height: 42dvh; padding: 10px; }
+  .settings-preview-stack .mini-designer-header { padding: 15px; }
+  .settings-preview-stack .mini-designer-header > header { margin-bottom: 12px; }
+  .settings-preview-stack .mini-storefront-product,
+  .settings-preview-stack .mini-trust-message { display: none; }
+  .settings-preview-stack .mini-designer-header h3 { font-size: 1.25rem; }
+
+  .modern-stage-column { top: 96px; max-height: 45dvh; }
+  .modern-stage-column .design-stage.modern { max-height: calc(45dvh - 88px); }
+  .modern-stage-column .design-stage.modern svg { max-height: calc(45dvh - 146px); }
+}

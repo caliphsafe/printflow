@@ -29,7 +29,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <SignOutButton />
         </div>
       </aside>
-      <div className="admin-mobile-bar"><Link href="/dashboard" className="mobile-brand">PRINTFLOW</Link><div className="admin-mobile-actions"><a href="/preview/storefront" target="_blank" rel="noreferrer">Preview</a><details className="admin-mobile-menu"><summary>Menu</summary><div><DashboardNav />{platformAdmin && <Link className="platform-admin-link" href="/platform-admin">Platform admin</Link>}<SignOutButton /></div></details></div></div>
+      <div className="admin-mobile-bar">
+        <Link href="/dashboard" className="mobile-brand">PRINTFLOW</Link>
+        <div className="admin-mobile-actions">
+          <a href="/preview/storefront" target="_blank" rel="noreferrer">Preview</a>
+          <details className="admin-mobile-menu">
+            <summary>Menu</summary>
+            <div>
+              <DashboardNav />
+              <div className="mobile-account-panel">
+                <div className="account-chip"><span>{user.email?.slice(0,1).toUpperCase()}</span><div><strong>{user.email?.split("@")[0]}</strong><small>{user.email}</small></div></div>
+                {platformAdmin && <Link className="platform-admin-link" href="/platform-admin">Platform admin</Link>}
+                <SignOutButton />
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
       <main className="admin-main">{children}</main>
       <DashboardHelp />
     </div>

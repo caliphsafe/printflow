@@ -36,7 +36,7 @@ export default function SupplierInsights() {
   useEffect(() => { void load(); }, []);
 
   return <section className="admin-card supplier-intelligence-section">
-    <div className="card-heading supplier-intelligence-heading"><div><p className="section-kicker">SUPPLIER INTELLIGENCE</p><h2>Products worth watching</h2><p>Live opportunities from your supplier account and the products customers choose most.</p></div><div><button className="text-button" onClick={() => void load(true)} disabled={busy}>{busy ? "Refreshing…" : "Refresh"}</button><Link href="/dashboard/suppliers/catalog">Catalog</Link></div></div>
+    <div className="card-heading supplier-intelligence-heading"><div><p className="section-kicker">SUPPLIER INTELLIGENCE</p><h2>Products worth watching</h2><p>Live opportunities from your supplier account and the products customers choose most.</p></div><div className="supplier-intelligence-actions"><button className="compact-action-button" onClick={() => void load(true)} disabled={busy}>{busy ? "Refreshing…" : "Refresh"}</button><Link className="compact-action-button primary" href="/dashboard/suppliers/catalog">Catalog</Link></div></div>
     {data?.warning && <div className="supplier-intelligence-warning">Live supplier updates could not refresh. Your imported-product activity is still shown.</div>}
     <div className="supplier-intelligence-columns">
       <section><header><h3>Top in your shop</h3><small>Based on customer orders</small></header><div>{data?.topItems?.length ? data.topItems.slice(0,3).map((item, index) => <SupplierCard key={item.id || index} item={item} kind="top"/>) : <p className="supplier-intelligence-empty">Order history will reveal your best sellers.</p>}</div></section>
