@@ -1,35 +1,16 @@
 # 43 Build
 
-“43 Build” is the standard complete delivery process for a production website, application, or tool.
+A 43 Build is the standard delivery process for production website, app, and tool updates.
 
 Every 43 Build includes:
 
-1. A complete replacement ZIP containing the current full project.
-2. GitHub instructions identifying what to upload and what not to upload.
-3. An additive Supabase migration when database or Storage changes are required.
-4. An explicit statement when no Supabase migration is required.
-5. Exact Vercel environment-variable and deployment instructions.
-6. TypeScript validation and a clean production build.
-7. Release notes describing features, compatibility, and provider dependencies.
-8. An ordered administrator-to-customer test checklist.
-9. Honest integration states: Live, Test/Sandbox, Configured, or Roadmap.
-10. No simulated behavior presented as a production connection.
-11. Responsive desktop, tablet, and mobile review.
-12. Persistent save states and protection against accidental loss of work.
-
-For production payment builds, 43 Build also requires:
-
-- server-calculated totals
-- hosted or PCI-appropriate checkout
-- payment-reference persistence
-- verified payment updates
-- retry and cancel behavior
-- exact production-origin configuration
-
-For supplier-order builds, 43 Build also requires:
-
-- exact supplier SKU mapping
-- test and live order modes
-- supplier confirmation numbers
-- clear unpaid-order risk controls
-- stored request and response history
+1. A complete replacement ZIP or a clearly scoped file package.
+2. Exact GitHub replacement paths and commit steps.
+3. An additive Supabase migration when database changes are required.
+4. A clear statement when Supabase changes are not required.
+5. Vercel environment and deployment instructions.
+6. TypeScript and production-build validation.
+7. A practical testing checklist in the correct order.
+8. Honest integration-status notes distinguishing live workflows from future connectors.
+9. Backward-compatible handling of existing account and production data whenever possible.
+10. UX review across desktop, tablet, and mobile.
