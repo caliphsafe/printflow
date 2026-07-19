@@ -23,7 +23,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     supabase.from("designs").select("*").eq("id", id).eq("shop_id", shop.id).single(),
     supabase.from("supplier_orders").select("*").eq("design_id", id).eq("provider", "ss-activewear").maybeSingle(),
     supabase.from("supplier_connections").select("settings,status").eq("shop_id", shop.id).eq("provider", "ss-activewear").maybeSingle(),
-    supabase.from("supplier_order_drafts").select("status,estimated_total").eq("design_id", id).maybeSingle()
+    supabase.from("supplier_order_drafts").select("provider,status,estimated_total").eq("design_id", id).in("status", ["cart", "ready"])
   ]);
   if (!o) notFound();
 
@@ -53,6 +53,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   );
 
   const supplierItems = Array.isArray(o.supplier_items) ? o.supplier_items : [];
+  const activeCarts = Array.isArray(draft) ? draft : [];
+  const cartSummary = activeCarts.length ? { status: "cart", estimated_total: activeCarts.reduce((sum: number, item: any) => sum + Number(item.estimated_total || 0), 0) } : null;
   const testMode = connection?.settings?.testMode !== false;
   const config = o.design_configuration || {};
   const printSizes = config.printSizes || {};
@@ -132,7 +134,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     {supplierItems.length > 0 && <section className="admin-card supplier-order-card">
       <div className="card-heading"><div><p className="eyebrow">SUPPLIER FULFILLMENT</p><h2>Blank purchase</h2></div><span className="status-pill">{connection?.status === "connected" ? (testMode ? "S&S test mode" : "S&S live ordering") : "Draft workflow"}</span></div>
       <div className="supplier-line-list">{supplierItems.map((x: any) => <div className="supplier-line" key={`${x.sku}-${x.sizeName}`}><div><strong>{x.brandName} {x.styleName}</strong><span>{x.colorName} · {x.sizeName}</span></div><div><strong>{x.quantity} pcs</strong><span>{x.sku}</span></div></div>)}</div>
-      <BlankOrderDraftButton designId={o.id} enabled={supplierItems.length > 0} existing={draft} />
+      <BlankOrderDraftButton designId={o.id} enabled={supplierItems.length > 0} existing={cartSummary} />
       {supplierOrder && <div className="supplier-order-confirmation"><span>S&S order number</span><strong>{(supplierOrder.external_order_numbers || []).join(", ") || "Submitted"}</strong></div>}
       <OrderBlanksButton designId={o.id} enabled={connection?.status === "connected" && supplierItems.length > 0} testMode={testMode} alreadyOrdered={Boolean(supplierOrder)} paymentStatus={o.payment_status || (o.status === "paid" ? "paid" : "pending")} />
     </section>}

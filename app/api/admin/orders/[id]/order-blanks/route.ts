@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: Props) {
   if (!paid && !allowBeforePayment) return NextResponse.json({ error: "Confirm payment or choose to order before payment." }, { status: 409 });
   if (!connection || connection.status !== "connected") return NextResponse.json({ error: "Connect S&S Activewear in Integrations first." }, { status: 409 });
 
-  const items = Array.isArray(design.supplier_items) ? design.supplier_items.filter((item: any) => Number(item.quantity) > 0 && item.sku) : [];
+  const items = Array.isArray(design.supplier_items) ? design.supplier_items.filter((item: any) => Number(item.quantity) > 0 && item.sku && String(item.provider || "ss-activewear") === "ss-activewear") : [];
   if (!items.length) return NextResponse.json({ error: "This job does not contain imported S&S SKUs." }, { status: 409 });
 
   const settings: any = connection.settings || {};
@@ -82,6 +82,8 @@ export async function POST(request: Request, { params }: Props) {
       response_payload: response
     });
     if (error) throw error;
+
+    await supabase.from("supplier_order_drafts").update({ status: "submitted", updated_at: new Date().toISOString() }).eq("design_id", design.id).eq("provider", "ss-activewear");
 
     return NextResponse.json({ ok: true, orderNumbers, testOrder: payload.testOrder, orderedBeforePayment: !paid });
   } catch (error) {

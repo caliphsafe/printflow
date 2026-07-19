@@ -45,8 +45,8 @@ const guides: Record<string, Guide> = {
     eyebrow: "SUPPLIER HELP",
     title: "Import live blanks safely",
     intro: "Use S&S to browse real styles, colors, costs, inventory, and exact SKUs before publishing products.",
-    steps: ["Confirm S&S shows Connected.", "Search the live catalog.", "Choose only the colors you plan to sell.", "Import and finish print zones in Products."],
-    links: [{ label: "Browse S&S catalog", href: "/dashboard/suppliers/catalog" }, { label: "Manage suppliers", href: "/dashboard/suppliers" }]
+    steps: ["Confirm S&S shows Connected.", "Import products from the live catalog.", "Add customer-order blanks to the supplier cart.", "Review SKUs and submit each provider order."],
+    links: [{ label: "S&S catalog", href: "/dashboard/suppliers/catalog" }, { label: "Supplier cart", href: "/dashboard/suppliers/cart" }]
   },
   integrations: {
     eyebrow: "INTEGRATION HELP",
