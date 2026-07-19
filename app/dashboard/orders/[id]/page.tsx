@@ -132,9 +132,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     {supplierItems.length > 0 && <section className="admin-card supplier-order-card">
       <div className="card-heading"><div><p className="eyebrow">SUPPLIER FULFILLMENT</p><h2>Blank purchase</h2></div><span className="status-pill">{connection?.status === "connected" ? (testMode ? "S&S test mode" : "S&S live ordering") : "Draft workflow"}</span></div>
       <div className="supplier-line-list">{supplierItems.map((x: any) => <div className="supplier-line" key={`${x.sku}-${x.sizeName}`}><div><strong>{x.brandName} {x.styleName}</strong><span>{x.colorName} · {x.sizeName}</span></div><div><strong>{x.quantity} pcs</strong><span>{x.sku}</span></div></div>)}</div>
-      <BlankOrderDraftButton designId={o.id} enabled={o.status === "paid" && supplierItems.length > 0} existing={draft} />
+      <BlankOrderDraftButton designId={o.id} enabled={supplierItems.length > 0} existing={draft} />
       {supplierOrder && <div className="supplier-order-confirmation"><span>S&S order number</span><strong>{(supplierOrder.external_order_numbers || []).join(", ") || "Submitted"}</strong></div>}
-      <OrderBlanksButton designId={o.id} enabled={o.status === "paid" && connection?.status === "connected" && supplierItems.length > 0} testMode={testMode} alreadyOrdered={Boolean(supplierOrder)} />
+      <OrderBlanksButton designId={o.id} enabled={connection?.status === "connected" && supplierItems.length > 0} testMode={testMode} alreadyOrdered={Boolean(supplierOrder)} paymentStatus={o.payment_status || (o.status === "paid" ? "paid" : "pending")} />
     </section>}
   </>;
 }

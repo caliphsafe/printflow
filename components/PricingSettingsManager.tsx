@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import FloatingSaveBar from "@/components/FloatingSaveBar";
+import { useUnsavedChanges } from "@/components/useUnsavedChanges";
 import type {
   CorePricingFee,
   DtfPricing,
@@ -16,22 +17,43 @@ const money = (value: number) => Number(Math.max(0, Number(value || 0)).toFixed(
 const tabs = ["Foundation", "Screen printing", "DTF", "Embroidery", "Add-ons"] as const;
 type Tab = (typeof tabs)[number];
 
-export default function PricingSettingsManager({ initialPricing, returnTo = "/dashboard/products" }: { initialPricing: ShopPricingProfile; returnTo?: string }) {
-  const router = useRouter();
+export default function PricingSettingsManager({ initialPricing, sampleBlankCost = 0, sampleBlankLabel = "Imported garment" }: { initialPricing: ShopPricingProfile; sampleBlankCost?: number; sampleBlankLabel?: string }) {
   const [draft, setDraft] = useState(initialPricing);
+  const [savedSnapshot, setSavedSnapshot] = useState(JSON.stringify(initialPricing));
   const [tab, setTab] = useState<Tab>("Foundation");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const dirty = useMemo(() => JSON.stringify(draft) !== savedSnapshot, [draft, savedSnapshot]);
+  useUnsavedChanges(dirty);
   const activeMethods = [draft.screenPrinting.active, draft.dtf.active, draft.embroidery.active].filter(Boolean).length;
-  const exampleGarment = 3 * (1 + draft.garmentMarkupPercent / 100);
+  const exampleCost = Math.max(0, sampleBlankCost);
+  const exampleGarment = exampleCost * (1 + draft.garmentMarkupPercent / 100);
   const exampleScreen = draft.screenPrinting.heartBasePerItem;
   const exampleUnit = exampleGarment + exampleScreen;
 
-  async function save(returnAfter = false) {
-    setBusy(true);
+  function duplicateBreak(method: string, values: QuantityDiscountTier[]) {
+    const seen = new Set<number>();
+    for (const item of values) {
+      const quantity = Math.max(1, Math.round(Number(item.minQuantity || 1)));
+      if (seen.has(quantity)) return `${method} has more than one price break starting at ${quantity} items.`;
+      seen.add(quantity);
+    }
+    return "";
+  }
+
+  async function save() {
     setMessage("");
     setError("");
+    const validation =
+      duplicateBreak("Screen printing", draft.screenPrinting.quantityDiscounts) ||
+      duplicateBreak("DTF", draft.dtf.quantityDiscounts) ||
+      duplicateBreak("Embroidery", draft.embroidery.quantityDiscounts);
+    if (validation) {
+      setError(`${validation} Change or remove the duplicate row before saving.`);
+      return;
+    }
+    setBusy(true);
     try {
       const response = await fetch("/api/admin/pricing", {
         method: "POST",
@@ -41,8 +63,8 @@ export default function PricingSettingsManager({ initialPricing, returnTo = "/da
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to save pricing.");
       setDraft(data.pricing);
-      setMessage("Pricing engine published. Customer quotes now use these production rules.");
-      if (returnAfter) router.push(returnTo);
+      setSavedSnapshot(JSON.stringify(data.pricing));
+      setMessage("Pricing saved. New quotes now use these rates.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save pricing.");
     } finally {
@@ -68,7 +90,7 @@ export default function PricingSettingsManager({ initialPricing, returnTo = "/da
           <div className="pricing-v8-panel">
             <PanelHeading eyebrow="PRICING FOUNDATION" title="Build profitable quotes from real cost" description="PrintFlow starts with the exact supplier cost for each selected size, adds your garment markup, then applies the selected production method, quantity break, setup, and services." />
             <div className="pricing-foundation-grid">
-              <label className="modern-field"><span>Supplier garment markup</span><div className="field-suffix"><input type="text" inputMode="decimal" value={draft.garmentMarkupPercent} onChange={(event) => setDraft({ ...draft, garmentMarkupPercent: Math.max(0, Number(event.target.value) || 0) })}/><b>%</b></div><small>Default is 10%. A $3.00 blank becomes $3.30 before printing.</small></label>
+              <label className="modern-field"><span>Supplier garment markup</span><div className="field-suffix"><input type="text" inputMode="decimal" value={draft.garmentMarkupPercent} onChange={(event) => setDraft({ ...draft, garmentMarkupPercent: Math.max(0, Number(event.target.value) || 0) })}/><b>%</b></div><small>Default is 10%. The markup is calculated from each imported size and color cost.</small></label>
               <label className="modern-field"><span>Currency</span><select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value })}><option value="usd">USD — US Dollar</option><option value="cad">CAD — Canadian Dollar</option></select><small>Checkout sessions and customer totals use this currency.</small></label>
             </div>
             <div className="pricing-fee-grid">
@@ -76,7 +98,7 @@ export default function PricingSettingsManager({ initialPricing, returnTo = "/da
               <FeeEditor title="Design optimization" value={draft.designOptimizationFee} onChange={(value) => setDraft({ ...draft, designOptimizationFee: value })}/>
             </div>
             <div className="pricing-v8-example">
-              <div><span>Supplier blank</span><b>$3.00</b></div><div><span>{draft.garmentMarkupPercent}% garment markup</span><b>${(exampleGarment - 3).toFixed(2)}</b></div><div><span>1-color Heart screen print</span><b>${exampleScreen.toFixed(2)}</b></div><div className="total"><span>Merchandise unit before setup</span><b>${exampleUnit.toFixed(2)}</b></div>
+              <div><span>{sampleBlankLabel}</span><b>${exampleCost.toFixed(2)}</b></div><div><span>{draft.garmentMarkupPercent}% garment markup</span><b>${(exampleGarment - exampleCost).toFixed(2)}</b></div><div><span>1-color Heart screen print</span><b>${exampleScreen.toFixed(2)}</b></div><div className="total"><span>Merchandise unit before setup</span><b>${exampleUnit.toFixed(2)}</b></div>
             </div>
           </div>
         )}
@@ -89,7 +111,7 @@ export default function PricingSettingsManager({ initialPricing, returnTo = "/da
 
       {error && <div className="error-message settings-message">{error}</div>}
       {message && <div className="success-message settings-message">{message}</div>}
-      <div className="pricing-v8-savebar"><div><strong>One pricing engine for every product.</strong><span>Supplier costs update automatically; print rules remain controlled by the shop.</span></div><div className="pricing-save-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => router.push(returnTo)}>Back without saving</button><button className="primary-button" type="button" disabled={busy} onClick={() => void save(true)}>{busy ? "Publishing…" : "Publish & return"}</button></div></div>
+      <FloatingSaveBar dirty={dirty} busy={busy} onSave={save} message="Supplier costs stay live while these shop-wide production rates remain under your control." />
     </div>
   );
 }
@@ -115,9 +137,30 @@ function EmbroideryEditor({ value, onChange }: { value: EmbroideryPricing; onCha
 }
 
 function QuantityDiscountEditor({ values, onChange }: { values: QuantityDiscountTier[]; onChange: (values: QuantityDiscountTier[]) => void }) {
-  const sorted = useMemo(() => [...values].sort((a, b) => a.minQuantity - b.minQuantity), [values]);
-  function update(id: string, next: Partial<QuantityDiscountTier>) { onChange(values.map((item) => item.id === id ? { ...item, ...next } : item).sort((a, b) => a.minQuantity - b.minQuantity)); }
-  return <section className="quantity-break-editor"><div className="quantity-break-heading"><div><h3>Quantity price breaks</h3><p>Set the percentage by which production cost drops when the order reaches each threshold.</p></div><button type="button" className="secondary-button compact" onClick={() => onChange([...values, { id: `tier-${Date.now()}`, minQuantity: (sorted.at(-1)?.minQuantity || 12) * 2, discountPercent: sorted.at(-1)?.discountPercent || 0 }])}>Add threshold</button></div><div className="quantity-break-list">{sorted.map((item, index) => { const next = sorted[index + 1]; return <article key={item.id}><div><span>Quantity range</span><strong>{item.minQuantity}–{next ? next.minQuantity - 1 : "∞"}</strong></div><label><span>Starts at</span><div className="field-suffix"><input type="text" inputMode="numeric" value={item.minQuantity} onChange={(event) => update(item.id, { minQuantity: Math.max(1, Number(event.target.value.replace(/\D/g, "")) || 1) })}/><b>items</b></div></label><label><span>Production discount</span><div className="field-suffix"><input type="text" inputMode="decimal" value={item.discountPercent} onChange={(event) => update(item.id, { discountPercent: Math.min(95, Math.max(0, Number(event.target.value) || 0)) })}/><b>%</b></div></label><button type="button" aria-label="Remove threshold" disabled={values.length === 1} onClick={() => onChange(values.filter((candidate) => candidate.id !== item.id))}>×</button></article>; })}</div></section>;
+  const rows = values.length ? values : [{ id: "tier-base", minQuantity: 12, discountPercent: 0 }];
+
+  function update(id: string, next: Partial<QuantityDiscountTier>) {
+    onChange(rows.map((item) => item.id === id ? { ...item, ...next } : item));
+  }
+
+  function add() {
+    const last = rows[rows.length - 1];
+    const nextMinimum = Math.max(12, Number(last?.minQuantity || 12) * 2);
+    onChange([...rows, { id: `tier-${crypto.randomUUID()}`, minQuantity: nextMinimum, discountPercent: Number(last?.discountPercent || 0) }]);
+  }
+
+  function remove(id: string) {
+    if (rows.length <= 1) return;
+    onChange(rows.filter((item) => item.id !== id));
+  }
+
+  function normalizeOrder() {
+    onChange(rows
+      .map((item) => ({ ...item, minQuantity: Math.max(1, Math.round(item.minQuantity || 1)) }))
+      .sort((a, b) => a.minQuantity - b.minQuantity));
+  }
+
+  return <section className="quantity-break-editor stable"><div className="quantity-break-heading"><div><h3>Quantity price breaks</h3><p>Add each starting quantity and the production discount that begins there.</p></div><button type="button" className="secondary-button compact" onClick={add}>Add price break</button></div><div className="quantity-break-list">{rows.map((item, index) => { const next = rows[index + 1]; return <article key={item.id} className="quantity-break-row"><div className="quantity-range"><span>Range</span><strong>{item.minQuantity}–{next ? Math.max(item.minQuantity, next.minQuantity - 1) : "and up"}</strong></div><label><span>Starts at</span><div className="field-suffix"><input type="text" inputMode="numeric" value={item.minQuantity} onChange={(event) => update(item.id, { minQuantity: Math.max(1, Number(event.target.value.replace(/\D/g, "")) || 1) })} onBlur={normalizeOrder}/><b>items</b></div></label><label><span>Production discount</span><div className="field-suffix"><input type="text" inputMode="decimal" value={item.discountPercent} onChange={(event) => update(item.id, { discountPercent: Math.min(95, Math.max(0, Number(event.target.value.replace(/[^0-9.]/g, "")) || 0)) })}/><b>%</b></div></label><button type="button" className="quantity-delete" aria-label={`Delete price break starting at ${item.minQuantity}`} disabled={rows.length === 1} onClick={() => remove(item.id)}>Delete</button></article>; })}</div></section>;
 }
 
 function AddOnEditor({ values, onChange }: { values: PricingAddOn[]; onChange: (values: PricingAddOn[]) => void }) {
@@ -128,4 +171,4 @@ function AddOnEditor({ values, onChange }: { values: PricingAddOn[]; onChange: (
 function FormulaNote({ title, text }: { title: string; text: string }) { return <div className="formula-note"><span>ƒ</span><div><strong>{title}</strong><p>{text}</p></div></div>; }
 function Field({ label, value, suffix, onChange }: { label: string; value: number; suffix: string; onChange: (value: number) => void }) { return <label className="modern-field"><span>{label}</span><div className="field-suffix"><input type="text" inputMode="decimal" value={value} onChange={(event) => onChange(Number(event.target.value.replace(/[^0-9.]/g, "")) || 0)}/><b>{suffix}</b></div></label>; }
 function MoneyField({ label, value, decimals = 2, onChange }: { label: string; value: number; decimals?: number; onChange: (value: number) => void }) { return <label className="modern-field"><span>{label}</span><MoneyInput value={value} decimals={decimals} onChange={onChange}/></label>; }
-function MoneyInput({ value, decimals = 2, onChange }: { value: number; decimals?: number; onChange: (value: number) => void }) { const [text, setText] = useState(Number(value || 0).toFixed(decimals)); return <div className="money-input"><span>$</span><input type="text" inputMode="decimal" value={text} onChange={(event) => setText(event.target.value.replace(/[^0-9.]/g, ""))} onBlur={() => { const next = money(Number(text)); setText(next.toFixed(decimals)); onChange(next); }}/></div>; }
+function MoneyInput({ value, decimals = 2, onChange }: { value: number; decimals?: number; onChange: (value: number) => void }) { const [text, setText] = useState(Number(value || 0).toFixed(decimals)); useEffect(() => setText(Number(value || 0).toFixed(decimals)), [value, decimals]); return <div className="money-input"><span>$</span><input type="text" inputMode="decimal" value={text} onChange={(event) => setText(event.target.value.replace(/[^0-9.]/g, ""))} onBlur={() => { const next = money(Number(text)); setText(next.toFixed(decimals)); onChange(next); }}/></div>; }

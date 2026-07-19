@@ -2,6 +2,8 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import FloatingSaveBar from "@/components/FloatingSaveBar";
+import { useUnsavedChanges } from "@/components/useUnsavedChanges";
 import { useRouter } from "next/navigation";
 import type {
   CatalogProduct,
@@ -77,6 +79,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
   const [products, setProducts] = useState(initialProducts);
   const [selectedId, setSelectedId] = useState(startingProduct?.id || "");
   const [draft, setDraft] = useState<CatalogProduct | null>(startingProduct ? copy(startingProduct) : null);
+  const [savedSnapshot, setSavedSnapshot] = useState(startingProduct ? JSON.stringify(startingProduct) : "");
   const [tab, setTab] = useState<Tab>(initialTab && TABS.includes(initialTab) ? initialTab : "Basics");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -86,6 +89,8 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
   const [previewSize, setPreviewSize] = useState<PrintSize>("full");
 
   const selected = useMemo(() => products.find((item) => item.id === selectedId), [products, selectedId]);
+  const dirty = useMemo(() => Boolean(draft) && JSON.stringify(draft) !== savedSnapshot, [draft, savedSnapshot]);
+  useUnsavedChanges(dirty);
   const visibleProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return products;
@@ -97,8 +102,10 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
   }, [products, search]);
 
   function choose(product: CatalogProduct) {
+    if (dirty && !window.confirm("You have unsaved product changes. Switch products without saving?")) return;
     setSelectedId(product.id);
     setDraft(copy(product));
+    setSavedSnapshot(JSON.stringify(product));
     setPreviewColorId(product.configuration.colors[0]?.id || "");
     setMessage("");
     setTab("Basics");
@@ -139,6 +146,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
       setProducts((current) => (isNew ? [...current, saved] : current.map((item) => (item.id === saved.id ? saved : item))));
       setSelectedId(saved.id);
       setDraft(copy(saved));
+      setSavedSnapshot(JSON.stringify(saved));
       if (!options.quiet) setMessage("Saved. Pricing, print zones, and customer options are live.");
       return saved;
     } catch (error) {
@@ -149,10 +157,11 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
     }
   }
 
-  async function openPricing() {
-    const saved = await save({ quiet: true });
-    if (!saved) return;
-    const returnTo = `/dashboard/products?product=${encodeURIComponent(saved.id)}&tab=${encodeURIComponent("Cost basis")}`;
+  async function goToPricing() {
+    let current = draft;
+    if (dirty) current = await save({ quiet: true });
+    if (!current) return;
+    const returnTo = `/dashboard/products?product=${encodeURIComponent(current.id)}&tab=${encodeURIComponent("Cost basis")}`;
     router.push(`/dashboard/pricing?returnTo=${encodeURIComponent(returnTo)}`);
   }
 
@@ -178,6 +187,10 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
   const previewColor = draft?.configuration.colors.find((item) => item.id === previewColorId) || draft?.configuration.colors[0];
   const previewImage = previewSide === "front" ? previewColor?.frontImageUrl : previewColor?.backImageUrl;
   const activeZone = draft ? draft.configuration.customization[zoneKey(previewSide, previewSize)] : null;
+  const supplierCosts = useMemo(() => {
+    const costs = (draft?.configuration.supplier?.variants || []).filter((item) => item.active !== false && Number(item.customerPrice) > 0).map((item) => Number(item.customerPrice));
+    return costs.length ? { min: Math.min(...costs), max: Math.max(...costs) } : null;
+  }, [draft]);
 
   return (
     <div className="product-admin-shell">
@@ -190,8 +203,10 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
           <button
             className="secondary-button compact"
             onClick={() => {
+              if (dirty && !window.confirm("You have unsaved product changes. Create a new product without saving?")) return;
               const item = blankProduct(products.length + 1);
               setDraft(item);
+              setSavedSnapshot("");
               setSelectedId(item.id);
               setPreviewColorId(item.configuration.colors[0]?.id || "");
               setTab("Basics");
@@ -238,7 +253,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
               <div>
                 <p className="eyebrow">{draft.configuration.supplier ? "SUPPLIER PRODUCT" : "CUSTOM PRODUCT"}</p>
                 <h1>{draft.name}</h1>
-                <p>{selected?.configuration.supplier?.partNumber || "Build a production-ready customer product."}</p>
+                <p>{selected?.configuration.supplier?.partNumber || "Prepare this product for customer ordering."}</p>
               </div>
               <label className="modern-switch">
                 <input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} />
@@ -408,6 +423,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                           <div><span>Supplier</span><strong>{draft.configuration.supplier.supplierName || draft.configuration.supplier.provider}</strong></div>
                           <div><span>Style</span><strong>{draft.configuration.supplier.brandName} {draft.configuration.supplier.styleName}</strong></div>
                           <div><span>Live variants</span><strong>{draft.configuration.supplier.variants.filter((item) => item.active !== false).length}</strong></div>
+                          <div><span>Base blank cost</span><strong>{supplierCosts ? `$${supplierCosts.min.toFixed(2)}${supplierCosts.max !== supplierCosts.min ? `–$${supplierCosts.max.toFixed(2)}` : ""}` : "Cost unavailable"}</strong></div>
                           <div><span>Shop garment markup</span><strong>{pricingProfile.garmentMarkupPercent}%</strong></div>
                         </>
                       ) : (
@@ -425,7 +441,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                   >
                     <div className="global-pricing-callout">
                       <div><span>$</span><div><strong>No duplicated product price tables</strong><p>Update production rates once and every active product immediately uses the same pricing logic while retaining its own supplier cost.</p></div></div>
-                      <button className="secondary-button" type="button" disabled={busy} onClick={openPricing}>{busy ? "Saving product…" : "Save & open production pricing →"}</button>
+                      <button className="secondary-button" type="button" disabled={busy} onClick={goToPricing}>{busy ? "Saving…" : "Production pricing"}</button>
                     </div>
                   </Panel>
                 </>
@@ -433,17 +449,13 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
             </div>
 
             {message && <div className={message.startsWith("Saved") ? "success-message" : "error-message"}>{message}</div>}
-            <div className="sticky-editor-actions">
-              {!draft.id.startsWith("new-") && (
-                <button className="danger-button" disabled={busy} onClick={remove}>
-                  Delete
-                </button>
-              )}
-              <span>{draft.active ? "Changes will appear in the customer catalog." : "This product is hidden from customers."}</span>
-              <button className="primary-button fit-button" disabled={busy} onClick={() => void save()}>
-                {busy ? "Saving…" : "Save product"}
-              </button>
-            </div>
+            <FloatingSaveBar
+              dirty={dirty}
+              busy={busy}
+              onSave={async () => { await save(); }}
+              message={draft.active ? "Saved changes appear in the customer catalog." : "This product remains hidden from customers."}
+              secondary={!draft.id.startsWith("new-") ? <button className="floating-delete-button" type="button" disabled={busy} onClick={remove}>Delete</button> : null}
+            />
           </>
         )}
       </section>

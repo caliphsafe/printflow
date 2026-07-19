@@ -2,6 +2,8 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { ChangeEvent, CSSProperties, useMemo, useState } from "react";
+import FloatingSaveBar from "@/components/FloatingSaveBar";
+import { useUnsavedChanges } from "@/components/useUnsavedChanges";
 import type { ShopSettings } from "@/lib/types";
 
 type Shop = { id: string; name: string; slug: string; active: boolean; settings: ShopSettings };
@@ -14,6 +16,8 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
   const [logoBusy, setLogoBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(shop), [draft, shop]);
+  useUnsavedChanges(dirty);
   const embed = useMemo(() => `<script src="${appUrl}/embed.js" data-shop="${shop.slug}"></script>`, [appUrl, shop.slug]);
   const experience = draft.settings.customerExperience || {};
   const business = draft.settings.business || {};
@@ -61,13 +65,13 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
   }
 
   return <>
-    <header className="admin-header"><div><p className="eyebrow">SHOP SETUP</p><h1>Brand your storefront</h1><p>Control how customers experience your public order page without editing code.</p></div><div className="admin-header-actions"><a className="secondary-button" href="/preview/storefront" target="_blank" rel="noreferrer">Preview storefront ↗</a>{shop.active && <a className="ghost-button" href={`/s/${shop.slug}`} target="_blank" rel="noreferrer">Open live storefront ↗</a>}</div></header>
+    <header className="admin-header"><div><p className="eyebrow">SHOP SETUP</p><h1>Brand your storefront</h1><p>Control your public order page, brand, messaging, and launch status.</p></div><div className="admin-header-actions"><a className="secondary-button" href="/preview/storefront" target="_blank" rel="noreferrer">Storefront preview ↗</a>{shop.active && <a className="ghost-button" href={`/s/${shop.slug}`} target="_blank" rel="noreferrer">Live storefront ↗</a>}</div></header>
 
     <div className="settings-editor-layout">
       <div className="settings-form-stack">
         <section className={draft.active ? "setup-guidance-card ready" : "setup-guidance-card"}>
           <div><span>{draft.active ? "✓" : "1"}</span><div><strong>{draft.active ? "Storefront is published" : "Publish when you are ready"}</strong><p>The private preview works at any time. Turn on Storefront active and save when customers should be able to visit the public link.</p></div></div>
-          <a href="/preview/storefront" target="_blank" rel="noreferrer">Open private preview</a>
+          <a href="/preview/storefront" target="_blank" rel="noreferrer">Storefront preview</a>
         </section>
         <section className="admin-card settings-editor-card">
           <div className="card-heading"><div><p className="section-kicker">IDENTITY</p><h2>Company profile</h2></div><label className="toggle-row"><input type="checkbox" checked={draft.active} onChange={e=>setDraft(c=>({...c,active:e.target.checked}))}/><span>Storefront active <small>Public customers can open your shop link after you save.</small></span></label></div>
@@ -114,7 +118,6 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
 
         {error && <div className="error-message settings-message">{error}</div>}
         {message && <div className="success-message settings-message">{message}</div>}
-        <div className="settings-save-bar"><div><strong>Ready to publish?</strong><span>Changes affect the hosted and embedded designer.</span></div><button className="primary-button settings-save-button" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save changes"}</button></div>
       </div>
 
       <aside className="settings-preview-stack">
@@ -127,8 +130,9 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
             <div className="mini-trust-message">{experience.trustMessage}</div><button type="button">Start my order</button>
           </div>
         </section>
-        <section className="admin-card embed-card"><p className="section-kicker">INSTALLATION</p><h2>One-line embed</h2><pre className="code-block polished-code">{embed}</pre><p className="small-muted">Shop slug: <code>{shop.slug}</code></p></section>
+        <section className="admin-card embed-card"><p className="section-kicker">WEBSITE</p><h2>Add the storefront to your site</h2><pre className="code-block polished-code">{embed}</pre><p className="small-muted">Shop slug: <code>{shop.slug}</code></p></section>
       </aside>
     </div>
+    <FloatingSaveBar dirty={dirty} busy={busy} onSave={save} message="Save to update branding, messaging, and storefront availability." />
   </>;
 }

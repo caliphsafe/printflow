@@ -14,7 +14,7 @@ export default async function IntegrationsPage() {
   if (ss) connections.push({ provider: "ss-activewear", category: "supplier", status: ss.status, account_label: ss.account_hint, configuration: ss.settings, last_tested_at: ss.last_tested_at, last_error: null });
   const liveCount = connections.filter((item) => item.status === "connected").length;
   return <>
-    <header className="admin-header"><div><p className="eyebrow">LIVE CONNECTION CENTER</p><h1>Integrations that actually work</h1><p>Connect a provider only when PrintFlow can use it end to end. Roadmap integrations are clearly disabled until their complete production workflow is ready.</p></div><Link className="secondary-button" href="/dashboard/suppliers">Open Supplier Hub</Link></header>
+    <header className="admin-header"><div><p className="eyebrow">LIVE CONNECTION CENTER</p><h1>Connected services</h1><p>Connect payment and supplier accounts used by your storefront and order workflow. Services that are not yet available remain clearly labeled.</p></div><Link className="secondary-button" href="/dashboard/suppliers">Suppliers</Link></header>
     <section className="integration-summary production"><div><span className={liveCount ? "connection-orb connected" : "connection-orb"}/><div><strong>{liveCount} live connection{liveCount === 1 ? "" : "s"}</strong><small>ready for real catalog or payment activity</small></div></div><p>Stripe and Square create native hosted checkout. S&S provides live catalog and ordering. Connectable means operational—not merely stored credentials.</p></section>
     <IntegrationCenter initialConnections={connections}/>
   </>;

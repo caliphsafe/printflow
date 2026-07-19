@@ -454,7 +454,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     }
   }
 
-  if (!products.length) return <main className="designer-empty production-empty"><span>PF</span><h1>{previewMode ? "Your storefront needs a published product." : "This storefront is being stocked."}</h1><p>{previewMode ? "Activate at least one product in Dashboard → Products, then refresh this preview." : "The print shop has not published any products yet. Please check back shortly."}</p>{previewMode && <a className="designer-primary" href="/dashboard/products">Open Products</a>}</main>;
+  if (!products.length) return <main className="designer-empty production-empty"><span>PF</span><h1>{previewMode ? "Your storefront needs a published product." : "This storefront is being stocked."}</h1><p>{previewMode ? "Activate at least one product in Dashboard → Products, then refresh this preview." : "The print shop has not published any products yet. Please check back shortly."}</p>{previewMode && <a className="designer-primary" href="/dashboard/products">Products</a>}</main>;
 
   if (completed)
     return (

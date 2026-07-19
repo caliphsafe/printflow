@@ -68,7 +68,8 @@ function buildShopSettings(body: Record<string, unknown>, userEmail: string | un
 async function ensureShopFoundation(
   admin: ReturnType<typeof createSupabaseAdmin>,
   organizationId: string,
-  shopId: string
+  shopId: string,
+  planCode = "growth"
 ) {
   const [pricingResult, subscriptionResult] = await Promise.all([
     admin.from("shop_pricing_profiles").upsert(
@@ -83,8 +84,9 @@ async function ensureShopFoundation(
       {
         organization_id: organizationId,
         provider: "manual",
-        plan_code: "launch",
-        status: "trialing"
+        plan_code: ["starter", "growth", "scale"].includes(planCode) ? planCode : "growth",
+        status: "trialing",
+        current_period_end: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
       },
       { onConflict: "organization_id", ignoreDuplicates: true }
     )
@@ -104,13 +106,15 @@ async function createShopForOrganization({
   organizationId,
   businessName,
   requestedSlug,
-  settings
+  settings,
+  planCode = "growth"
 }: {
   admin: ReturnType<typeof createSupabaseAdmin>;
   organizationId: string;
   businessName: string;
   requestedSlug: string;
   settings: ReturnType<typeof normalizeShopSettings>;
+  planCode?: string;
 }) {
   const shopSlug = await uniqueSlug(admin, slugify(requestedSlug || businessName));
   const { data: shop, error: shopError } = await admin
@@ -130,7 +134,7 @@ async function createShopForOrganization({
     throw new Error(shopError?.message || "The shop record could not be created.");
   }
 
-  await ensureShopFoundation(admin, organizationId, shop.id);
+  await ensureShopFoundation(admin, organizationId, shop.id, planCode);
   return shop;
 }
 
@@ -177,7 +181,7 @@ export async function POST(request: Request) {
       if (shopLookupError) throw shopLookupError;
 
       if (existingShop) {
-        await ensureShopFoundation(admin, existingMembership.organization_id, existingShop.id);
+        await ensureShopFoundation(admin, existingMembership.organization_id, existingShop.id, String(body.planCode || user.user_metadata?.selected_plan || "growth"));
         return NextResponse.json({ ok: true, recovered: false, shop: existingShop });
       }
 
@@ -186,7 +190,8 @@ export async function POST(request: Request) {
         organizationId: existingMembership.organization_id,
         businessName,
         requestedSlug: String(body.slug || businessName),
-        settings
+        settings,
+        planCode: String(body.planCode || user.user_metadata?.selected_plan || "growth")
       });
 
       return NextResponse.json({ ok: true, recovered: true, shop });
@@ -223,7 +228,8 @@ export async function POST(request: Request) {
       organizationId: organization.id,
       businessName,
       requestedSlug: shopSlug,
-      settings
+      settings,
+      planCode: String(body.planCode || user.user_metadata?.selected_plan || "growth")
     });
 
     return NextResponse.json({ ok: true, recovered: false, organization, shop });

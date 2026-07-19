@@ -5,12 +5,14 @@ import SignOutButton from "@/components/SignOutButton";
 import DashboardNav from "@/components/DashboardNav";
 import DashboardHelp from "@/components/DashboardHelp";
 import { getAdminContext } from "@/lib/admin-data";
+import { isPlatformAdmin } from "@/lib/platform-admin";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const { organization, shop } = await getAdminContext();
+  const platformAdmin = await isPlatformAdmin(user.email);
   if (!organization || !shop) redirect("/onboarding");
 
   return (
@@ -23,6 +25,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
         <div className="sidebar-footer">
           <div className="account-chip"><span>{user.email?.slice(0,1).toUpperCase()}</span><div><strong>{user.email?.split("@")[0]}</strong><small>{user.email}</small></div></div>
+          {platformAdmin && <Link className="platform-admin-link" href="/platform-admin">Platform admin</Link>}
           <SignOutButton />
         </div>
       </aside>

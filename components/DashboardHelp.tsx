@@ -16,14 +16,14 @@ const guides: Record<string, Guide> = {
   overview: {
     eyebrow: "GETTING STARTED",
     title: "Launch your first order flow",
-    intro: "Complete these foundations in order. PrintFlow updates the dashboard checklist as your shop becomes production-ready.",
+    intro: "Complete these foundations in order. PrintFlow updates the dashboard checklist as the shop becomes ready to accept orders.",
     steps: ["Connect Stripe or Square.", "Connect S&S and import at least one product.", "Review production pricing.", "Customize and publish the storefront."],
-    links: [{ label: "Open launch checklist", href: "/dashboard" }, { label: "Preview storefront", href: "/preview/storefront" }]
+    links: [{ label: "Launch checklist", href: "/dashboard" }, { label: "Preview storefront", href: "/preview/storefront" }]
   },
   orders: {
     eyebrow: "ORDER HELP",
     title: "Move an order into production",
-    intro: "Open an order to review payment, artwork, mockups, customer notes, blank requirements, and fulfillment status.",
+    intro: "Select an order to review payment, artwork, mockups, customer notes, blank requirements, and fulfillment status.",
     steps: ["Confirm payment is marked Paid.", "Download original artwork and mockups.", "Review design optimization requests.", "Prepare or place the supplier blank order."],
     links: [{ label: "View all orders", href: "/dashboard/orders" }, { label: "Preview order flow", href: "/preview/storefront" }]
   },
@@ -39,7 +39,7 @@ const guides: Record<string, Guide> = {
     title: "Build a reliable production quote",
     intro: "PrintFlow starts with the garment cost, applies your markup, then calculates the selected production method and quantity break.",
     steps: ["Set the garment markup.", "Configure Screen Print, DTF, and Embroidery inputs.", "Add quantity discounts.", "Publish pricing before testing checkout."],
-    links: [{ label: "Open pricing", href: "/dashboard/pricing" }, { label: "Return to products", href: "/dashboard/products" }]
+    links: [{ label: "Pricing", href: "/dashboard/pricing" }, { label: "Return to products", href: "/dashboard/products" }]
   },
   suppliers: {
     eyebrow: "SUPPLIER HELP",
@@ -54,6 +54,13 @@ const guides: Record<string, Guide> = {
     intro: "A provider is marked connected only after PrintFlow validates the credentials and completes the required live setup.",
     steps: ["Connect Stripe or Square for checkout.", "Connect S&S for catalog and blank ordering.", "Use test credentials first when available.", "Run one complete order before switching fully live."],
     links: [{ label: "Manage integrations", href: "/dashboard/integrations" }, { label: "Preview checkout flow", href: "/preview/storefront" }]
+  },
+  account: {
+    eyebrow: "ACCOUNT HELP",
+    title: "Manage your PrintFlow plan",
+    intro: "Your plan controls monthly order capacity and account access. Customer payments remain separate in your shop's Stripe or Square connection.",
+    steps: ["Review the current plan and status.", "Choose a plan before the trial ends.", "Use Billing settings to manage payment details.", "Contact platform support if account access needs review."],
+    links: [{ label: "Plan and billing", href: "/dashboard/account" }, { label: "Overview", href: "/dashboard" }]
   },
   settings: {
     eyebrow: "STOREFRONT HELP",
@@ -70,6 +77,7 @@ function guideKey(pathname: string) {
   if (pathname.startsWith("/dashboard/pricing")) return "pricing";
   if (pathname.startsWith("/dashboard/suppliers")) return "suppliers";
   if (pathname.startsWith("/dashboard/integrations")) return "integrations";
+  if (pathname.startsWith("/dashboard/account")) return "account";
   if (pathname.startsWith("/dashboard/settings")) return "settings";
   return "overview";
 }

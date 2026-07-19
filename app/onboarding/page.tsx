@@ -40,5 +40,7 @@ export default async function OnboardingPage() {
     shopSlug = shop?.slug;
   }
 
-  return <OnboardingWizard existing={{ hasShop, shopSlug }} />;
+  const selectedPlan = String(user.user_metadata?.selected_plan || "growth");
+  const defaultBusinessName = String(user.user_metadata?.business_name || "");
+  return <OnboardingWizard existing={{ hasShop, shopSlug }} selectedPlan={selectedPlan} defaultBusinessName={defaultBusinessName} />;
 }

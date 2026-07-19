@@ -50,6 +50,36 @@ export async function POST(request: Request) {
     if (!shop) return jsonError("Shop not found.", 404);
 
     const settings = normalizeShopSettings(shop.settings);
+    const { data: subscription } = await supabase
+      .from("subscription_accounts")
+      .select("plan_code,status,current_period_end")
+      .eq("organization_id", shop.organization_id)
+      .maybeSingle();
+
+    if (subscription) {
+      const status = String(subscription.status || "trialing");
+      const trialValid = status === "trialing" && (!subscription.current_period_end || new Date(subscription.current_period_end).getTime() > Date.now());
+      const accountActive = ["active", "pilot"].includes(status) || trialValid;
+      if (!accountActive) return jsonError("This storefront is temporarily unavailable for new orders.", 403);
+
+      const { data: plan } = await supabase
+        .from("subscription_plans")
+        .select("order_limit")
+        .eq("code", subscription.plan_code)
+        .eq("active", true)
+        .maybeSingle();
+      if (plan?.order_limit) {
+        const now = new Date();
+        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+        const { count } = await supabase
+          .from("designs")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", shop.organization_id)
+          .gte("created_at", monthStart);
+        if (Number(count || 0) >= Number(plan.order_limit)) return jsonError("This storefront has reached its current monthly order capacity.", 403);
+      }
+    }
+
     const [{ data: rows }, { data: pricingRow }] = await Promise.all([
       supabase
         .from("catalog_products")

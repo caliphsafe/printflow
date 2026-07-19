@@ -10,7 +10,7 @@ export default function SSCatalogImporter({connected}:{connected:boolean}){
  async function importStyle(){setLoading(true);setMessage('');const r=await fetch('/api/admin/suppliers/ss/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({products,selectedColors:selected})});const d=await r.json();setLoading(false);if(!r.ok)return setMessage(d.error||'Unable to import.');window.location.reload();}
  const colors=Array.from(new Map(products.map(x=>[x.colorName,x])).values());
  return <>
-  <button className="secondary-button compact" disabled={!connected} onClick={()=>setOpen(true)}>Import from S&amp;S</button>
+  <button className="secondary-button compact" disabled={!connected} onClick={()=>setOpen(true)}>S&amp;S catalog</button>
   {!connected&&<small className="supplier-import-hint">Connect S&amp;S under Integrations first.</small>}
   {open&&<div className="modal-backdrop" onMouseDown={()=>setOpen(false)}><div className="supplier-modal" onMouseDown={e=>e.stopPropagation()}>
    <div className="modal-head"><div><p className="eyebrow">S&amp;S ACTIVEWEAR</p><h2>Import blank garments</h2></div><button className="icon-button" onClick={()=>setOpen(false)}>×</button></div>

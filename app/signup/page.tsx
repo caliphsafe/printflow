@@ -1,17 +1,13 @@
 import Link from "next/link";
 import SignupForm from "@/components/SignupForm";
 
-export default function SignupPage() {
-  return <main className="launch-auth-shell">
+export default async function SignupPage({ searchParams }: { searchParams: Promise<{ plan?: string }> }) {
+  const { plan } = await searchParams;
+  return <main className="launch-auth-shell glass-auth-shell">
     <Link href="/" className="launch-wordmark"><span>PF</span> PRINTFLOW</Link>
     <div className="launch-auth-layout">
-      <section className="launch-auth-copy">
-        <p className="launch-kicker">START SELLING CUSTOM APPAREL</p>
-        <h1>Your storefront, pricing, suppliers, and production files—one flow.</h1>
-        <p>Create your shop, connect live payments, import S&S products, and launch a branded ordering page.</p>
-        <div className="launch-proof-list"><span>✓ Native Stripe or Square checkout</span><span>✓ Live S&S catalog and SKU mapping</span><span>✓ Production-ready artwork and mockups</span></div>
-      </section>
-      <section className="launch-auth-card"><div><small>ACCOUNT 1 OF 2</small><h2>Create your owner login</h2><p>You’ll configure the shop immediately after confirming your email.</p></div><SignupForm /></section>
+      <section className="launch-auth-copy"><p className="launch-kicker">START YOUR PRINTFLOW SHOP</p><h1>Go from account creation to a branded ordering storefront in one guided setup.</h1><p>We’ll help you create the shop, connect payment and supplier accounts, review pricing, and publish your customer experience.</p><div className="launch-proof-list"><span>✓ 14-day trial</span><span>✓ Guided setup checklist</span><span>✓ Secure encrypted connections</span><span>✓ Keep full control of pricing and supplier purchasing</span></div></section>
+      <section className="launch-auth-card glass-panel"><div><small>STEP 1 OF 2</small><h2>Create the owner account</h2><p>After email confirmation, shop setup continues automatically.</p></div><SignupForm initialPlan={plan} /></section>
     </div>
   </main>;
 }
