@@ -199,7 +199,7 @@ export const DEFAULT_CONFIGURATION: ProductConfiguration = {
     { id: "white", name: "White", hex: "#f7f7f2" }
   ],
   printLocations: ["Front", "Back"],
-  manualUnitCost: 3,
+  manualUnitCost: 0,
   packages: [
     {
       id: "12-plus",
@@ -300,7 +300,7 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
           .sort((a, b) => a.quantity - b.quantity)
       : DEFAULT_CONFIGURATION.packages,
     mockupImageUrl: raw.mockupImageUrl ? String(raw.mockupImageUrl) : undefined,
-    manualUnitCost: Math.max(0, Number(raw.manualUnitCost ?? 3)),
+    manualUnitCost: Math.max(0, Number(raw.manualUnitCost ?? 0)),
     customization: {
       category: String(custom.category || "T-Shirts"),
       decorationMethods:

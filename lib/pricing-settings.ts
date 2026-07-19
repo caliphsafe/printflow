@@ -102,15 +102,23 @@ function normalizeFee(value: any, fallback: ShopPricingProfile["orderSetupFee"])
 
 function normalizeDiscounts(value: unknown, fallback = DEFAULT_DISCOUNTS): QuantityDiscountTier[] {
   const raw = Array.isArray(value) ? value : fallback;
+  const used = new Set<string>();
   const normalized = raw
-    .map((item: any, index) => ({
-      id: cleanId(item?.id || item?.minQuantity, `tier-${index + 1}`),
-      minQuantity: integer(item?.minQuantity ?? item?.quantity ?? 12, 1),
-      discountPercent: percent(item?.discountPercent ?? item?.percentage ?? 0)
-    }))
+    .map((item: any, index) => {
+      const baseId = cleanId(item?.id || item?.minQuantity, `tier-${index + 1}`);
+      let id = baseId;
+      let suffix = 2;
+      while (used.has(id)) id = `${baseId}-${suffix++}`;
+      used.add(id);
+      return {
+        id,
+        minQuantity: integer(item?.minQuantity ?? item?.quantity ?? 12, 1),
+        discountPercent: percent(item?.discountPercent ?? item?.percentage ?? 0)
+      };
+    })
     .sort((a, b) => a.minQuantity - b.minQuantity);
   if (!normalized.length) return fallback;
-  if (normalized[0].minQuantity > 12) normalized.unshift({ id: "12", minQuantity: 12, discountPercent: 0 });
+  if (normalized[0].minQuantity > 12) normalized.unshift({ id: "tier-12-base", minQuantity: 12, discountPercent: 0 });
   return normalized;
 }
 
