@@ -157,8 +157,14 @@ export async function POST(request: Request) {
 
   const admin = createSupabaseAdmin();
   const settings = buildShopSettings(body, user.email, businessName);
+  const ownerName = String(body.ownerName || "").trim();
 
   try {
+    if (ownerName) {
+      await admin.auth.admin.updateUserById(user.id, {
+        user_metadata: { ...(user.user_metadata || {}), full_name: ownerName, business_name: businessName }
+      });
+    }
     const { data: existingMembership, error: membershipLookupError } = await admin
       .from("organization_members")
       .select("organization_id")

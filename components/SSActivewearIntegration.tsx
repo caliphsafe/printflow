@@ -32,6 +32,7 @@ export default function SSActivewearIntegration({ connected: initialConnected, a
    <label><span>S&amp;S account number</span><input value={credentials.accountNumber} onChange={e=>setCredentials({...credentials,accountNumber:e.target.value})} autoComplete="off"/></label>
    <label><span>API key</span><input type="password" value={credentials.apiKey} onChange={e=>setCredentials({...credentials,apiKey:e.target.value})} autoComplete="new-password"/></label>
    <p className="field-help">S&amp;S uses API credentials rather than OAuth. PrintFlow encrypts these values before storing them.</p>
+   <details className="integration-credential-guide"><summary>How to get S&amp;S API access</summary><ol><li>Sign in to the S&amp;S account used for wholesale purchasing.</li><li>Confirm the customer account number.</li><li>Request or locate the API key issued for that account.</li><li>Paste the account number and API key above.</li><li>Keep Test orders selected until the first supplier test succeeds.</li></ol><a href="https://api.ssactivewear.com" target="_blank" rel="noreferrer">S&amp;S API information ↗</a></details>
    <button className="primary-button fit-button" disabled={busy} onClick={connect}>{busy?'Testing connection…':'Connect S&S account'}</button>
   </div> : <div className="supplier-settings-form">
    <div className="connection-banner"><span>Connected account</span><strong>{accountHint||'Credentials saved'}</strong></div>

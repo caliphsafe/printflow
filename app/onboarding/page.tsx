@@ -3,46 +3,29 @@ import { createSupabaseServer } from "@/lib/supabase-server";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import OnboardingWizard from "@/components/OnboardingWizard";
 
-export default async function OnboardingPage() {
+export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ plan?: string }> }) {
   const supabase = await createSupabaseServer();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/signup");
 
-  // Use the authenticated user only to establish identity, then use the server-only
-  // admin client to inspect onboarding records. New shops are intentionally inactive
-  // until onboarding is complete, so the public active-shop RLS policy cannot be used
-  // to determine whether the shop was actually created.
   const admin = createSupabaseAdmin();
-  const { data: membership } = await admin
-    .from("organization_members")
-    .select("organization_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-
+  const { data: membership } = await admin.from("organization_members").select("organization_id").eq("user_id", user.id).limit(1).maybeSingle();
   let shopSlug: string | undefined;
   let onboardingState: any = {};
   let hasShop = false;
 
   if (membership) {
-    const { data: shop } = await admin
-      .from("shops")
-      .select("slug,onboarding_completed_at,onboarding_state")
-      .eq("organization_id", membership.organization_id)
-      .limit(1)
-      .maybeSingle();
-
+    const { data: shop } = await admin.from("shops").select("slug,onboarding_completed_at,onboarding_state").eq("organization_id", membership.organization_id).limit(1).maybeSingle();
     if (shop?.onboarding_completed_at) redirect("/dashboard");
-
     hasShop = Boolean(shop);
     shopSlug = shop?.slug;
     onboardingState = shop?.onboarding_state || {};
   }
 
-  const selectedPlan = String(user.user_metadata?.selected_plan || "growth");
+  const params = await searchParams;
+  const requestedPlan = String(params.plan || user.user_metadata?.selected_plan || "growth");
+  const selectedPlan = ["starter", "growth", "scale"].includes(requestedPlan) ? requestedPlan : "growth";
   const defaultBusinessName = String(user.user_metadata?.business_name || "");
-  return <OnboardingWizard existing={{ hasShop, shopSlug, onboardingState }} selectedPlan={selectedPlan} defaultBusinessName={defaultBusinessName} />;
+  const defaultOwnerName = String(user.user_metadata?.full_name || user.user_metadata?.name || "");
+  return <OnboardingWizard existing={{ hasShop, shopSlug, onboardingState }} selectedPlan={selectedPlan} defaultBusinessName={defaultBusinessName} defaultOwnerName={defaultOwnerName} defaultEmail={user.email || ""}/>;
 }
