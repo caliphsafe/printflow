@@ -95,11 +95,14 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const products = shop.products.filter((item) => item.active);
   const firstProduct = products[0];
   const [step, setStep] = useState<"products" | "customize">("products");
+  const [productQuery, setProductQuery] = useState("");
+  const [productCategory, setProductCategory] = useState("All");
+  const [helpOpen, setHelpOpen] = useState(false);
   const [product, setProduct] = useState<CatalogProduct>(firstProduct);
   const [color, setColor] = useState<ShirtColor>(firstProduct?.configuration.colors[0]);
   const [mode, setMode] = useState<DesignMode>(firstProduct?.configuration.customization.designModes[0] || "front");
   const [side, setSide] = useState<DesignSide>("front");
-  const [printSizes, setPrintSizes] = useState<Record<DesignSide, PrintSize>>({ front: "heart", back: "heart" });
+  const [printSizes, setPrintSizes] = useState<Record<DesignSide, PrintSize>>({ front: "full", back: "heart" });
   const [sizes, setSizes] = useState<SizeQuantity[]>(firstProduct?.configuration.sizes.map((size) => ({ size, quantity: 0 })) || []);
   const [decoration, setDecoration] = useState(firstProduct?.configuration.customization.decorationMethods[0] || "Screen Print");
   const [inkColors, setInkColors] = useState<Record<DesignSide, number>>({ front: 1, back: 1 });
@@ -148,6 +151,12 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const designOptimizationAmount = resolveDesignOptimizationFee(shop.pricing, product);
   const totalPrice = pricing.totalPrice;
   const uploadLimitMb = formatMegabytes(shop.settings.upload.maxBytes);
+  const productCategories = useMemo(() => ["All", ...Array.from(new Set(products.map((item) => item.configuration.customization.category).filter(Boolean)))], [products]);
+  const visibleProducts = useMemo(() => products.filter((item) => {
+    const matchesCategory = productCategory === "All" || item.configuration.customization.category === productCategory;
+    const searchable = `${item.name} ${item.description} ${item.configuration.customization.category}`.toLowerCase();
+    return matchesCategory && searchable.includes(productQuery.trim().toLowerCase());
+  }), [products, productCategory, productQuery]);
 
   useEffect(() => {
     const send = () => window.parent.postMessage({ type: "printflow:resize", height: document.documentElement.scrollHeight }, "*");
@@ -183,10 +192,10 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     releaseSide(back);
     setProduct(next);
     setColor(next.configuration.colors.find((item) => item.active !== false) || next.configuration.colors[0]);
-    const nextMode = next.configuration.customization.designModes[0] || "front";
+    const nextMode = next.configuration.customization.designModes.includes("front") ? "front" : (next.configuration.customization.designModes[0] || "front");
     setMode(nextMode);
     setSide(nextMode === "back" ? "back" : "front");
-    setPrintSizes({ front: "heart", back: "heart" });
+    setPrintSizes({ front: "full", back: "heart" });
     setSizes(next.configuration.sizes.map((size) => ({ size, quantity: 0 })));
     setDecoration(next.configuration.customization.decorationMethods[0] || "Screen Print");
     setInkColors({ front: 1, back: 1 });
@@ -499,8 +508,12 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             <p>{shop.settings.customerExperience?.introduction || "Select a product to see colors, print options, and live pricing."}</p>
             <div className="customer-trust-row">{(shop.settings.customerExperience?.trustMessage || "Secure checkout · Artwork review · Order confirmation").split("·").map((item)=><span key={item}>✓ {item.trim()}</span>)}</div>
           </div>
+          <div className="customer-catalog-toolbar">
+            <label><span>Find a product</span><input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Search shirts, hoodies, polos…" /></label>
+            <div className="customer-category-tabs" aria-label="Product categories">{productCategories.map((category) => <button type="button" key={category} className={productCategory === category ? "active" : ""} onClick={() => setProductCategory(category)}>{category}</button>)}</div>
+          </div>
           <div className="customer-product-grid modern">
-            {products.map((item) => {
+            {visibleProducts.map((item) => {
               const firstColor = item.configuration.colors.find((candidate) => candidate.active !== false) || item.configuration.colors[0];
               const min = item.configuration.customization.minimumQuantity;
               const sampleColor = firstColor || item.configuration.colors[0];
@@ -509,7 +522,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                 product: item,
                 sizes: item.configuration.sizes.map((size, index) => ({ size, quantity: index === 0 ? min : 0 })),
                 color: sampleColor,
-                printSelections: { front: { printSize: "heart", inkColors: 1 } },
+                printSelections: { front: { printSize: "full", inkColors: 1 } },
                 decorationMethod: item.configuration.customization.decorationMethods[0] || "Screen Print",
                 designOptimizationRequested: false,
                 selectedAddOnIds: availableAddOns(shop.pricing, item).filter((addOn) => addOn.customerSelectable && addOn.selectedByDefault).map((addOn) => addOn.id)
@@ -533,7 +546,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                       <small>{item.configuration.sizes.length} sizes</small>
                       <small>Min. {min}</small>
                     </div>
-                    <strong>From ${price.unitPrice.toFixed(2)} each · ${price.totalPrice.toFixed(2)} minimum order</strong>
+                    <strong>From ${price.unitPrice.toFixed(2)} per shirt</strong><small className="product-minimum-note">Minimum order: {min}</small>
                   </div>
                 </button>
               );
@@ -754,16 +767,14 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
               <b>{totalAssigned}</b>
               <small>{totalAssigned >= minimum ? "Minimum reached" : `${minimum - totalAssigned} more needed`}</small>
             </div>
-            <div className="live-price-card component-breakdown">
-              <div><span>Supplier garments + {pricing.garmentMarkupPercent}% markup</span><b>${pricing.garmentSubtotal.toFixed(2)}</b></div>
-              {pricing.printLines.map((line) => <div key={line.side}><span>{line.side === "front" ? "Front" : "Back"} · {printSizeLabel(line.printSize)}{line.inkColors ? ` · ${line.inkColors} color${line.inkColors === 1 ? "" : "s"}` : ""}</span><b>${line.unitPrice.toFixed(2)} / shirt</b></div>)}
-              <div className="adjustment"><span>{pricing.discountTierLabel}</span><b>{decoration}</b></div>
-              <div className="unit"><span>Average merchandise</span><b>${pricing.averageUnitPrice.toFixed(2)} each</b></div>
-              <div><span>{totalAssigned || minimum} garments</span><b>${pricing.merchandiseSubtotal.toFixed(2)}</b></div>
-              {pricing.setupFee > 0 && <div><span>{shop.pricing.orderSetupFee.label}</span><b>${pricing.setupFee.toFixed(2)}</b></div>}
-              {pricing.designOptimizationFee > 0 && <div><span>{shop.pricing.designOptimizationFee.label}</span><b>${pricing.designOptimizationFee.toFixed(2)}</b></div>}
-              {pricing.addOns.map((item) => <div key={item.id}><span>{item.name}</span><b>${item.total.toFixed(2)}</b></div>)}
-              <div className="total"><span>Estimated total</span><b>${totalPrice.toFixed(2)}</b></div>
+            <div className="live-price-card customer-simple-price">
+              <div className="unit"><span>Final price per shirt</span><b>${pricing.averageUnitPrice.toFixed(2)}</b></div>
+              <div><span>{totalAssigned || minimum} shirts</span><b>${pricing.merchandiseSubtotal.toFixed(2)}</b></div>
+              {pricing.setupFee > 0 && <div><span>{decoration.toLowerCase().includes("screen") ? "Screens & setup" : "Production setup"}</span><b>${pricing.setupFee.toFixed(2)}</b></div>}
+              {pricing.designOptimizationFee > 0 && <div><span>Design service</span><b>${pricing.designOptimizationFee.toFixed(2)}</b></div>}
+              {pricing.addOns.length > 0 && <div><span>Selected extras</span><b>${pricing.addOns.reduce((sum, item) => sum + item.total, 0).toFixed(2)}</b></div>}
+              <div className="total"><span>Total</span><b>${totalPrice.toFixed(2)}</b></div>
+              <small>Pricing includes the selected garment, printing, and quantity level.</small>
             </div>
             <details className="customer-details" open>
               <summary>Contact & notes</summary>
@@ -784,6 +795,10 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
           </aside>
         </section>
       )}
+      <div className={helpOpen ? "storefront-help open" : "storefront-help"}>
+        {helpOpen && <aside><header><div><small>ORDER HELP</small><h2>Build your order step by step</h2></div><button type="button" onClick={() => setHelpOpen(false)}>×</button></header><ol><li><span>1</span><p>Choose the garment and color you want.</p></li><li><span>2</span><p>Select Front, Back, or both. Full Size Front is selected first.</p></li><li><span>3</span><p>Upload artwork, then move and resize it inside the print zone.</p></li><li><span>4</span><p>Enter quantities by size and review the simple final price.</p></li></ol><p>{shop.settings.customerExperience?.turnaroundTime}</p></aside>}
+        <button type="button" className="storefront-help-trigger" onClick={() => setHelpOpen((value) => !value)}><span>?</span><b>{helpOpen ? "Close" : "Order help"}</b></button>
+      </div>
     </main>
   );
 }

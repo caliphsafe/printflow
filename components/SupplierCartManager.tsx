@@ -27,6 +27,7 @@ type CartJob = {
   createdAt: string;
   ordered: boolean;
   orderNumbers: string[];
+  imageUrl?: string;
 };
 
 type ProviderState = {
@@ -42,6 +43,11 @@ const providerNames: Record<string, string> = {
 
 function providerName(provider: string) {
   return providerNames[provider] || provider.replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function imageSrc(url?: string) {
+  if (!url) return "";
+  return url.includes("ssactivewear.com") ? `/api/public/supplier-image?url=${encodeURIComponent(url)}` : url;
 }
 
 export default function SupplierCartManager({
@@ -128,7 +134,10 @@ export default function SupplierCartManager({
           return (
             <article className="admin-card supplier-cart-job" key={job.id}>
               <header>
-                <div><p className="section-kicker">{job.displayId}</p><h3>{job.productName}</h3><p>{job.customerName} · {job.paymentStatus === "paid" ? "Paid" : "Payment pending"}</p></div>
+                <div className="supplier-cart-product-summary">
+                  <div className="supplier-cart-product-image">{job.imageUrl ? <img src={imageSrc(job.imageUrl)} alt={job.productName} /> : <span>PF</span>}</div>
+                  <div><p className="section-kicker">{job.displayId}</p><h3>{job.productName}</h3><p>{job.customerName} · {job.paymentStatus === "paid" ? "Paid" : "Payment pending"}</p></div>
+                </div>
                 <div className="supplier-cart-job-total"><span>{job.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)} pieces</span><strong>${job.estimatedTotal.toFixed(2)}</strong></div>
               </header>
               <div className="supplier-cart-lines">

@@ -17,18 +17,18 @@ export default function SupplierHub({ ssSupplier, productCount, draftCount }: Pr
 
       <section className="supplier-equal-grid production-suppliers">
         <article className="admin-card supplier-equal-card">
-          <header><div className="provider-mark">S&amp;S</div><span className={connected ? "status-pill connected" : "status-pill"}>{connected ? "Live" : "Setup needed"}</span></header>
-          <div><p className="eyebrow">WHOLESALE SUPPLIER</p><h2>S&amp;S Activewear</h2><p>Live product search, account pricing, inventory, exact SKUs, product imports, and direct wholesale ordering. AlphaBroder products are handled through S&amp;S.</p></div>
-          <footer><Link className="secondary-button" href="#ss-settings">{connected ? "Connection" : "Connect account"}</Link>{connected && <Link className="text-button" href="/dashboard/suppliers/catalog">Catalog →</Link>}</footer>
+          <header><div className="supplier-brand-logo"><img src="/suppliers/ss-activewear.png" alt="S&S Activewear logo"/></div><span className={connected ? "status-pill connected" : "status-pill"}>{connected ? "Live" : "Setup needed"}</span></header>
+          <div><p className="eyebrow">WHOLESALE SUPPLIER</p><h2>S&amp;S Activewear</h2><p>Live product search, account pricing, inventory, exact SKUs, product imports, and direct wholesale ordering.</p></div>
+          <footer><Link className="secondary-button" href="#ss-settings">{connected ? "Connection" : "Connect account"}</Link>{connected && <Link className="text-button" href="/dashboard/suppliers/catalog">Catalog</Link>}</footer>
         </article>
         <article className="admin-card supplier-equal-card">
-          <header><div className="provider-mark">＋</div><span className="status-pill connected">Available</span></header>
-          <div><p className="eyebrow">OWN INVENTORY</p><h2>Manual products</h2><p>Create products from local stock or specialty suppliers. PrintFlow keeps the provider attached to the item so future purchasing stays separated by supplier.</p></div>
+          <header><div className="supplier-brand-logo"><img src="/suppliers/manual.png" alt="Manual products"/></div><span className="status-pill connected">Available</span></header>
+          <div><p className="eyebrow">OWN INVENTORY</p><h2>Manual products</h2><p>Create products from local stock or specialty suppliers. Each product keeps its supplier identity for future purchasing.</p></div>
           <footer><Link className="secondary-button" href="/dashboard/products">Products</Link><span className="supplier-card-note">Uses the same storefront and pricing engine.</span></footer>
         </article>
         <article className="admin-card supplier-equal-card roadmap">
-          <header><div className="provider-mark">SM</div><span className="status-pill">Roadmap</span></header>
-          <div><p className="eyebrow">FUTURE CONNECTOR</p><h2>SanMar</h2><p>When enabled, SanMar products will enter their own supplier cart and use a separate wholesale order connection.</p></div>
+          <header><div className="supplier-brand-logo"><img src="/suppliers/sanmar.png" alt="SanMar logo"/></div><span className="status-pill">Roadmap</span></header>
+          <div><p className="eyebrow">FUTURE CONNECTOR</p><h2>SanMar</h2><p>SanMar products will browse, import, and purchase through a separate supplier cart when its connector is enabled.</p></div>
           <footer><span className="supplier-card-note">Supplier-specific catalog and ordering are required before connection.</span></footer>
         </article>
       </section>

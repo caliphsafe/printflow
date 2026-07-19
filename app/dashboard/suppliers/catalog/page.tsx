@@ -1,3 +1,4 @@
+import PageBackLink from "@/components/PageBackLink";
 import SupplierCatalogBrowser from "@/components/SupplierCatalogBrowser";
 import { getAdminContext } from "@/lib/admin-data";
 

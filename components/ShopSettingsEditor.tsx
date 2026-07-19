@@ -124,9 +124,10 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
         <section className="admin-card live-brand-preview" style={{"--preview-brand":draft.settings.brand.primaryColor,"--preview-text":draft.settings.brand.textColor,"--preview-accent":draft.settings.brand.accentColor || "#d8ff5f","--preview-surface":draft.settings.brand.surfaceColor || "#f4f4ef"} as CSSProperties}>
           <p className="section-kicker">LIVE PREVIEW</p>
           <div className="mini-designer-header">
-            {draft.settings.brand.logoUrl ? <img src={draft.settings.brand.logoUrl} alt=""/> : <span className="mini-logo-mark">{draft.name.slice(0,1).toUpperCase()}</span>}
+            <header>{draft.settings.brand.logoUrl ? <img src={draft.settings.brand.logoUrl} alt=""/> : <span className="mini-logo-mark">{draft.name.slice(0,1).toUpperCase()}</span>}<b>{draft.name}</b></header>
             <small className="mini-hero-badge">{experience.heroBadge || "CUSTOM APPAREL, MADE EASY"}</small><h3>{experience.headline || "Design your custom shirts"}</h3>
             <p>{experience.introduction}</p>
+            <div className="mini-storefront-product"><div className="mini-shirt">T</div><div><small>HEAVYWEIGHT TEE</small><strong>Choose your garment</strong><span>Colors, sizes, print locations</span></div></div>
             <div className="mini-trust-message">{experience.trustMessage}</div><button type="button">Start my order</button>
           </div>
         </section>

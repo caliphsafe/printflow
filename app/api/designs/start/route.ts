@@ -154,7 +154,9 @@ export async function POST(request: Request) {
           sizeName: variant.sizeName,
           quantity: Number(size.quantity),
           unitCost: variant.customerPrice,
-          inventorySnapshot: variant.quantity
+          inventorySnapshot: variant.quantity,
+          imageUrl: color.frontImageUrl || product.configuration.mockupImageUrl || "",
+          productId: product.id
         });
       }
     }

@@ -24,12 +24,13 @@ export default async function OnboardingPage() {
     .maybeSingle();
 
   let shopSlug: string | undefined;
+  let onboardingState: any = {};
   let hasShop = false;
 
   if (membership) {
     const { data: shop } = await admin
       .from("shops")
-      .select("slug,onboarding_completed_at")
+      .select("slug,onboarding_completed_at,onboarding_state")
       .eq("organization_id", membership.organization_id)
       .limit(1)
       .maybeSingle();
@@ -38,9 +39,10 @@ export default async function OnboardingPage() {
 
     hasShop = Boolean(shop);
     shopSlug = shop?.slug;
+    onboardingState = shop?.onboarding_state || {};
   }
 
   const selectedPlan = String(user.user_metadata?.selected_plan || "growth");
   const defaultBusinessName = String(user.user_metadata?.business_name || "");
-  return <OnboardingWizard existing={{ hasShop, shopSlug }} selectedPlan={selectedPlan} defaultBusinessName={defaultBusinessName} />;
+  return <OnboardingWizard existing={{ hasShop, shopSlug, onboardingState }} selectedPlan={selectedPlan} defaultBusinessName={defaultBusinessName} />;
 }

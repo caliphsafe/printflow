@@ -29,7 +29,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <SignOutButton />
         </div>
       </aside>
-      <div className="admin-mobile-bar"><Link href="/dashboard" className="mobile-brand">PRINTFLOW</Link><a href="/preview/storefront" target="_blank" rel="noreferrer">Preview storefront</a></div>
+      <div className="admin-mobile-bar"><Link href="/dashboard" className="mobile-brand">PRINTFLOW</Link><div className="admin-mobile-actions"><a href="/preview/storefront" target="_blank" rel="noreferrer">Preview</a><details className="admin-mobile-menu"><summary>Menu</summary><div><DashboardNav />{platformAdmin && <Link className="platform-admin-link" href="/platform-admin">Platform admin</Link>}<SignOutButton /></div></details></div></div>
       <main className="admin-main">{children}</main>
       <DashboardHelp />
     </div>
