@@ -2,18 +2,20 @@
 
 PrintFlow is a multi-tenant custom-apparel commerce and production platform built with Next.js, Supabase, Stripe/Square hosted checkout, and S&S Activewear.
 
-Production Launch v8 includes:
+Launch Candidate v9 includes:
 
-- public owner signup and guided shop onboarding
-- branded customer storefronts
-- live S&S catalog imports and supplier SKUs
-- supplier-cost garment pricing with global markup
-- Screen Print, DTF, and Embroidery pricing engines
-- unrestricted size runs above the shop minimum
+- public signup and guided shop onboarding
+- Starter, Growth, and Scale account plans
+- Stripe subscription billing for PrintFlow accounts
+- branded glass-style customer storefronts
+- live S&S catalog, exact supplier costs, inventory, and SKUs
+- shop-wide Screen Printing, DTF, and Embroidery pricing
+- unrestricted size runs above the product minimum
 - front/back garment mockups and artwork up to 100 MB
-- Stripe Checkout and Square Payment Links
-- payment webhooks and paid-order state
+- tenant Stripe Checkout and Square Payment Links
+- payment status synchronization
 - downloadable original artwork and customer mockups
-- blank-order preparation and S&S ordering
+- S&S blank ordering before or after customer payment
+- platform-owner account administration
 
-Start with `START-HERE-PRODUCTION-LAUNCH-V8.md`.
+Start with `START-HERE-LAUNCH-CANDIDATE-V9.md`.
