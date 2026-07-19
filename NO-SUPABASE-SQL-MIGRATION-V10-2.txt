@@ -1,0 +1,3 @@
+No Supabase SQL migration is required for PrintFlow v10.2.
+
+Supabase Authentication dashboard configuration is required for Google sign-in and production email delivery. Follow GOOGLE-AUTH-EMAIL-SETUP.md.
