@@ -89,7 +89,7 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
           <div className="brand-editor-grid">
             <div className="logo-upload-card">
               <div className="logo-preview">{draft.settings.brand.logoUrl ? <img src={draft.settings.brand.logoUrl} alt="Shop logo preview"/> : <span>{draft.name.slice(0,1).toUpperCase()}</span>}</div>
-              <label className="secondary-button upload-logo-button"><input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={uploadLogo}/>{logoBusy ? "Uploading…" : "Upload logo"}</label>
+              <label className="secondary-button upload-logo-button"><input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={uploadLogo}/>{logoBusy ? "Uploading…" : "Upload logo"}</label><small className="logo-upload-help">PNG, JPG, WEBP, or SVG · up to 500 MB</small>
               {draft.settings.brand.logoUrl && <button className="text-button compact-text-button" type="button" onClick={()=>patchSettings("brand",{logoUrl:""})}>Remove logo</button>}
             </div>
             <div className="settings-fields">
@@ -112,7 +112,7 @@ export default function ShopSettingsEditor({ initialShop, organizationName, appU
             <label><span>Turnaround time</span><input value={experience.turnaroundTime || ""} onChange={e=>patchSettings("customerExperience",{turnaroundTime:e.target.value})}/></label>
             <label><span>Artwork disclaimer</span><textarea rows={3} value={experience.artworkDisclaimer || ""} onChange={e=>patchSettings("customerExperience",{artworkDisclaimer:e.target.value})}/></label>
             <label><span>Saved-design confirmation</span><textarea rows={2} value={experience.confirmationMessage || ""} onChange={e=>patchSettings("customerExperience",{confirmationMessage:e.target.value})}/></label>
-            <label><span>Maximum artwork upload size (MB)</span><input type="number" min="1" max="100" value={Math.round(draft.settings.upload.maxBytes/1024/1024)} onChange={e=>patchSettings("upload",{maxBytes:Number(e.target.value)*1024*1024})}/></label>
+            <label><span>Maximum artwork upload size (MB)</span><input type="number" min="1" max="500" value={Math.round(draft.settings.upload.maxBytes/1024/1024)} onChange={e=>patchSettings("upload",{maxBytes:Number(e.target.value)*1024*1024})}/></label>
           </div>
         </section>
 

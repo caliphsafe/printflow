@@ -3264,3 +3264,177 @@ html,body{max-width:100%;overflow-x:hidden}
   color: #171717;
   background: #fff;
 }
+
+/* ============================================================
+   PrintFlow UI finishing pass v10.2.2
+   Compact save control, reliable color pickers, tighter
+   integration cards, and upload guidance.
+   ============================================================ */
+
+/* The persistent save state now sits in a compact top-right pill. */
+.floating-save-bar {
+  top: 86px;
+  right: 24px;
+  bottom: auto;
+  left: auto;
+  width: auto;
+  max-width: min(340px, calc(100vw - var(--admin-rail, 272px) - 48px));
+  min-height: 50px;
+  margin: 0;
+  padding: 7px 8px 7px 12px;
+  transform: none;
+  gap: 10px;
+  border-radius: 17px;
+}
+.floating-save-status { gap: 9px; }
+.floating-save-status small { display: none; }
+.floating-save-status strong { font-size: .76rem; white-space: nowrap; }
+.floating-save-dot { width: 8px; height: 8px; box-shadow: 0 0 0 4px rgba(170,176,185,.14); }
+.floating-save-actions { gap: 6px; }
+.floating-save-button,
+.floating-delete-button {
+  min-height: 38px;
+  padding: 0 15px;
+  border-radius: 12px;
+  font-size: .76rem;
+}
+
+/* Native color inputs are paired with an editable hex value so the
+   control remains clear in Chrome, Safari, Firefox, and mobile browsers. */
+.onboarding-color-field { min-width: 0; }
+.onboarding-color-control {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid #d7d8d3;
+  border-radius: 14px;
+  background: #fff;
+}
+.onboarding-color-control .onboarding-color-swatch {
+  display: block;
+  width: 58px;
+  height: 46px;
+  min-width: 58px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  appearance: auto;
+  -webkit-appearance: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+.onboarding-color-control .onboarding-color-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+.onboarding-color-control .onboarding-color-swatch::-webkit-color-swatch {
+  border: 0;
+  border-radius: 10px;
+}
+.onboarding-color-control .onboarding-color-swatch::-moz-color-swatch {
+  border: 0;
+  border-radius: 10px;
+}
+.onboarding-color-control .onboarding-color-value {
+  width: 100%;
+  min-width: 0;
+  height: 46px;
+  padding: 0 11px;
+  border: 0 !important;
+  border-left: 1px solid #e4e5e0 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  color: #171717 !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-transform: uppercase;
+  box-shadow: none !important;
+}
+
+/* Integration cards use natural content height and intentional rhythm. */
+.integration-live-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 18px;
+  align-items: stretch;
+}
+.integration-live-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 0;
+  padding: 22px;
+}
+.integration-live-card > header {
+  min-height: 44px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+.integration-live-logo {
+  width: 82px;
+  height: 44px;
+  flex-basis: 82px;
+  padding: 6px 8px;
+  overflow: hidden;
+}
+.integration-live-copy {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  padding: 0;
+}
+.integration-live-copy h2 {
+  margin: 6px 0 7px;
+  font-size: 1.08rem;
+  line-height: 1.2;
+}
+.integration-live-copy > p:not(.eyebrow) {
+  min-height: 0;
+  margin: 0;
+  line-height: 1.5;
+}
+.integration-capability {
+  margin-top: 16px;
+  padding: 11px 12px;
+}
+.integration-live-card > footer {
+  display: grid;
+  gap: 11px;
+  margin-top: 20px;
+  padding-top: 17px;
+  border-top: 1px solid rgba(17,24,39,.09);
+}
+.integration-live-card > footer small { min-height: 0; }
+.integration-live-card > footer .integration-card-action {
+  min-height: 48px;
+  border-radius: 14px;
+}
+
+.logo-upload-help {
+  color: #787d84;
+  font-size: .67rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+@media (max-width: 960px) {
+  .floating-save-bar {
+    top: 72px;
+    right: 12px;
+    left: auto;
+    bottom: auto;
+    width: auto;
+    max-width: calc(100vw - 24px);
+  }
+}
+
+@media (max-width: 560px) {
+  .floating-save-bar {
+    top: 68px;
+    min-height: 46px;
+    padding: 5px 6px 5px 9px;
+  }
+  .floating-save-status strong { max-width: 108px; overflow: hidden; text-overflow: ellipsis; }
+  .floating-save-button,
+  .floating-delete-button { min-height: 36px; padding-inline: 12px; }
+  .onboarding-color-control { grid-template-columns: 52px minmax(0, 1fr); }
+  .onboarding-color-control .onboarding-color-swatch { width: 52px; min-width: 52px; }
+}

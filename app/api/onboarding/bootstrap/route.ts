@@ -55,13 +55,13 @@ function buildShopSettings(body: Record<string, unknown>, userEmail: string | un
       ),
       trustMessage: "Secure checkout · Production artwork review · Live order updates",
       uploadInstructions:
-        "Upload high-resolution PNG, JPG, WEBP, or SVG artwork. Files up to 100 MB are accepted.",
+        "Upload high-resolution PNG, JPG, WEBP, or SVG artwork. Files up to 500 MB are accepted.",
       turnaroundTime: "Turnaround begins after payment and artwork approval.",
       artworkDisclaimer:
         "Mockups are placement guides. The production team confirms final print dimensions and color output.",
       confirmationMessage: "Your order is ready for secure checkout."
     },
-    upload: { maxBytes: 100 * 1024 * 1024 }
+    upload: { maxBytes: 500 * 1024 * 1024 }
   });
 }
 

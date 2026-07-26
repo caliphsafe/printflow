@@ -17,8 +17,8 @@ export async function POST(request: Request) {
   const sizeBytes = Number(body.sizeBytes || 0);
   const extension = ALLOWED.get(mimeType);
   if (!extension) return NextResponse.json({ error: "Use PNG, JPG, WEBP or SVG for the logo." }, { status: 400 });
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > 5 * 1024 * 1024) {
-    return NextResponse.json({ error: "Logo must be smaller than 5 MB." }, { status: 400 });
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > 500 * 1024 * 1024) {
+    return NextResponse.json({ error: "Logo must be 500 MB or smaller." }, { status: 400 });
   }
 
   const path = `${shop.id}/logo-${Date.now()}.${extension}`;

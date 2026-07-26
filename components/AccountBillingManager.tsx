@@ -45,7 +45,7 @@ export default function AccountBillingManager({ plans, account, billingConfigure
 
   const currentPlan = account?.plan_code || "growth";
   const status = account?.status || "trialing";
-  const period = account?.current_period_end ? new Date(account.current_period_end).toLocaleDateString() : "Not set";
+  const period = account?.current_period_end ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(account.current_period_end)) : "Not set";
 
   return <div className="account-billing-shell account-management-shell">
     <section className="account-status-glass">

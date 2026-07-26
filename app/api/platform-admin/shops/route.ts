@@ -63,12 +63,12 @@ export async function POST(request: Request) {
         headline: `Create something great with ${businessName}`,
         introduction: "Choose a product, upload artwork, review your mockup, and pay securely online.",
         trustMessage: "Secure checkout · Production artwork review · Live order updates",
-        uploadInstructions: "Upload high-resolution PNG, JPG, WEBP, or SVG artwork. Files up to 100 MB are accepted.",
+        uploadInstructions: "Upload high-resolution PNG, JPG, WEBP, or SVG artwork. Files up to 500 MB are accepted.",
         turnaroundTime: "Turnaround begins after payment and artwork approval.",
         artworkDisclaimer: "Mockups are placement guides. The production team confirms final print dimensions and color output.",
         confirmationMessage: "Your order is ready for secure checkout."
       },
-      upload: { maxBytes: 100 * 1024 * 1024 }
+      upload: { maxBytes: 500 * 1024 * 1024 }
     });
 
     const { data: shop, error: shopError } = await admin.from("shops").insert({
