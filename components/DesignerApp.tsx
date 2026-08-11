@@ -41,6 +41,24 @@ function assetUrl(url?: string) {
   }
 }
 
+function activeColors(product?: CatalogProduct) {
+  if (!product) return [];
+  return product.configuration.colors.filter((item) => item.active !== false);
+}
+
+function defaultColorFor(product?: CatalogProduct) {
+  if (!product) return undefined;
+  const colors = activeColors(product);
+  return colors[0] || product.configuration.colors[0];
+}
+
+function garmentImageFor(product: CatalogProduct, color: ShirtColor | undefined, side: DesignSide) {
+  if (!color) return "";
+  // Never fall back to a generic product mockup from another color.
+  // The selected color owns the garment image shown in the storefront.
+  return side === "front" ? color.frontImageUrl || "" : color.backImageUrl || "";
+}
+
 function extension(filename: string) {
   return filename.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "";
 }
@@ -109,7 +127,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const [productCategory, setProductCategory] = useState("All");
   const [helpOpen, setHelpOpen] = useState(false);
   const [product, setProduct] = useState<CatalogProduct>(firstProduct);
-  const [color, setColor] = useState<ShirtColor>(firstProduct?.configuration.colors[0]);
+  const [color, setColor] = useState<ShirtColor>(defaultColorFor(firstProduct) as ShirtColor);
   const [mode, setMode] = useState<DesignMode>(firstProduct?.configuration.customization.designModes[0] || "front");
   const [side, setSide] = useState<DesignSide>("front");
   const [printSizes, setPrintSizes] = useState<Record<DesignSide, PrintSize>>({ front: "full", back: "heart" });
@@ -138,9 +156,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const currentPrintSize = printSizes[side];
   const printArea = printAreaFor(product.configuration, side, currentPrintSize);
   const printZone = printZoneBounds(printArea);
-  const garmentUrl = assetUrl(
-    side === "front" ? color?.frontImageUrl || product.configuration.mockupImageUrl : color?.backImageUrl || product.configuration.mockupImageUrl
-  );
+  const garmentUrl = assetUrl(garmentImageFor(product, color, side));
   const totalAssigned = useMemo(() => sizes.reduce((sum, item) => sum + item.quantity, 0), [sizes]);
   const minimum = product?.configuration.customization.minimumQuantity || 12;
   const selectedPrints = {
@@ -168,6 +184,18 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     const searchable = `${item.name} ${item.description} ${item.configuration.customization.category}`.toLowerCase();
     return matchesCategory && searchable.includes(productQuery.trim().toLowerCase());
   }), [products, productCategory, productQuery]);
+
+  useEffect(() => {
+    if (!product) return;
+    const liveProduct = products.find((item) => item.id === product.id);
+    if (!liveProduct) return;
+    const liveColors = activeColors(liveProduct);
+    const currentColor = liveColors.find((item) => item.id === color?.id);
+    if (!currentColor) {
+      const nextColor = defaultColorFor(liveProduct);
+      if (nextColor) setColor(nextColor);
+    }
+  }, [shop.products, product?.id, color?.id]);
 
   useEffect(() => {
     const send = () => window.parent.postMessage({ type: "printflow:resize", height: document.documentElement.scrollHeight }, "*");
@@ -202,7 +230,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     releaseSide(front);
     releaseSide(back);
     setProduct(next);
-    setColor(next.configuration.colors.find((item) => item.active !== false) || next.configuration.colors[0]);
+    setColor(defaultColorFor(next) as ShirtColor);
     const nextMode = next.configuration.customization.designModes.includes("front") ? "front" : (next.configuration.customization.designModes[0] || "front");
     setMode(nextMode);
     setSide(nextMode === "back" ? "back" : "front");
@@ -342,7 +370,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
 
   async function renderSide(target: DesignSide) {
     const state = target === "front" ? front : back;
-    const url = assetUrl(target === "front" ? color.frontImageUrl || product.configuration.mockupImageUrl : color.backImageUrl || product.configuration.mockupImageUrl);
+    const url = assetUrl(garmentImageFor(product, color, target));
     const canvas = document.createElement("canvas");
     canvas.width = W;
     canvas.height = H;
@@ -526,7 +554,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
           </div>
           <div className="customer-product-grid modern">
             {visibleProducts.map((item) => {
-              const firstColor = item.configuration.colors.find((candidate) => candidate.active !== false) || item.configuration.colors[0];
+              const firstColor = defaultColorFor(item);
               const min = item.configuration.customization.minimumQuantity;
               const sampleColor = firstColor || item.configuration.colors[0];
               const price = calculateResolvedOrderPricing({
@@ -542,8 +570,8 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
               return (
                 <button className="customer-product-card modern" key={item.id} onClick={() => chooseProduct(item)}>
                   <div className="customer-product-image">
-                    {firstColor?.frontImageUrl || item.configuration.mockupImageUrl ? (
-                      <img src={assetUrl(firstColor?.frontImageUrl || item.configuration.mockupImageUrl)} alt={item.name} />
+                    {firstColor?.frontImageUrl ? (
+                      <img src={assetUrl(firstColor.frontImageUrl)} alt={`${item.name} — ${firstColor.name}`} />
                     ) : (
                       <div className="product-placeholder">T</div>
                     )}
@@ -592,7 +620,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                 {garmentUrl ? (
                   <image href={garmentUrl} x="32" y="32" width="736" height="736" preserveAspectRatio="xMidYMid meet" />
                 ) : (
-                  <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={color.hex} stroke="#bbb" strokeWidth="3" />
+                  <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={color?.hex || "#d8d8d8"} stroke="#bbb" strokeWidth="3" />
                 )}
                 {!sideState.dataUrl && (
                   <g pointerEvents="none">
