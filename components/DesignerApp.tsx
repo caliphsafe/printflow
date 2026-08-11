@@ -75,18 +75,25 @@ function loadImage(src: string, crossOrigin = false) {
   });
 }
 
+function printZoneBounds(area: PrintArea) {
+  const width = Math.max(40, Math.min(area.artworkWidth || area.width, W - 64));
+  const height = Math.max(40, Math.min(area.artworkHeight || area.height, H - 64));
+  const x = Math.max(32, Math.min(W - 32 - width, area.defaultX ?? area.x));
+  const y = Math.max(32, Math.min(H - 32 - height, area.defaultY ?? area.y));
+  return { x, y, width, height };
+}
+
 function fitPlacementToArea(placement: ArtworkPlacement, area: PrintArea) {
-  const maxWidth = Math.min(area.artworkWidth || area.width, area.width);
-  const maxHeight = Math.min(area.artworkHeight || area.height, area.height);
-  const ratio = Math.min(maxWidth / placement.width, maxHeight / placement.height, 1);
+  const zone = printZoneBounds(area);
+  const ratio = Math.min(zone.width / placement.width, zone.height / placement.height, 1);
   const width = Math.max(40, placement.width * ratio);
   const height = Math.max(40, placement.height * ratio);
   return {
     ...placement,
     width,
     height,
-    x: Math.max(area.x, Math.min(area.x + area.width - width, area.defaultX ?? area.x + (area.width - width) / 2)),
-    y: Math.max(area.y, Math.min(area.y + area.height - height, area.defaultY ?? area.y + (area.height - height) / 2))
+    x: Math.max(32, Math.min(W - 32 - width, zone.x)),
+    y: Math.max(32, Math.min(H - 32 - height, zone.y))
   };
 }
 
@@ -127,6 +134,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const setSideState = side === "front" ? setFront : setBack;
   const currentPrintSize = printSizes[side];
   const printArea = printAreaFor(product.configuration, side, currentPrintSize);
+  const printZone = printZoneBounds(printArea);
   const garmentUrl = assetUrl(
     side === "front" ? color?.frontImageUrl || product.configuration.mockupImageUrl : color?.backImageUrl || product.configuration.mockupImageUrl
   );
@@ -235,14 +243,15 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       objectUrlsRef.current.add(objectUrl);
       const image = await loadImage(objectUrl);
       const area = printAreaFor(product.configuration, target, printSizes[target]);
-      const maxWidth = Math.min(area.artworkWidth || area.width, area.width) * 0.92;
-      const maxHeight = Math.min(area.artworkHeight || area.height, area.height) * 0.92;
+      const zone = printZoneBounds(area);
+      const maxWidth = zone.width * 0.92;
+      const maxHeight = zone.height * 0.92;
       const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
       const width = image.width * ratio;
       const height = image.height * ratio;
       const placement = {
-        x: Math.max(area.x, Math.min(area.x + area.width - width, area.defaultX ?? area.x + (area.width - width) / 2)),
-        y: Math.max(area.y, Math.min(area.y + area.height - height, area.defaultY ?? area.y + (area.height - height) / 2)),
+        x: Math.max(32, Math.min(W - 32 - width, zone.x + (zone.width - width) / 2)),
+        y: Math.max(32, Math.min(H - 32 - height, zone.y + (zone.height - height) / 2)),
         width,
         height,
         rotation: 0
@@ -279,13 +288,13 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
         ...state,
         placement: {
           ...state.placement,
-          x: Math.max(printArea.x, Math.min(printArea.x + printArea.width - start.width, start.x + dx)),
-          y: Math.max(printArea.y, Math.min(printArea.y + printArea.height - start.height, start.y + dy))
+          x: Math.max(32, Math.min(W - 32 - start.width, start.x + dx)),
+          y: Math.max(32, Math.min(H - 32 - start.height, start.y + dy))
         }
       }));
     } else {
-      const maxWidth = Math.min(printArea.artworkWidth || printArea.width, printArea.x + printArea.width - start.x);
-      const maxHeight = Math.min(printArea.artworkHeight || printArea.height, printArea.y + printArea.height - start.y);
+      const maxWidth = Math.min(printZone.width, W - 32 - start.x);
+      const maxHeight = Math.min(printZone.height, H - 32 - start.y);
       let width = Math.max(40, Math.min(maxWidth, start.width + dx));
       let height = width * (start.height / start.width);
       if (height > maxHeight) {
@@ -582,28 +591,30 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                 ) : (
                   <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={color.hex} stroke="#bbb" strokeWidth="3" />
                 )}
-                <rect
-                  x={printArea.x}
-                  y={printArea.y}
-                  width={printArea.width}
-                  height={printArea.height}
-                  rx="8"
-                  fill="rgba(255,255,255,.07)"
-                  stroke="rgba(0,0,0,.48)"
-                  strokeWidth="2"
-                  strokeDasharray="11 9"
-                />
                 {!sideState.dataUrl && (
-                  <rect
-                    x={printArea.defaultX}
-                    y={printArea.defaultY}
-                    width={printArea.artworkWidth}
-                    height={printArea.artworkHeight}
-                    rx="6"
-                    fill="rgba(255,255,255,.16)"
-                    stroke="rgba(0,0,0,.28)"
-                    strokeWidth="2"
-                  />
+                  <g pointerEvents="none">
+                    <rect
+                      x={printZone.x}
+                      y={printZone.y}
+                      width={printZone.width}
+                      height={printZone.height}
+                      rx="8"
+                      fill="rgba(21,153,88,.14)"
+                      stroke="#159958"
+                      strokeWidth="3"
+                    />
+                    <text
+                      x={printZone.x + printZone.width / 2}
+                      y={printZone.y + printZone.height / 2}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize="18"
+                      fontWeight="800"
+                      fill="#0f6f42"
+                    >
+                      Upload artwork
+                    </text>
+                  </g>
                 )}
                 {sideState.dataUrl && (
                   <g>
@@ -621,16 +632,19 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                       y={sideState.placement.y}
                       width={sideState.placement.width}
                       height={sideState.placement.height}
+                      rx="7"
                       fill="none"
-                      stroke="#111"
-                      strokeWidth="2"
+                      stroke="#159958"
+                      strokeWidth="4"
                       pointerEvents="none"
                     />
                     <circle
                       cx={sideState.placement.x + sideState.placement.width}
                       cy={sideState.placement.y + sideState.placement.height}
                       r="13"
-                      fill="#111"
+                      fill="#159958"
+                      stroke="#fff"
+                      strokeWidth="3"
                       onPointerDown={(event) => begin("resize", event)}
                       style={{ cursor: "nwse-resize" }}
                     />
@@ -657,7 +671,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             <div className="stage-guidance">
               <p>{product.configuration.customization.customerInstructions}</p>
               <small>
-                {printSizeLabel(currentPrintSize)} is limited to {printArea.widthInches}″ × {printArea.heightInches}″. Move the design anywhere inside the dashed placement zone and resize it up to the configured maximum. PNG, JPG, WEBP, or SVG · up to {uploadLimitMb} MB.
+                {printSizeLabel(currentPrintSize)} is limited to {printArea.widthInches}″ × {printArea.heightInches}″. The green box is the print itself: drag the artwork to place it and use the green handle to resize it up to the configured maximum. PNG, JPG, WEBP, or SVG · up to {uploadLimitMb} MB.
               </small>
             </div>
           </div>
@@ -798,7 +812,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
         </section>
       )}
       <div className={helpOpen ? "storefront-help open" : "storefront-help"}>
-        {helpOpen && <aside><header><div><small>ORDER HELP</small><h2>Build your order step by step</h2></div><button type="button" onClick={() => setHelpOpen(false)}>×</button></header><ol><li><span>1</span><p>Choose the garment and color you want.</p></li><li><span>2</span><p>Select Front, Back, or both. Full Size Front is selected first.</p></li><li><span>3</span><p>Upload artwork, then move and resize it inside the print zone.</p></li><li><span>4</span><p>Enter quantities by size and review the simple final price.</p></li></ol><p>{shop.settings.customerExperience?.turnaroundTime}</p></aside>}
+        {helpOpen && <aside><header><div><small>ORDER HELP</small><h2>Build your order step by step</h2></div><button type="button" onClick={() => setHelpOpen(false)}>×</button></header><ol><li><span>1</span><p>Choose the garment and color you want.</p></li><li><span>2</span><p>Select Front, Back, or both. Full Size Front is selected first.</p></li><li><span>3</span><p>Upload artwork, then move and resize the green print box directly on the garment.</p></li><li><span>4</span><p>Enter quantities by size and review the simple final price.</p></li></ol><p>{shop.settings.customerExperience?.turnaroundTime}</p></aside>}
         <button type="button" className="storefront-help-trigger" onClick={() => setHelpOpen((value) => !value)}><span>?</span><b>{helpOpen ? "Close" : "Order help"}</b></button>
       </div>
     </main>

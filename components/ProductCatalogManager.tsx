@@ -73,6 +73,28 @@ function sizeTitle(size: PrintSize) {
   return size === "heart" ? "Heart size" : "Full size";
 }
 
+function singlePrintZone(value: PrintArea) {
+  const area = normalizePrintArea(value, value);
+  const width = Math.max(45, Math.min(area.artworkWidth || area.width || 100, 800));
+  const height = Math.max(45, Math.min(area.artworkHeight || area.height || 100, 800));
+  const x = Math.max(0, Math.min(800 - width, area.defaultX ?? area.x));
+  const y = Math.max(0, Math.min(800 - height, area.defaultY ?? area.y));
+  return normalizePrintArea(
+    {
+      ...area,
+      x,
+      y,
+      width,
+      height,
+      defaultX: x,
+      defaultY: y,
+      artworkWidth: width,
+      artworkHeight: height
+    },
+    area
+  );
+}
+
 export default function ProductCatalogManager({ initialProducts, pricingProfile, initialSelectedId, initialTab }: { initialProducts: CatalogProduct[]; pricingProfile: ShopPricingProfile; initialSelectedId?: string; initialTab?: Tab }) {
   const router = useRouter();
   const startingProduct = initialProducts.find((item) => item.id === initialSelectedId) || initialProducts[0];
@@ -121,7 +143,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
 
   function updateZone(side: DesignSide, size: PrintSize, value: PrintArea) {
     const key = zoneKey(side, size);
-    const next = normalizePrintArea(value, draft!.configuration.customization[key]);
+    const next = singlePrintZone(value);
     updateCustomization({
       [key]: next,
       ...(side === "front" && size === "full" ? { frontPrintArea: next } : {}),
@@ -363,7 +385,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
               {tab === "Print zones" && activeZone && (
                 <Panel
                   title="Visual print-zone setup"
-                  description="Use the real garment photo to define where Heart Size and Full Size artwork may move. The solid inner box is the largest print; the dashed outer box is the movement boundary."
+                  description="Use the real garment photo to place one clear print zone for Heart Size and Full Size. The green box is the exact customer artwork area."
                 >
                   <div className="zone-toolbar">
                     <Field label="Reference color">
@@ -712,14 +734,14 @@ function PrintZoneCanvas({
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragRef = useRef<any>(null);
-  const area = normalizePrintArea(value, value);
+  const area = singlePrintZone(value);
 
   function point(event: ReactPointerEvent<SVGElement>) {
     const rect = svgRef.current!.getBoundingClientRect();
     return { x: ((event.clientX - rect.left) / rect.width) * 800, y: ((event.clientY - rect.top) / rect.height) * 800 };
   }
 
-  function begin(kind: "zone-move" | "zone-resize" | "art-move" | "art-resize", event: ReactPointerEvent<SVGElement>) {
+  function begin(kind: "zone-move" | "zone-resize", event: ReactPointerEvent<SVGElement>) {
     event.preventDefault();
     dragRef.current = { kind, p: point(event), area: { ...area } };
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -732,8 +754,6 @@ function PrintZoneCanvas({
     const dx = current.x - drag.p.x;
     const dy = current.y - drag.p.y;
     const start: PrintArea = drag.area;
-    const artworkWidth = start.artworkWidth || 100;
-    const artworkHeight = start.artworkHeight || 100;
     let next: PrintArea = { ...start };
 
     if (drag.kind === "zone-move") {
@@ -743,43 +763,31 @@ function PrintZoneCanvas({
         ...start,
         x,
         y,
-        defaultX: x + ((start.defaultX || start.x) - start.x),
-        defaultY: y + ((start.defaultY || start.y) - start.y)
+        defaultX: x,
+        defaultY: y
       };
     }
 
     if (drag.kind === "zone-resize") {
-      const width = Math.max(Math.max(120, artworkWidth), Math.min(800 - start.x, start.width + dx));
-      const height = Math.max(Math.max(120, artworkHeight), Math.min(800 - start.y, start.height + dy));
+      const aspect = (start.widthInches || 4) / (start.heightInches || 4);
+      let width = Math.max(45, Math.min(800 - start.x, start.width + dx));
+      let height = width / aspect;
+      if (height > 800 - start.y) {
+        height = 800 - start.y;
+        width = height * aspect;
+      }
       next = {
         ...start,
         width,
         height,
-        defaultX: Math.min(start.defaultX || start.x, start.x + width - artworkWidth),
-        defaultY: Math.min(start.defaultY || start.y, start.y + height - artworkHeight)
+        defaultX: start.x,
+        defaultY: start.y,
+        artworkWidth: width,
+        artworkHeight: height
       };
     }
 
-    if (drag.kind === "art-move") {
-      next = {
-        ...start,
-        defaultX: Math.max(start.x, Math.min(start.x + start.width - artworkWidth, (start.defaultX || start.x) + dx)),
-        defaultY: Math.max(start.y, Math.min(start.y + start.height - artworkHeight, (start.defaultY || start.y) + dy))
-      };
-    }
-
-    if (drag.kind === "art-resize") {
-      const aspect = (start.widthInches || 4) / (start.heightInches || 4);
-      let width = Math.max(45, Math.min(start.x + start.width - (start.defaultX || start.x), artworkWidth + dx));
-      let height = width / aspect;
-      if (height > start.y + start.height - (start.defaultY || start.y)) {
-        height = start.y + start.height - (start.defaultY || start.y);
-        width = height * aspect;
-      }
-      next = { ...start, artworkWidth: width, artworkHeight: height };
-    }
-
-    onChange(normalizePrintArea(next, start));
+    onChange(singlePrintZone(next));
   }
 
   return (
@@ -803,41 +811,16 @@ function PrintZoneCanvas({
             y={area.y}
             width={area.width}
             height={area.height}
-            rx="10"
-            fill="rgba(30,30,30,.06)"
-            stroke="#161616"
-            strokeWidth="3"
-            strokeDasharray="13 10"
+            rx="8"
+            fill="rgba(21,153,88,.22)"
+            stroke="#159958"
+            strokeWidth="4"
             onPointerDown={(event) => begin("zone-move", event)}
             style={{ cursor: "move" }}
           />
-          <circle
-            cx={area.x + area.width}
-            cy={area.y + area.height}
-            r="15"
-            fill="#fff"
-            stroke="#111"
-            strokeWidth="3"
-            onPointerDown={(event) => begin("zone-resize", event)}
-            style={{ cursor: "nwse-resize" }}
-          />
-        </g>
-        <g>
-          <rect
-            x={area.defaultX}
-            y={area.defaultY}
-            width={area.artworkWidth}
-            height={area.artworkHeight}
-            rx="8"
-            fill={size === "heart" ? "rgba(34,106,255,.24)" : "rgba(21,153,88,.22)"}
-            stroke={size === "heart" ? "#226aff" : "#159958"}
-            strokeWidth="4"
-            onPointerDown={(event) => begin("art-move", event)}
-            style={{ cursor: "move" }}
-          />
           <text
-            x={(area.defaultX || 0) + (area.artworkWidth || 0) / 2}
-            y={(area.defaultY || 0) + (area.artworkHeight || 0) / 2}
+            x={area.x + area.width / 2}
+            y={area.y + area.height / 2}
             textAnchor="middle"
             dominantBaseline="middle"
             fontSize="20"
@@ -848,18 +831,19 @@ function PrintZoneCanvas({
             {area.widthInches} × {area.heightInches} in
           </text>
           <circle
-            cx={(area.defaultX || 0) + (area.artworkWidth || 0)}
-            cy={(area.defaultY || 0) + (area.artworkHeight || 0)}
+            cx={area.x + area.width}
+            cy={area.y + area.height}
             r="15"
-            fill="#111"
-            onPointerDown={(event) => begin("art-resize", event)}
+            fill="#159958"
+            stroke="#fff"
+            strokeWidth="3"
+            onPointerDown={(event) => begin("zone-resize", event)}
             style={{ cursor: "nwse-resize" }}
           />
         </g>
       </svg>
       <div className="zone-legend">
-        <span><i className="outer" /> Allowed movement zone</span>
-        <span><i className={size === "heart" ? "heart" : "full"} /> Maximum printed artwork</span>
+        <span><i className="full" /> Customer artwork / print zone</span>
       </div>
     </div>
   );
@@ -878,30 +862,29 @@ function PrintZoneControls({
   onChange: (value: PrintArea) => void;
   onReset: () => void;
 }) {
-  const current = normalizePrintArea(value, value);
+  const current = singlePrintZone(value);
 
   function updateDimensions(next: Partial<PrintArea>) {
     const widthInches = Number(next.widthInches ?? current.widthInches ?? 4);
     const heightInches = Number(next.heightInches ?? current.heightInches ?? 4);
     const aspect = widthInches / heightInches;
-    let artworkWidth = current.artworkWidth || 100;
-    let artworkHeight = artworkWidth / aspect;
-    if (artworkHeight > current.height) {
-      artworkHeight = current.height;
-      artworkWidth = artworkHeight * aspect;
+    let width = current.width || 100;
+    let height = width / aspect;
+    if (height > 800 - current.y) {
+      height = 800 - current.y;
+      width = height * aspect;
     }
     onChange(
-      normalizePrintArea(
-        {
-          ...current,
-          ...next,
-          artworkWidth,
-          artworkHeight,
-          defaultX: Math.min(current.defaultX || current.x, current.x + current.width - artworkWidth),
-          defaultY: Math.min(current.defaultY || current.y, current.y + current.height - artworkHeight)
-        },
-        current
-      )
+      singlePrintZone({
+        ...current,
+        ...next,
+        width,
+        height,
+        defaultX: current.x,
+        defaultY: current.y,
+        artworkWidth: width,
+        artworkHeight: height
+      })
     );
   }
 
@@ -914,8 +897,8 @@ function PrintZoneControls({
         </h3>
         <p>
           {size === "heart"
-            ? "The print stays within the selected movement zone, allowing center-chest or left-chest placement while never exceeding the physical size below."
-            : "The customer can move and resize the design throughout the full printable torso zone without exceeding the physical size below."}
+            ? "Place the green box where this compact print should begin. Customers use this same box for their artwork and can move or resize it directly."
+            : "Place the green box where this large print should begin. Customers use this same box for their artwork and can move or resize it directly."}
         </p>
       </div>
       <div className="zone-dimension-grid">
@@ -923,9 +906,9 @@ function PrintZoneControls({
         <MeasurementInput label="Maximum height" value={current.heightInches || 4} min={1} max={24} onCommit={(heightInches) => updateDimensions({ heightInches })} />
       </div>
       <div className="zone-help-list">
-        <div><b>1</b><span>Drag the dashed box to set where this print type is allowed.</span></div>
-        <div><b>2</b><span>Resize the dashed box to expand or restrict movement.</span></div>
-        <div><b>3</b><span>Drag and resize the colored box to set the default and largest visual print.</span></div>
+        <div><b>1</b><span>Drag the green box to set the default print position.</span></div>
+        <div><b>2</b><span>Resize the green box to set the largest visual print area.</span></div>
+        <div><b>3</b><span>Use Maximum width and height for the real production dimensions.</span></div>
       </div>
       <button className="secondary-button" onClick={onReset}>Reset this zone</button>
     </aside>
