@@ -234,7 +234,6 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
   const likelyFullOnly = oneSizeAccessory || /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker)\b/.test(productKindText);
   const rawPrintSizes = Array.isArray(custom.printSizes) ? custom.printSizes.filter((size): size is PrintSize => size === "heart" || size === "full") : [];
   const printSizes: PrintSize[] = rawPrintSizes.length ? Array.from(new Set(rawPrintSizes)) : likelyFullOnly ? ["full"] : ["heart", "full"];
-  if (!printSizes.includes("full")) printSizes.push("full");
 
   return {
     sizes: Array.isArray(raw.sizes) && raw.sizes.length ? raw.sizes.map(String) : DEFAULT_CONFIGURATION.sizes,

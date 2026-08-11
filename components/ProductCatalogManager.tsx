@@ -467,19 +467,48 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                       />
                     </div>
                   </Panel>
-                  <Panel title="Print size options" description="Full Size is always available. Turn Heart Size off for hats, caps, and any product that uses one standard print area.">
+                  <Panel title="Print size options" description="Choose exactly which print-size choices this product supports. At least one option must remain enabled.">
                     <div className="selection-card-grid">
                       <CheckCard
                         title="Heart Size"
-                        text="Offer a compact Heart Size option in addition to Full Size."
+                        text="Offer the compact Heart Size print area for this product."
                         checked={productPrintSizes(draft).includes("heart")}
                         onChange={(checked) => {
-                          const printSizes: PrintSize[] = checked ? ["heart", "full"] : ["full"];
+                          const current = productPrintSizes(draft);
+                          if (!checked && current.length === 1 && current.includes("heart")) {
+                            setMessage("Keep at least one print size enabled.");
+                            return;
+                          }
+                          const printSizes: PrintSize[] = checked
+                            ? Array.from(new Set<PrintSize>(["heart", ...current]))
+                            : current.filter((item) => item !== "heart");
                           updateCustomization({ printSizes });
-                          if (!checked && previewSize === "heart") setPreviewSize("full");
+                          setMessage("");
+                          if (!checked && previewSize === "heart") {
+                            setPreviewSize(printSizes.includes("full") ? "full" : printSizes[0]);
+                          }
                         }}
                       />
-                      <CheckCard title="Full Size" text="The standard print area is always available for this product." checked={true} onChange={() => {}} />
+                      <CheckCard
+                        title="Full Size"
+                        text="Offer the larger Full Size print area for this product."
+                        checked={productPrintSizes(draft).includes("full")}
+                        onChange={(checked) => {
+                          const current = productPrintSizes(draft);
+                          if (!checked && current.length === 1 && current.includes("full")) {
+                            setMessage("Keep at least one print size enabled.");
+                            return;
+                          }
+                          const printSizes: PrintSize[] = checked
+                            ? Array.from(new Set<PrintSize>([...current, "full"]))
+                            : current.filter((item) => item !== "full");
+                          updateCustomization({ printSizes });
+                          setMessage("");
+                          if (!checked && previewSize === "full") {
+                            setPreviewSize(printSizes.includes("heart") ? "heart" : printSizes[0]);
+                          }
+                        }}
+                      />
                     </div>
                   </Panel>
                   <Panel title="Decoration methods" description="These appear as a compact dropdown in the customer designer.">
@@ -546,7 +575,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
               {tab === "Print zones" && activeZone && (
                 <Panel
                   title="Visual print-zone setup"
-                  description={productPrintSizes(draft).includes("heart") ? "Set the customer print zone for Heart Size and Full Size." : "Set the single customer print zone for this product."}
+                  description={productPrintSizes(draft).length > 1 ? "Set the customer print zone for each enabled print size." : `Set the single ${sizeTitle(productPrintSizes(draft)[0])} print zone for this product.`}
                 >
                   <div className="zone-toolbar">
                     <Field label="Reference color">
