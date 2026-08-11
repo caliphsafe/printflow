@@ -22,10 +22,7 @@ function normalizeHex(value: unknown) {
   return "#777777";
 }
 
-function firstMedia(
-  rows: Record<string, unknown>[],
-  key: "swatchImageUrl" | "frontImageUrl" | "backImageUrl"
-) {
+function firstMedia(rows: Record<string, unknown>[], key: "swatchImageUrl" | "frontImageUrl" | "backImageUrl") {
   for (const row of rows) {
     const value = String(row[key] || "").trim();
     if (value) return value;
@@ -35,95 +32,56 @@ function firstMedia(
 
 export async function POST(request: Request) {
   const { supabase, membership, shop } = await getAdminContext();
-  if (!membership || !shop) {
-    return NextResponse.json({ error: "No shop configured." }, { status: 403 });
-  }
+  if (!membership || !shop) return NextResponse.json({ error: "No shop configured." }, { status: 403 });
 
   const body = await request.json();
-
-  const products: Record<string, unknown>[] = Array.isArray(body.products)
-    ? (body.products as Record<string, unknown>[])
-    : [];
-
-  const style: StyleSummary =
-    body.style && typeof body.style === "object"
-      ? (body.style as StyleSummary)
-      : {};
-
+  const products: Record<string, unknown>[] = Array.isArray(body.products) ? body.products as Record<string, unknown>[] : [];
+  const style: StyleSummary = body.style && typeof body.style === "object" ? body.style as StyleSummary : {};
   const selectedColorNames: string[] = Array.isArray(body.selectedColors)
     ? body.selectedColors.map((value: unknown) => String(value))
     : [];
-
   const selectedColors = new Set<string>(selectedColorNames);
+  const chosen = products.filter((row) => selectedColors.has(String(row.colorName)));
 
-  const chosen: Record<string, unknown>[] = products.filter((row) =>
-    selectedColors.has(String(row.colorName))
-  );
-
-  if (!chosen.length) {
-    return NextResponse.json(
-      { error: "Select at least one color." },
-      { status: 400 }
-    );
-  }
+  if (!chosen.length) return NextResponse.json({ error: "Select at least one color." }, { status: 400 });
 
   const first = chosen[0];
-
   const grouped = new Map<string, Record<string, unknown>[]>();
-
   for (const row of chosen) {
     const name = String(row.colorName || "Unspecified");
     grouped.set(name, [...(grouped.get(name) || []), row]);
   }
 
-  // Preserve the exact color order selected by the merchant.
-  // Every imported color is built exclusively from S&S rows for that color.
-  const uniqueSelectedColorNames: string[] = selectedColorNames.filter(
-    (name: string, index: number, all: string[]) =>
-      all.indexOf(name) === index && grouped.has(name)
+  const uniqueSelectedColorNames = selectedColorNames.filter(
+    (name: string, index: number, all: string[]) => all.indexOf(name) === index && grouped.has(name)
   );
 
-  const colors: ShirtColor[] = uniqueSelectedColorNames.map(
-    (colorName: string): ShirtColor => {
-      const rows = grouped.get(colorName) || [];
-
-      const mediaRow =
-        rows.find(
-          (row: Record<string, unknown>) =>
-            Boolean(row.frontImageUrl) ||
-            Boolean(row.backImageUrl) ||
-            Boolean(row.swatchImageUrl)
-        ) || rows[0];
-
-      return {
-        id: slugify(colorName),
-        name: colorName,
-        hex: normalizeHex(mediaRow?.colorHex),
-        swatchImageUrl: firstMedia(rows, "swatchImageUrl"),
-        frontImageUrl: firstMedia(rows, "frontImageUrl"),
-        backImageUrl: firstMedia(rows, "backImageUrl"),
-        active: true
-      };
-    }
-  );
-
-  const variants: SupplierVariant[] = chosen.map(
-    (raw: Record<string, unknown>): SupplierVariant => ({
-      sku: String(raw.sku),
-      skuId: raw.skuId ? String(raw.skuId) : undefined,
-      gtin: raw.gtin ? String(raw.gtin) : undefined,
-      colorName: String(raw.colorName),
-      sizeName: String(raw.sizeName),
-      customerPrice: Number(raw.customerPrice || 0),
-      quantity: Number(raw.quantity || 0),
+  const colors: ShirtColor[] = uniqueSelectedColorNames.map((colorName: string): ShirtColor => {
+    const rows = grouped.get(colorName) || [];
+    const mediaRow = rows.find((row) => row.frontImageUrl || row.backImageUrl || row.swatchImageUrl) || rows[0];
+    return {
+      id: slugify(colorName),
+      name: colorName,
+      hex: normalizeHex(mediaRow?.colorHex),
+      swatchImageUrl: firstMedia(rows, "swatchImageUrl"),
+      frontImageUrl: firstMedia(rows, "frontImageUrl"),
+      backImageUrl: firstMedia(rows, "backImageUrl"),
       active: true
-    })
-  );
+    };
+  });
 
-  const sizes: string[] = Array.from(
-    new Set<string>(variants.map((row: SupplierVariant) => row.sizeName))
-  );
+  const variants: SupplierVariant[] = chosen.map((raw): SupplierVariant => ({
+    sku: String(raw.sku),
+    skuId: raw.skuId ? String(raw.skuId) : undefined,
+    gtin: raw.gtin ? String(raw.gtin) : undefined,
+    colorName: String(raw.colorName),
+    sizeName: String(raw.sizeName),
+    customerPrice: Number(raw.customerPrice || 0),
+    quantity: Number(raw.quantity || 0),
+    active: true
+  }));
 
+  const sizes = Array.from(new Set(variants.map((row) => row.sizeName)));
   const brandName = String(style.brandName || first.brandName || "S&S");
   const styleName = String(style.styleName || first.styleName || "Blank");
   const name = `${brandName} ${styleName}`.trim();
@@ -131,24 +89,16 @@ export async function POST(request: Request) {
   const baseSlug = slugify(name);
   let slug = baseSlug;
   let suffix = 2;
-
-  while (
-    (
-      await supabase
-        .from("catalog_products")
-        .select("id")
-        .eq("shop_id", shop.id)
-        .eq("slug", slug)
-        .maybeSingle()
-    ).data
-  ) {
+  while ((await supabase.from("catalog_products").select("id").eq("shop_id", shop.id).eq("slug", slug).maybeSingle()).data) {
     slug = `${baseSlug}-${suffix++}`;
   }
 
+  const defaultColorId = colors[0]?.id;
   const configuration = {
     ...DEFAULT_CONFIGURATION,
     sizes,
     colors,
+    defaultColorId,
     mockupImageUrl: colors[0]?.frontImageUrl,
     customization: {
       ...DEFAULT_CONFIGURATION.customization,
@@ -168,29 +118,17 @@ export async function POST(request: Request) {
     }
   };
 
-  const description = String(
-    style.description ||
-      style.title ||
-      `${name} imported from S&S Activewear`
-  );
+  const description = String(style.description || style.title || `${name} imported from S&S Activewear`);
+  const { data, error } = await supabase.from("catalog_products").insert({
+    organization_id: membership.organization_id,
+    shop_id: shop.id,
+    slug,
+    name,
+    description,
+    active: true,
+    configuration
+  }).select("*").single();
 
-  const { data, error } = await supabase
-    .from("catalog_products")
-    .insert({
-      organization_id: membership.organization_id,
-      shop_id: shop.id,
-      slug,
-      name,
-      description,
-      active: true,
-      configuration
-    })
-    .select("*")
-    .single();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ product: data });
 }

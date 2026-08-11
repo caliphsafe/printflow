@@ -28,10 +28,6 @@ export type ShirtColor = {
   active?: boolean;
 };
 
-/**
- * Legacy quantity-tier shape retained so older product JSON keeps loading.
- * Release v8 does not use product packages for customer pricing.
- */
 export type ProductPackage = {
   id: string;
   label: string;
@@ -43,11 +39,6 @@ export type ProductPackage = {
   fullPrintUnitPrice?: number;
 };
 
-/**
- * x/y/width/height define the customer movement zone on the 800 × 800 canvas.
- * artworkWidth/artworkHeight define the largest visual print inside that zone.
- * widthInches/heightInches are the maximum physical production dimensions.
- */
 export type PrintArea = {
   x: number;
   y: number;
@@ -62,7 +53,6 @@ export type PrintArea = {
   defaultY?: number;
 };
 
-/** Deprecated product overrides retained only for backwards-compatible JSON. */
 export type FeeOverride = { mode: OverrideMode; amount?: number };
 export type ProductPricingOverrides = {
   setupFee: FeeOverride;
@@ -109,7 +99,7 @@ export type ProductConfiguration = {
   printLocations: string[];
   packages: ProductPackage[];
   mockupImageUrl?: string;
-  /** Cost basis for a manually created product. Supplier imports use variant customerPrice. */
+  defaultColorId?: string;
   manualUnitCost?: number;
   supplier?: SupplierProductConfiguration;
   customization: ProductCustomization;
@@ -186,7 +176,6 @@ export type PricingAddOn = {
   selectedByDefault: boolean;
 };
 
-/** Deprecated v6 rule retained for old imports; no longer used by the engine. */
 export type DecorationPricingRule = {
   id: string;
   name: string;
@@ -241,7 +230,6 @@ export type PublicShop = {
   pricing: ShopPricingProfile;
   products: CatalogProduct[];
   paymentReady?: boolean;
-  /** True when an authenticated shop owner is reviewing an unpublished storefront. */
   previewMode?: boolean;
 };
 
@@ -259,54 +247,9 @@ export type SelectedPricingAddOn = {
 export type GarmentPricingLine = {
   size: string;
   quantity: number;
-  supplierUnitCost: number;
-  customerUnitPrice: number;
-  subtotal: number;
+  unitCost: number;
+  unitPrice: number;
+  lineTotal: number;
 };
 
-export type PrintPricingLine = {
-  side: DesignSide;
-  printSize: PrintSize;
-  method: DecorationMethodId;
-  quantity: number;
-  inkColors?: number;
-  widthInches?: number;
-  heightInches?: number;
-  squareInches?: number;
-  estimatedStitches?: number;
-  baseUnitPrice: number;
-  discountPercent: number;
-  unitPrice: number;
-  subtotal: number;
-};
-
-export type ResolvedOrderPricing = {
-  tierId?: string;
-  quantity: number;
-  currency: string;
-  garmentMarkupPercent: number;
-  garmentLines: GarmentPricingLine[];
-  supplierGarmentCost: number;
-  garmentMarkupAmount: number;
-  garmentSubtotal: number;
-  decorationMethod: string;
-  discountTierLabel: string;
-  printLines: PrintPricingLine[];
-  printSubtotal: number;
-  setupFee: number;
-  designOptimizationRequested: boolean;
-  designOptimizationFee: number;
-  addOns: SelectedPricingAddOn[];
-  addOnTotal: number;
-  averageUnitPrice: number;
-  merchandiseSubtotal: number;
-  totalPrice: number;
-  /** Legacy fields retained for existing order-detail rendering. */
-  garmentUnitPrice: number;
-  baseFrontPrintUnitPrice: number;
-  baseBackPrintUnitPrice: number;
-  decorationPercentage: number;
-  frontPrintUnitPrice: number;
-  backPrintUnitPrice: number;
-  unitPrice: number;
-};
+export type ResolvedOrderPricing = any;

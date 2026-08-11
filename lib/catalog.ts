@@ -10,7 +10,6 @@ import type {
   SupplierVariant
 } from "@/lib/types";
 
-
 const DEFAULT_PRODUCT_PRICING_OVERRIDES: ProductPricingOverrides = {
   setupFee: { mode: "inherit" as const },
   designOptimizationFee: { mode: "inherit" as const },
@@ -80,7 +79,6 @@ export function normalizePrintArea(value: PrintArea | undefined, fallback: Print
   };
 }
 
-/** Legacy helper kept for existing imports and older product data. */
 export function inchesToPrintArea(area: PrintArea): PrintArea {
   const widthInches = Math.max(1, Number(area.widthInches ?? area.width / CANVAS_PX_PER_INCH));
   const heightInches = Math.max(1, Number(area.heightInches ?? area.height / CANVAS_PX_PER_INCH));
@@ -109,7 +107,6 @@ export function tierGarmentUnitPrice(tier: ProductPackage) {
   return tier.quantity > 0 ? money(tier.price / tier.quantity) : 0;
 }
 
-/** Backwards-compatible alias used by older dashboard code. */
 export function tierUnitPrice(tier: ProductPackage) {
   return tierGarmentUnitPrice(tier);
 }
@@ -139,24 +136,13 @@ export function printUnitPrice(tier: ProductPackage | undefined, size?: PrintSiz
   return size === "heart" ? tierHeartUnitPrice(tier) : tierFullUnitPrice(tier);
 }
 
-export function pricingForPrintOrder(
-  tiers: ProductPackage[],
-  quantity: number,
-  selections: Partial<Record<DesignSide, PrintSize>>
-) {
+export function pricingForPrintOrder(tiers: ProductPackage[], quantity: number, selections: Partial<Record<DesignSide, PrintSize>>) {
   const tier = pricingTierForQuantity(tiers, quantity);
   const garmentUnitPrice = tier ? tierGarmentUnitPrice(tier) : 0;
   const frontPrintUnitPrice = printUnitPrice(tier, selections.front);
   const backPrintUnitPrice = printUnitPrice(tier, selections.back);
   const unitPrice = money(garmentUnitPrice + frontPrintUnitPrice + backPrintUnitPrice);
-  return {
-    tier,
-    garmentUnitPrice,
-    frontPrintUnitPrice,
-    backPrintUnitPrice,
-    unitPrice,
-    totalPrice: money(unitPrice * quantity)
-  };
+  return { tier, garmentUnitPrice, frontPrintUnitPrice, backPrintUnitPrice, unitPrice, totalPrice: money(unitPrice * quantity) };
 }
 
 export function printAreaFor(configuration: ProductConfiguration, side: DesignSide, size: PrintSize) {
@@ -166,29 +152,13 @@ export function printAreaFor(configuration: ProductConfiguration, side: DesignSi
 }
 
 const DEFAULT_FRONT_HEART: PrintArea = {
-  x: 250,
-  y: 170,
-  width: 310,
-  height: 210,
-  widthInches: 4,
-  heightInches: 4,
-  artworkWidth: 104,
-  artworkHeight: 104,
-  defaultX: 330,
-  defaultY: 220
+  x: 250, y: 170, width: 310, height: 210, widthInches: 4, heightInches: 4,
+  artworkWidth: 104, artworkHeight: 104, defaultX: 330, defaultY: 220
 };
 const DEFAULT_BACK_HEART: PrintArea = { ...DEFAULT_FRONT_HEART, y: 165, defaultY: 215 };
 const DEFAULT_FRONT_FULL: PrintArea = {
-  x: 215,
-  y: 170,
-  width: 370,
-  height: 470,
-  widthInches: 14,
-  heightInches: 18,
-  artworkWidth: 330,
-  artworkHeight: 424,
-  defaultX: 235,
-  defaultY: 190
+  x: 215, y: 170, width: 370, height: 470, widthInches: 14, heightInches: 18,
+  artworkWidth: 330, artworkHeight: 424, defaultX: 235, defaultY: 190
 };
 const DEFAULT_BACK_FULL: PrintArea = { ...DEFAULT_FRONT_FULL, y: 155, defaultY: 175 };
 
@@ -198,39 +168,13 @@ export const DEFAULT_CONFIGURATION: ProductConfiguration = {
     { id: "black", name: "Black", hex: "#171717" },
     { id: "white", name: "White", hex: "#f7f7f2" }
   ],
+  defaultColorId: "black",
   printLocations: ["Front", "Back"],
   manualUnitCost: 0,
   packages: [
-    {
-      id: "12-plus",
-      label: "12–23",
-      quantity: 12,
-      price: 36,
-      checkoutUrl: "",
-      garmentUnitPrice: 3,
-      heartPrintUnitPrice: 3,
-      fullPrintUnitPrice: 5
-    },
-    {
-      id: "24-plus",
-      label: "24–47",
-      quantity: 24,
-      price: 67.2,
-      checkoutUrl: "",
-      garmentUnitPrice: 2.8,
-      heartPrintUnitPrice: 2.75,
-      fullPrintUnitPrice: 4.5
-    },
-    {
-      id: "48-plus",
-      label: "48+",
-      quantity: 48,
-      price: 120,
-      checkoutUrl: "",
-      garmentUnitPrice: 2.5,
-      heartPrintUnitPrice: 2.5,
-      fullPrintUnitPrice: 4
-    }
+    { id: "12-plus", label: "12–23", quantity: 12, price: 36, checkoutUrl: "", garmentUnitPrice: 3, heartPrintUnitPrice: 3, fullPrintUnitPrice: 5 },
+    { id: "24-plus", label: "24–47", quantity: 24, price: 67.2, checkoutUrl: "", garmentUnitPrice: 2.8, heartPrintUnitPrice: 2.75, fullPrintUnitPrice: 4.5 },
+    { id: "48-plus", label: "48+", quantity: 48, price: 120, checkoutUrl: "", garmentUnitPrice: 2.5, heartPrintUnitPrice: 2.5, fullPrintUnitPrice: 4 }
   ],
   customization: {
     category: "T-Shirts",
@@ -264,47 +208,56 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
   const legacyFront = normalizePrintArea(custom.frontPrintArea, DEFAULT_CONFIGURATION.customization.frontFullArea);
   const legacyBack = normalizePrintArea(custom.backPrintArea, DEFAULT_CONFIGURATION.customization.backFullArea);
 
+  const colors = Array.isArray(raw.colors) && raw.colors.length
+    ? raw.colors.map((item, index) => ({
+        id: String(item?.id || `color-${index + 1}`),
+        name: String(item?.name || `Color ${index + 1}`),
+        hex: String(item?.hex || "#111111"),
+        swatchImageUrl: item?.swatchImageUrl ? String(item.swatchImageUrl) : undefined,
+        frontImageUrl: item?.frontImageUrl ? String(item.frontImageUrl) : undefined,
+        backImageUrl: item?.backImageUrl ? String(item.backImageUrl) : undefined,
+        active: item?.active !== false
+      }))
+    : DEFAULT_CONFIGURATION.colors;
+
+  const visibleColors = colors.filter((item) => item.active !== false);
+  const rawDefaultColorId = raw.defaultColorId ? String(raw.defaultColorId) : "";
+  const defaultColor =
+    visibleColors.find((item) => item.id === rawDefaultColorId) ||
+    visibleColors[0] ||
+    colors[0];
+
   return {
     sizes: Array.isArray(raw.sizes) && raw.sizes.length ? raw.sizes.map(String) : DEFAULT_CONFIGURATION.sizes,
-    colors: Array.isArray(raw.colors) && raw.colors.length
-      ? raw.colors.map((item, index) => ({
-          id: String(item?.id || `color-${index + 1}`),
-          name: String(item?.name || `Color ${index + 1}`),
-          hex: String(item?.hex || "#111111"),
-          swatchImageUrl: item?.swatchImageUrl ? String(item.swatchImageUrl) : undefined,
-          frontImageUrl: item?.frontImageUrl ? String(item.frontImageUrl) : undefined,
-          backImageUrl: item?.backImageUrl ? String(item.backImageUrl) : undefined,
-          active: item?.active !== false
-        }))
-      : DEFAULT_CONFIGURATION.colors,
+    colors,
+    defaultColorId: defaultColor?.id,
     printLocations: Array.isArray(raw.printLocations) && raw.printLocations.length ? raw.printLocations.map(String) : DEFAULT_CONFIGURATION.printLocations,
     packages: Array.isArray(raw.packages) && raw.packages.length
-      ? raw.packages
-          .map((item, index) => {
-            const quantity = Math.max(1, Number(item?.quantity || 1));
-            const legacyGarment = quantity > 0 ? Number(item?.price || 0) / quantity : 0;
-            const garmentUnitPrice = money(Number(item?.garmentUnitPrice ?? legacyGarment));
-            const heartPrintUnitPrice = money(Number(item?.heartPrintUnitPrice ?? 0));
-            const fullPrintUnitPrice = money(Number(item?.fullPrintUnitPrice ?? 0));
-            return {
-              id: String(item?.id || `tier-${index + 1}`),
-              label: String(item?.label || `${quantity}+`),
-              quantity,
-              price: money(garmentUnitPrice * quantity),
-              checkoutUrl: String(item?.checkoutUrl || ""),
-              garmentUnitPrice,
-              heartPrintUnitPrice,
-              fullPrintUnitPrice
-            };
-          })
-          .sort((a, b) => a.quantity - b.quantity)
+      ? raw.packages.map((item, index) => {
+          const quantity = Math.max(1, Number(item?.quantity || 1));
+          const legacyGarment = quantity > 0 ? Number(item?.price || 0) / quantity : 0;
+          const garmentUnitPrice = money(Number(item?.garmentUnitPrice ?? legacyGarment));
+          const heartPrintUnitPrice = money(Number(item?.heartPrintUnitPrice ?? 0));
+          const fullPrintUnitPrice = money(Number(item?.fullPrintUnitPrice ?? 0));
+          return {
+            id: String(item?.id || `tier-${index + 1}`),
+            label: String(item?.label || `${quantity}+`),
+            quantity,
+            price: money(garmentUnitPrice * quantity),
+            checkoutUrl: String(item?.checkoutUrl || ""),
+            garmentUnitPrice,
+            heartPrintUnitPrice,
+            fullPrintUnitPrice
+          };
+        }).sort((a, b) => a.quantity - b.quantity)
       : DEFAULT_CONFIGURATION.packages,
-    mockupImageUrl: raw.mockupImageUrl ? String(raw.mockupImageUrl) : undefined,
+    // Keep a backwards-compatible mockup field, but always synchronize it to
+    // the persisted default color instead of allowing it to point at another color.
+    mockupImageUrl: defaultColor?.frontImageUrl || (raw.mockupImageUrl ? String(raw.mockupImageUrl) : undefined),
     manualUnitCost: Math.max(0, Number(raw.manualUnitCost ?? 0)),
     customization: {
       category: String(custom.category || "T-Shirts"),
-      decorationMethods:
-        Array.isArray(custom.decorationMethods) && custom.decorationMethods.length ? custom.decorationMethods.map(String) : ["Screen Print", "DTF", "Embroidery"],
+      decorationMethods: Array.isArray(custom.decorationMethods) && custom.decorationMethods.length ? custom.decorationMethods.map(String) : ["Screen Print", "DTF", "Embroidery"],
       designModes: Array.isArray(custom.designModes) && custom.designModes.length ? custom.designModes : ["front", "back", "front-back"],
       frontEnabled: custom.frontEnabled !== false,
       backEnabled: custom.backEnabled !== false,
@@ -318,9 +271,7 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
       frontFullArea: normalizePrintArea(custom.frontFullArea || custom.frontPrintArea, DEFAULT_CONFIGURATION.customization.frontFullArea),
       backHeartArea: normalizePrintArea(custom.backHeartArea, DEFAULT_CONFIGURATION.customization.backHeartArea),
       backFullArea: normalizePrintArea(custom.backFullArea || custom.backPrintArea, DEFAULT_CONFIGURATION.customization.backFullArea),
-      customerInstructions: custom.customerInstructions
-        ? String(custom.customerInstructions)
-        : DEFAULT_CONFIGURATION.customization.customerInstructions,
+      customerInstructions: custom.customerInstructions ? String(custom.customerInstructions) : DEFAULT_CONFIGURATION.customization.customerInstructions,
       pricingOverrides: normalizeProductPricingOverrides(custom.pricingOverrides)
     },
     supplier: supplierRaw?.provider

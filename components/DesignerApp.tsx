@@ -49,7 +49,11 @@ function activeColors(product?: CatalogProduct) {
 function defaultColorFor(product?: CatalogProduct) {
   if (!product) return undefined;
   const colors = activeColors(product);
-  return colors[0] || product.configuration.colors[0];
+  return (
+    colors.find((item) => item.id === product.configuration.defaultColorId) ||
+    colors[0] ||
+    product.configuration.colors[0]
+  );
 }
 
 function garmentImageFor(product: CatalogProduct, color: ShirtColor | undefined, side: DesignSide) {

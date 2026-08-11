@@ -106,7 +106,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
-  const [previewColorId, setPreviewColorId] = useState(startingProduct?.configuration.colors[0]?.id || "");
+  const [previewColorId, setPreviewColorId] = useState(startingProduct?.configuration.defaultColorId || startingProduct?.configuration.colors.find((item) => item.active !== false)?.id || startingProduct?.configuration.colors[0]?.id || "");
   const [previewSide, setPreviewSide] = useState<DesignSide>("front");
   const [previewSize, setPreviewSize] = useState<PrintSize>("full");
 
@@ -128,7 +128,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
     setSelectedId(product.id);
     setDraft(copy(product));
     setSavedSnapshot(JSON.stringify(product));
-    setPreviewColorId(product.configuration.colors[0]?.id || "");
+    setPreviewColorId(product.configuration.defaultColorId || product.configuration.colors.find((item) => item.active !== false)?.id || product.configuration.colors[0]?.id || "");
     setMessage("");
     setTab("Basics");
   }
@@ -206,7 +206,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
     }
   }
 
-  const previewColor = draft?.configuration.colors.find((item) => item.id === previewColorId) || draft?.configuration.colors[0];
+  const previewColor = draft?.configuration.colors.find((item) => item.id === previewColorId) || draft?.configuration.colors.find((item) => item.active !== false) || draft?.configuration.colors[0];
   const previewImage = previewSide === "front" ? previewColor?.frontImageUrl : previewColor?.backImageUrl;
   const activeZone = draft ? draft.configuration.customization[zoneKey(previewSide, previewSize)] : null;
   const supplierCosts = useMemo(() => {
@@ -230,7 +230,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
               setDraft(item);
               setSavedSnapshot("");
               setSelectedId(item.id);
-              setPreviewColorId(item.configuration.colors[0]?.id || "");
+              setPreviewColorId(item.configuration.defaultColorId || item.configuration.colors.find((color) => color.active !== false)?.id || item.configuration.colors[0]?.id || "");
               setTab("Basics");
               setMessage("");
             }}
@@ -378,7 +378,43 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
 
               {tab === "Colors" && (
                 <Panel title="Color variations" description="Upload real front and back garment images for each color. These exact images power the print-zone editor and customer mockups.">
-                  <ColorImageEditor values={draft.configuration.colors} onChange={(colors) => updateConfiguration({ colors })} />
+                  <div className="clean-form-grid" style={{ marginBottom: 20 }}>
+                    <Field label="Default storefront color" wide>
+                      <select
+                        value={draft.configuration.defaultColorId || draft.configuration.colors.find((item) => item.active !== false)?.id || ""}
+                        onChange={(event) => {
+                          const defaultColorId = event.target.value;
+                          const selectedColor = draft.configuration.colors.find((item) => item.id === defaultColorId);
+                          updateConfiguration({
+                            defaultColorId,
+                            mockupImageUrl: selectedColor?.frontImageUrl || undefined
+                          });
+                          setPreviewColorId(defaultColorId);
+                        }}
+                      >
+                        {draft.configuration.colors.filter((item) => item.active !== false).map((item) => (
+                          <option key={item.id} value={item.id}>{item.name}</option>
+                        ))}
+                      </select>
+                      <small>This exact color opens first in the customer store and supplies the catalog image.</small>
+                    </Field>
+                  </div>
+                  <ColorImageEditor
+                    values={draft.configuration.colors}
+                    onChange={(colors) => {
+                      const currentDefault = draft.configuration.defaultColorId;
+                      const activeDefault = colors.find((item) => item.id === currentDefault && item.active !== false);
+                      const nextDefault = activeDefault || colors.find((item) => item.active !== false) || colors[0];
+                      updateConfiguration({
+                        colors,
+                        defaultColorId: nextDefault?.id,
+                        mockupImageUrl: nextDefault?.frontImageUrl || undefined
+                      });
+                      if (nextDefault && !colors.some((item) => item.id === previewColorId && item.active !== false)) {
+                        setPreviewColorId(nextDefault.id);
+                      }
+                    }}
+                  />
                 </Panel>
               )}
 
