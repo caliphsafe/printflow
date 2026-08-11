@@ -94,6 +94,10 @@ export async function POST(request: Request) {
   }
 
   const defaultColorId = colors[0]?.id;
+  const productKindText = `${String(style.category || "")} ${String(style.title || "")} ${String(style.styleName || "")} ${styleName}`.toLowerCase();
+  const oneSizeAccessory = sizes.length === 1 && /^(one size|os|osfa|adjustable)$/i.test(String(sizes[0] || ""));
+  const fullSizeOnly = oneSizeAccessory || /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker)\b/.test(productKindText);
+  const category = fullSizeOnly ? "Hats & Headwear" : String(style.category || "Apparel");
   const configuration = {
     ...DEFAULT_CONFIGURATION,
     sizes,
@@ -102,8 +106,9 @@ export async function POST(request: Request) {
     mockupImageUrl: colors[0]?.frontImageUrl,
     customization: {
       ...DEFAULT_CONFIGURATION.customization,
-      category: String(style.category || "Apparel"),
-      decorationMethods: ["Screen Print", "DTF", "Embroidery"]
+      category,
+      decorationMethods: ["Screen Print", "DTF", "Embroidery"],
+      printSizes: fullSizeOnly ? ["full"] : ["heart", "full"]
     },
     supplier: {
       provider: "ss-activewear" as const,

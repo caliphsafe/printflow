@@ -79,6 +79,16 @@ function printSizeLabel(size: PrintSize) {
   return size === "heart" ? "Heart Size" : "Full Size";
 }
 
+function availablePrintSizes(product?: CatalogProduct): PrintSize[] {
+  const configured = product?.configuration.customization.printSizes;
+  return Array.isArray(configured) && configured.length ? configured : ["heart", "full"];
+}
+
+function defaultPrintSize(product?: CatalogProduct): PrintSize {
+  const sizes = availablePrintSizes(product);
+  return sizes.includes("full") ? "full" : sizes[0] || "full";
+}
+
 function safeFilename(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "printflow";
 }
@@ -134,7 +144,8 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const [color, setColor] = useState<ShirtColor>(defaultColorFor(firstProduct) as ShirtColor);
   const [mode, setMode] = useState<DesignMode>(firstProduct?.configuration.customization.designModes[0] || "front");
   const [side, setSide] = useState<DesignSide>("front");
-  const [printSizes, setPrintSizes] = useState<Record<DesignSide, PrintSize>>({ front: "full", back: "heart" });
+  const firstPrintSize = defaultPrintSize(firstProduct);
+  const [printSizes, setPrintSizes] = useState<Record<DesignSide, PrintSize>>({ front: firstPrintSize, back: firstPrintSize });
   const [sizes, setSizes] = useState<SizeQuantity[]>(firstProduct?.configuration.sizes.map((size) => ({ size, quantity: 0 })) || []);
   const [decoration, setDecoration] = useState(firstProduct?.configuration.customization.decorationMethods[0] || "Screen Print");
   const [inkColors, setInkColors] = useState<Record<DesignSide, number>>({ front: 1, back: 1 });
@@ -157,15 +168,17 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const neededSides: DesignSide[] = mode === "front-back" ? ["front", "back"] : [mode];
   const sideState = side === "front" ? front : back;
   const setSideState = side === "front" ? setFront : setBack;
-  const currentPrintSize = printSizes[side];
+  const printSizeOptions = availablePrintSizes(product);
+  const hasPrintSizeChoice = printSizeOptions.length > 1;
+  const currentPrintSize = printSizeOptions.includes(printSizes[side]) ? printSizes[side] : defaultPrintSize(product);
   const printArea = printAreaFor(product.configuration, side, currentPrintSize);
   const printZone = printZoneBounds(printArea);
   const garmentUrl = assetUrl(garmentImageFor(product, color, side));
   const totalAssigned = useMemo(() => sizes.reduce((sum, item) => sum + item.quantity, 0), [sizes]);
   const minimum = product?.configuration.customization.minimumQuantity || 12;
   const selectedPrints = {
-    front: neededSides.includes("front") ? { printSize: printSizes.front, placement: front.placement, inkColors: inkColors.front } : undefined,
-    back: neededSides.includes("back") ? { printSize: printSizes.back, placement: back.placement, inkColors: inkColors.back } : undefined
+    front: neededSides.includes("front") ? { printSize: availablePrintSizes(product).includes(printSizes.front) ? printSizes.front : defaultPrintSize(product), placement: front.placement, inkColors: inkColors.front } : undefined,
+    back: neededSides.includes("back") ? { printSize: availablePrintSizes(product).includes(printSizes.back) ? printSizes.back : defaultPrintSize(product), placement: back.placement, inkColors: inkColors.back } : undefined
   };
   const pricingSizes = totalAssigned > 0 ? sizes : sizes.map((item, index) => ({ ...item, quantity: index === 0 ? minimum : 0 }));
   const pricing = calculateResolvedOrderPricing({
@@ -238,7 +251,8 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     const nextMode = next.configuration.customization.designModes.includes("front") ? "front" : (next.configuration.customization.designModes[0] || "front");
     setMode(nextMode);
     setSide(nextMode === "back" ? "back" : "front");
-    setPrintSizes({ front: "full", back: "heart" });
+    const nextPrintSize = defaultPrintSize(next);
+    setPrintSizes({ front: nextPrintSize, back: nextPrintSize });
     setSizes(next.configuration.sizes.map((size) => ({ size, quantity: 0 })));
     setDecoration(next.configuration.customization.decorationMethods[0] || "Screen Print");
     setInkColors({ front: 1, back: 1 });
@@ -258,6 +272,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   }
 
   function choosePrintSize(target: DesignSide, nextSize: PrintSize) {
+    if (!availablePrintSizes(product).includes(nextSize)) return;
     setPrintSizes((current) => ({ ...current, [target]: nextSize }));
     const state = target === "front" ? front : back;
     if (state.file) {
@@ -590,7 +605,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                       <small>{item.configuration.sizes.length} sizes</small>
                       <small>Min. {min}</small>
                     </div>
-                    <strong>From ${price.unitPrice.toFixed(2)} per shirt</strong><small className="product-minimum-note">Minimum order: {min}</small>
+                    <strong>From ${price.unitPrice.toFixed(2)} per item</strong><small className="product-minimum-note">Minimum order: {min}</small>
                   </div>
                 </button>
               );
@@ -611,7 +626,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
               </div>
               <div className="stage-topbar-actions">
                 <span>
-                  {printSizeLabel(currentPrintSize)} · {printArea.widthInches?.toFixed(1)}″ × {printArea.heightInches?.toFixed(1)}″ max
+                  {hasPrintSizeChoice ? `${printSizeLabel(currentPrintSize)} · ` : "Print area · "}{printArea.widthInches?.toFixed(1)}″ × {printArea.heightInches?.toFixed(1)}″ max
                 </span>
                 <button className="save-mockup-button" disabled={!sideState.file || mockupBusy !== null} onClick={() => downloadMockup(side)}>
                   {mockupBusy === side ? "Saving…" : "Save mockup"}
@@ -706,7 +721,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             <div className="stage-guidance">
               <p>{product.configuration.customization.customerInstructions}</p>
               <small>
-                {printSizeLabel(currentPrintSize)} is limited to {printArea.widthInches}″ × {printArea.heightInches}″. The green box is the print itself: drag the artwork to place it and use the green handle to resize it up to the configured maximum. PNG, JPG, WEBP, or SVG · up to {uploadLimitMb} MB.
+                {hasPrintSizeChoice ? `${printSizeLabel(currentPrintSize)} is` : "This print area is"} limited to {printArea.widthInches}″ × {printArea.heightInches}″. The green box is the print itself: drag the artwork to place it and use the green handle to resize it up to the configured maximum. PNG, JPG, WEBP, or SVG · up to {uploadLimitMb} MB.
               </small>
             </div>
           </div>
@@ -732,31 +747,33 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                 ))}
               </div>
             </WizardSection>
-            <WizardSection number="2" title="Print sizes">
-              <div className="side-print-size-stack">
-                {neededSides.map((target) => (
-                  <div className="side-print-size-group" key={target}>
-                    <span>{target === "front" ? "Front" : "Back"}</span>
-                    <div className="print-size-choice-grid">
-                      {(["heart", "full"] as PrintSize[]).map((value) => {
-                        const area = printAreaFor(product.configuration, target, value);
-                        return (
-                          <label key={value} className={printSizes[target] === value ? "print-size-choice selected" : "print-size-choice"}>
-                            <input type="radio" name={`${target}-print-size`} checked={printSizes[target] === value} onChange={() => choosePrintSize(target, value)} />
-                            <span>
-                              <b>{printSizeLabel(value)}</b>
-                              <small>{area.widthInches}″ × {area.heightInches}″ max</small>
-                            </span>
-                            <em>Live quote</em>
-                          </label>
-                        );
-                      })}
+            {hasPrintSizeChoice && (
+              <WizardSection number="2" title="Print sizes">
+                <div className="side-print-size-stack">
+                  {neededSides.map((target) => (
+                    <div className="side-print-size-group" key={target}>
+                      <span>{target === "front" ? "Front" : "Back"}</span>
+                      <div className="print-size-choice-grid">
+                        {printSizeOptions.map((value) => {
+                          const area = printAreaFor(product.configuration, target, value);
+                          return (
+                            <label key={value} className={printSizes[target] === value ? "print-size-choice selected" : "print-size-choice"}>
+                              <input type="radio" name={`${target}-print-size`} checked={printSizes[target] === value} onChange={() => choosePrintSize(target, value)} />
+                              <span>
+                                <b>{printSizeLabel(value)}</b>
+                                <small>{area.widthInches}″ × {area.heightInches}″ max</small>
+                              </span>
+                              <em>Live quote</em>
+                            </label>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </WizardSection>
-            <WizardSection number="3" title="Garment color">
+                  ))}
+                </div>
+              </WizardSection>
+            )}
+            <WizardSection number={hasPrintSizeChoice ? "3" : "2"} title="Garment color">
               <div className="modern-color-picker">
                 {product.configuration.colors
                   .filter((item) => item.active !== false)
@@ -768,7 +785,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                   ))}
               </div>
             </WizardSection>
-            <WizardSection number="4" title="Decoration method">
+            <WizardSection number={hasPrintSizeChoice ? "4" : "3"} title="Decoration method">
               <select className="modern-select" value={decoration} onChange={(event) => setDecoration(event.target.value)}>
                 {product.configuration.customization.decorationMethods.map((item) => (
                   <option key={item}>{item}</option>
@@ -785,7 +802,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
               {decoration.toLowerCase().includes("dtf") && <div className="method-explainer"><b>DTF prices from the actual artwork size.</b><span>Resize your design on the garment and the live quote updates using square inches.</span></div>}
               {decoration.toLowerCase().includes("embroider") && <div className="method-explainer"><b>Embroidery uses an estimated stitch count.</b><span>The shop confirms the final stitch count and production file during artwork review.</span></div>}
             </WizardSection>
-            <WizardSection number="5" title="Order services">
+            <WizardSection number={hasPrintSizeChoice ? "5" : "4"} title="Order services">
               <div className="customer-service-stack">
                 {pricing.setupFee > 0 && <div className="included-fee-card"><span>Included</span><div><b>{shop.pricing.orderSetupFee.label}</b><small>${pricing.setupFee.toFixed(2)} once per order</small></div></div>}
                 {designOptimizationAmount > 0 && <label className={designOptimizationRequested ? "service-choice selected" : "service-choice"}><input type="checkbox" checked={designOptimizationRequested} onChange={(event) => setDesignOptimizationRequested(event.target.checked)}/><span className="fake-check">✓</span><span><b>{shop.pricing.designOptimizationFee.label}</b><small>{shop.pricing.designOptimizationFee.description}</small></span><em>+${designOptimizationAmount.toFixed(2)}</em></label>}
@@ -818,13 +835,13 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
               <small>{totalAssigned >= minimum ? "Minimum reached" : `${minimum - totalAssigned} more needed`}</small>
             </div>
             <div className="live-price-card customer-simple-price">
-              <div className="unit"><span>Final price per shirt</span><b>${pricing.averageUnitPrice.toFixed(2)}</b></div>
-              <div><span>{totalAssigned || minimum} shirts</span><b>${pricing.merchandiseSubtotal.toFixed(2)}</b></div>
+              <div className="unit"><span>Final price per item</span><b>${pricing.averageUnitPrice.toFixed(2)}</b></div>
+              <div><span>{totalAssigned || minimum} items</span><b>${pricing.merchandiseSubtotal.toFixed(2)}</b></div>
               {pricing.setupFee > 0 && <div><span>{decoration.toLowerCase().includes("screen") ? "Screens & setup" : "Production setup"}</span><b>${pricing.setupFee.toFixed(2)}</b></div>}
               {pricing.designOptimizationFee > 0 && <div><span>Design service</span><b>${pricing.designOptimizationFee.toFixed(2)}</b></div>}
               {pricing.addOns.length > 0 && <div><span>Selected extras</span><b>${pricing.addOns.reduce((sum, item) => sum + item.total, 0).toFixed(2)}</b></div>}
               <div className="total"><span>Total</span><b>${totalPrice.toFixed(2)}</b></div>
-              <small>Pricing includes the selected garment, printing, and quantity level.</small>
+              <small>Pricing includes the selected item, decoration, and quantity level.</small>
             </div>
             <details className="customer-details" open>
               <summary>Contact & notes</summary>

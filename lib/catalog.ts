@@ -179,6 +179,7 @@ export const DEFAULT_CONFIGURATION: ProductConfiguration = {
   customization: {
     category: "T-Shirts",
     decorationMethods: ["Screen Print", "DTF", "Embroidery"],
+    printSizes: ["heart", "full"],
     designModes: ["front", "back", "front-back"],
     frontEnabled: true,
     backEnabled: true,
@@ -227,6 +228,14 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
     visibleColors[0] ||
     colors[0];
 
+  const productKindText = `${String(custom.category || "")} ${String(supplierRaw?.brandName || "")} ${String(supplierRaw?.styleName || "")}`.toLowerCase();
+  const rawSizes = Array.isArray(raw.sizes) ? raw.sizes.map((size) => String(size).trim().toLowerCase()) : [];
+  const oneSizeAccessory = rawSizes.length === 1 && /^(one size|os|osfa|adjustable)$/i.test(rawSizes[0]);
+  const likelyFullOnly = oneSizeAccessory || /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker)\b/.test(productKindText);
+  const rawPrintSizes = Array.isArray(custom.printSizes) ? custom.printSizes.filter((size): size is PrintSize => size === "heart" || size === "full") : [];
+  const printSizes: PrintSize[] = rawPrintSizes.length ? Array.from(new Set(rawPrintSizes)) : likelyFullOnly ? ["full"] : ["heart", "full"];
+  if (!printSizes.includes("full")) printSizes.push("full");
+
   return {
     sizes: Array.isArray(raw.sizes) && raw.sizes.length ? raw.sizes.map(String) : DEFAULT_CONFIGURATION.sizes,
     colors,
@@ -258,6 +267,7 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
     customization: {
       category: String(custom.category || "T-Shirts"),
       decorationMethods: Array.isArray(custom.decorationMethods) && custom.decorationMethods.length ? custom.decorationMethods.map(String) : ["Screen Print", "DTF", "Embroidery"],
+      printSizes,
       designModes: Array.isArray(custom.designModes) && custom.designModes.length ? custom.designModes : ["front", "back", "front-back"],
       frontEnabled: custom.frontEnabled !== false,
       backEnabled: custom.backEnabled !== false,

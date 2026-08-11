@@ -2,15 +2,7 @@
 
 import type { ReactNode } from "react";
 
-export default function FloatingSaveBar({
-  dirty,
-  busy,
-  onSave,
-  label = "Save",
-  savedLabel = "Saved",
-  message,
-  secondary
-}: {
+type Props = {
   dirty: boolean;
   busy: boolean;
   onSave: () => void | Promise<void>;
@@ -18,14 +10,24 @@ export default function FloatingSaveBar({
   savedLabel?: string;
   message?: string;
   secondary?: ReactNode;
-}) {
+};
+
+export default function FloatingSaveBar(props: Props) {
+  const { dirty, busy, onSave, label = "Save", message, secondary } = props;
+  if (!dirty && !busy) return null;
+
   return (
-    <div className={dirty ? "floating-save-bar dirty" : "floating-save-bar"} role="status" aria-live="polite">
+    <div
+      className="floating-save-bar dirty"
+      role="status"
+      aria-live="polite"
+      style={{ position: "sticky", bottom: 16, zIndex: 30 }}
+    >
       <div className="floating-save-status">
         <span className="floating-save-dot" />
         <div>
-          <strong>{dirty ? "Unsaved changes" : savedLabel}</strong>
-          <small>{message || (dirty ? "Save to apply these updates." : "Everything is up to date.")}</small>
+          <strong>{busy ? "Saving…" : "Unsaved changes"}</strong>
+          <small>{message || "Save to apply these updates."}</small>
         </div>
       </div>
       <div className="floating-save-actions">

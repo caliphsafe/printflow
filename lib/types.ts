@@ -74,6 +74,8 @@ export type ProductPricingOverrides = {
 export type ProductCustomization = {
   category: string;
   decorationMethods: string[];
+  /** Print-size choices exposed to customers. Full is always supported; Heart Size can be disabled per product. */
+  printSizes: PrintSize[];
   designModes: DesignMode[];
   frontEnabled: boolean;
   backEnabled: boolean;

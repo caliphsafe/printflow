@@ -12,7 +12,8 @@ import type {
   PrintSize,
   ProductConfiguration,
   ShirtColor,
-  ShopPricingProfile
+  ShopPricingProfile,
+  SupplierVariant
 } from "@/lib/types";
 import {
   DEFAULT_CONFIGURATION,
@@ -25,6 +26,10 @@ const TABS = ["Basics", "Options", "Colors", "Print zones", "Cost basis"] as con
 export type ProductEditorTab = (typeof TABS)[number];
 type Tab = ProductEditorTab;
 type UploadState = { busy: boolean; error?: string; success?: string };
+type SupplierColorProduct = {
+  sku: string; skuId?: string; gtin?: string; colorName: string; sizeName: string; customerPrice: number; quantity: number;
+  colorHex?: string; swatchImageUrl?: string; frontImageUrl?: string; backImageUrl?: string;
+};
 type ZoneKey = "frontHeartArea" | "frontFullArea" | "backHeartArea" | "backFullArea";
 
 const PRODUCT_IMAGE_MIME: Record<string, string> = {
@@ -73,6 +78,20 @@ function sizeTitle(size: PrintSize) {
   return size === "heart" ? "Heart size" : "Full size";
 }
 
+function productPrintSizes(product?: CatalogProduct): PrintSize[] {
+  const configured = product?.configuration.customization.printSizes;
+  return Array.isArray(configured) && configured.length ? configured : ["heart", "full"];
+}
+
+function normalizeSupplierHex(value?: string) {
+  const raw = String(value || "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(raw)) return raw;
+  if (/^[0-9a-f]{6}$/i.test(raw)) return `#${raw}`;
+  if (/^#[0-9a-f]{3}$/i.test(raw)) return raw;
+  if (/^[0-9a-f]{3}$/i.test(raw)) return `#${raw}`;
+  return "#777777";
+}
+
 function singlePrintZone(value: PrintArea) {
   const area = normalizePrintArea(value, value);
   const width = Math.max(45, Math.min(area.artworkWidth || area.width || 100, 800));
@@ -109,6 +128,11 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
   const [previewColorId, setPreviewColorId] = useState(startingProduct?.configuration.defaultColorId || startingProduct?.configuration.colors.find((item) => item.active !== false)?.id || startingProduct?.configuration.colors[0]?.id || "");
   const [previewSide, setPreviewSide] = useState<DesignSide>("front");
   const [previewSize, setPreviewSize] = useState<PrintSize>("full");
+  const [supplierColorsOpen, setSupplierColorsOpen] = useState(false);
+  const [supplierColorsLoading, setSupplierColorsLoading] = useState(false);
+  const [supplierColorsMessage, setSupplierColorsMessage] = useState("");
+  const [supplierColorProducts, setSupplierColorProducts] = useState<SupplierColorProduct[]>([]);
+  const [supplierSelectedColors, setSupplierSelectedColors] = useState<string[]>([]);
 
   const selected = useMemo(() => products.find((item) => item.id === selectedId), [products, selectedId]);
   const dirty = useMemo(() => Boolean(draft) && JSON.stringify(draft) !== savedSnapshot, [draft, savedSnapshot]);
@@ -122,6 +146,82 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
         .includes(query)
     );
   }, [products, search]);
+
+  useEffect(() => {
+    if (!draft) return;
+    const available = productPrintSizes(draft);
+    if (!available.includes(previewSize)) setPreviewSize(available.includes("full") ? "full" : available[0] || "full");
+  }, [draft?.configuration.customization.printSizes, previewSize]);
+
+  async function openSupplierColorPicker() {
+    if (!draft?.configuration.supplier || draft.configuration.supplier.provider !== "ss-activewear") return;
+    setSupplierColorsOpen(true);
+    setSupplierColorsLoading(true);
+    setSupplierColorsMessage("");
+    setSupplierSelectedColors([]);
+    try {
+      const response = await fetch(`/api/admin/suppliers/ss/style/${encodeURIComponent(draft.configuration.supplier.styleId)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to load supplier colors.");
+      setSupplierColorProducts(Array.isArray(data.products) ? data.products : []);
+    } catch (error) {
+      setSupplierColorsMessage(error instanceof Error ? error.message : "Unable to load supplier colors.");
+    } finally {
+      setSupplierColorsLoading(false);
+    }
+  }
+
+  function addSelectedSupplierColors() {
+    if (!draft?.configuration.supplier || !supplierSelectedColors.length) return;
+    const selectedNames = new Set(supplierSelectedColors);
+    const selectedRows = supplierColorProducts.filter((row) => selectedNames.has(row.colorName));
+    const existingIds = new Set(draft.configuration.colors.map((color) => color.id));
+    const additions: ShirtColor[] = supplierSelectedColors.flatMap((colorName) => {
+      const rows = selectedRows.filter((row) => row.colorName === colorName);
+      if (!rows.length) return [];
+      const id = slugify(colorName);
+      if (existingIds.has(id) || draft.configuration.colors.some((color) => color.name === colorName)) return [];
+      const firstMedia = (key: "swatchImageUrl" | "frontImageUrl" | "backImageUrl") => rows.map((row) => row[key]).find(Boolean);
+      return [{
+        id,
+        name: colorName,
+        hex: normalizeSupplierHex(rows.find((row) => row.colorHex)?.colorHex),
+        swatchImageUrl: firstMedia("swatchImageUrl"),
+        frontImageUrl: firstMedia("frontImageUrl"),
+        backImageUrl: firstMedia("backImageUrl"),
+        active: true
+      }];
+    });
+
+    const incomingVariants: SupplierVariant[] = selectedRows.map((row) => ({
+      sku: String(row.sku),
+      skuId: row.skuId ? String(row.skuId) : undefined,
+      gtin: row.gtin ? String(row.gtin) : undefined,
+      colorName: String(row.colorName),
+      sizeName: String(row.sizeName),
+      customerPrice: Number(row.customerPrice || 0),
+      quantity: Number(row.quantity || 0),
+      active: true
+    }));
+    const variantMap = new Map(draft.configuration.supplier.variants.map((variant) => [variant.sku, variant]));
+    incomingVariants.forEach((variant) => variantMap.set(variant.sku, variant));
+    const colors = [...draft.configuration.colors, ...additions];
+    const sizes = Array.from(new Set([...draft.configuration.sizes, ...incomingVariants.map((variant) => variant.sizeName)]));
+    const currentDefault = draft.configuration.defaultColorId;
+    const nextDefault = colors.find((color) => color.id === currentDefault && color.active !== false) || colors.find((color) => color.active !== false) || colors[0];
+
+    updateConfiguration({
+      colors,
+      sizes,
+      defaultColorId: nextDefault?.id,
+      mockupImageUrl: nextDefault?.frontImageUrl || undefined,
+      supplier: { ...draft.configuration.supplier, variants: Array.from(variantMap.values()) }
+    });
+    if (additions[0]) setPreviewColorId(additions[0].id);
+    setSupplierColorsOpen(false);
+    setSupplierSelectedColors([]);
+    setSupplierColorsMessage("");
+  }
 
   function choose(product: CatalogProduct) {
     if (dirty && !window.confirm("You have unsaved product changes. Switch products without saving?")) return;
@@ -277,11 +377,14 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                 <h1>{draft.name}</h1>
                 <p>{selected?.configuration.supplier?.partNumber || "Prepare this product for customer ordering."}</p>
               </div>
-              <label className="modern-switch">
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {!draft.id.startsWith("new-") && <button className="secondary-button compact" type="button" disabled={busy} onClick={remove}>Delete</button>}
+                <label className="modern-switch">
                 <input type="checkbox" checked={draft.active} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} />
                 <span />
                 <b>{draft.active ? "Live" : "Hidden"}</b>
               </label>
+              </div>
             </div>
 
             <nav className="product-editor-tabs" aria-label="Product setup sections">
@@ -306,6 +409,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                         <option>Sweatshirts</option>
                         <option>Polos</option>
                         <option>Jackets</option>
+                        <option>Hats & Headwear</option>
                         <option>Totes</option>
                         <option>Other</option>
                       </select>
@@ -363,6 +467,21 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                       />
                     </div>
                   </Panel>
+                  <Panel title="Print size options" description="Full Size is always available. Turn Heart Size off for hats, caps, and any product that uses one standard print area.">
+                    <div className="selection-card-grid">
+                      <CheckCard
+                        title="Heart Size"
+                        text="Offer a compact Heart Size option in addition to Full Size."
+                        checked={productPrintSizes(draft).includes("heart")}
+                        onChange={(checked) => {
+                          const printSizes: PrintSize[] = checked ? ["heart", "full"] : ["full"];
+                          updateCustomization({ printSizes });
+                          if (!checked && previewSize === "heart") setPreviewSize("full");
+                        }}
+                      />
+                      <CheckCard title="Full Size" text="The standard print area is always available for this product." checked={true} onChange={() => {}} />
+                    </div>
+                  </Panel>
                   <Panel title="Decoration methods" description="These appear as a compact dropdown in the customer designer.">
                     <TagEditor
                       values={draft.configuration.customization.decorationMethods}
@@ -377,7 +496,13 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
               )}
 
               {tab === "Colors" && (
-                <Panel title="Color variations" description="Upload real front and back garment images for each color. These exact images power the print-zone editor and customer mockups.">
+                <Panel title="Color variations" description="Use supplier colors when available, or add a manual color when you need a custom variation.">
+                  {draft.configuration.supplier?.provider === "ss-activewear" && (
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 20, flexWrap: "wrap" }}>
+                      <div><strong>S&S color library</strong><div><small>Add another official color for this exact supplier style without re-importing the product.</small></div></div>
+                      <button type="button" className="secondary-button compact" onClick={() => void openSupplierColorPicker()}>Add supplier colors</button>
+                    </div>
+                  )}
                   <div className="clean-form-grid" style={{ marginBottom: 20 }}>
                     <Field label="Default storefront color" wide>
                       <select
@@ -421,7 +546,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
               {tab === "Print zones" && activeZone && (
                 <Panel
                   title="Visual print-zone setup"
-                  description="Use the real garment photo to place one clear print zone for Heart Size and Full Size. The green box is the exact customer artwork area."
+                  description={productPrintSizes(draft).includes("heart") ? "Set the customer print zone for Heart Size and Full Size." : "Set the single customer print zone for this product."}
                 >
                   <div className="zone-toolbar">
                     <Field label="Reference color">
@@ -441,7 +566,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                       ))}
                     </div>
                     <div className="segmented-control" aria-label="Print size">
-                      {(["heart", "full"] as PrintSize[]).map((item) => (
+                      {productPrintSizes(draft).map((item) => (
                         <button key={item} className={previewSize === item ? "active" : ""} onClick={() => setPreviewSize(item)}>
                           {sizeTitle(item)}
                         </button>
@@ -512,11 +637,39 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
               busy={busy}
               onSave={async () => { await save(); }}
               message={draft.active ? "Saved changes appear in the customer catalog." : "This product remains hidden from customers."}
-              secondary={!draft.id.startsWith("new-") ? <button className="floating-delete-button" type="button" disabled={busy} onClick={remove}>Delete</button> : null}
             />
           </>
         )}
       </section>
+      {supplierColorsOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setSupplierColorsOpen(false)}>
+          <div className="supplier-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div><p className="eyebrow">S&S ACTIVEWEAR</p><h2>Add color variations</h2><p>Choose additional colors for {draft?.name}.</p></div>
+              <button className="icon-button" type="button" onClick={() => setSupplierColorsOpen(false)}>×</button>
+            </div>
+            {supplierColorsLoading ? <div className="library-empty">Loading supplier colors…</div> : (
+              <>
+                <div className="supplier-color-grid">
+                  {Array.from(new Map(supplierColorProducts.map((row) => [row.colorName, row])).values())
+                    .filter((row) => !draft?.configuration.colors.some((color) => color.name === row.colorName || color.id === slugify(row.colorName)))
+                    .map((row) => (
+                      <label key={row.colorName} className={supplierSelectedColors.includes(row.colorName) ? "supplier-color-card selected" : "supplier-color-card"}>
+                        <input type="checkbox" checked={supplierSelectedColors.includes(row.colorName)} onChange={(event) => setSupplierSelectedColors((current) => event.target.checked ? [...current, row.colorName] : current.filter((name) => name !== row.colorName))} />
+                        {row.frontImageUrl ? <img src={assetUrl(row.frontImageUrl)} alt={row.colorName} /> : <span className="supplier-color-placeholder" style={{ background: normalizeSupplierHex(row.colorHex) }} />}
+                        <strong>{row.colorName}</strong>
+                        <small>{supplierColorProducts.filter((item) => item.colorName === row.colorName).length} sizes</small>
+                      </label>
+                    ))}
+                </div>
+                {!supplierColorProducts.some((row) => !draft?.configuration.colors.some((color) => color.name === row.colorName || color.id === slugify(row.colorName))) && <div className="library-empty">All supplier colors for this style are already in the product.</div>}
+                <div className="modal-actions"><span>{supplierSelectedColors.length} colors selected</span><button className="primary-button fit-button" type="button" disabled={!supplierSelectedColors.length} onClick={addSelectedSupplierColors}>Add selected colors</button></div>
+              </>
+            )}
+            {supplierColorsMessage && <div className="error-message catalog-message">{supplierColorsMessage}</div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
