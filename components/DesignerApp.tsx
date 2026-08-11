@@ -76,10 +76,13 @@ function loadImage(src: string, crossOrigin = false) {
 }
 
 function printZoneBounds(area: PrintArea) {
-  const width = Math.max(40, Math.min(area.artworkWidth || area.width, W - 64));
-  const height = Math.max(40, Math.min(area.artworkHeight || area.height, H - 64));
-  const x = Math.max(32, Math.min(W - 32 - width, area.defaultX ?? area.x));
-  const y = Math.max(32, Math.min(H - 32 - height, area.defaultY ?? area.y));
+  // The catalog editor's green zone is the source of truth for the storefront.
+  // Use the saved zone geometry directly instead of the legacy artwork/default
+  // fields, which can be re-shaped during normalization for older product data.
+  const width = Math.max(40, Math.min(Number(area.width || 40), W));
+  const height = Math.max(40, Math.min(Number(area.height || 40), H));
+  const x = Math.max(0, Math.min(W - width, Number(area.x || 0)));
+  const y = Math.max(0, Math.min(H - height, Number(area.y || 0)));
   return { x, y, width, height };
 }
 
@@ -92,8 +95,8 @@ function fitPlacementToArea(placement: ArtworkPlacement, area: PrintArea) {
     ...placement,
     width,
     height,
-    x: Math.max(32, Math.min(W - 32 - width, zone.x)),
-    y: Math.max(32, Math.min(H - 32 - height, zone.y))
+    x: Math.max(zone.x, Math.min(zone.x + zone.width - width, zone.x + (zone.width - width) / 2)),
+    y: Math.max(zone.y, Math.min(zone.y + zone.height - height, zone.y + (zone.height - height) / 2))
   };
 }
 
@@ -250,8 +253,8 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       const width = image.width * ratio;
       const height = image.height * ratio;
       const placement = {
-        x: Math.max(32, Math.min(W - 32 - width, zone.x + (zone.width - width) / 2)),
-        y: Math.max(32, Math.min(H - 32 - height, zone.y + (zone.height - height) / 2)),
+        x: Math.max(zone.x, Math.min(zone.x + zone.width - width, zone.x + (zone.width - width) / 2)),
+        y: Math.max(zone.y, Math.min(zone.y + zone.height - height, zone.y + (zone.height - height) / 2)),
         width,
         height,
         rotation: 0
@@ -288,13 +291,13 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
         ...state,
         placement: {
           ...state.placement,
-          x: Math.max(32, Math.min(W - 32 - start.width, start.x + dx)),
-          y: Math.max(32, Math.min(H - 32 - start.height, start.y + dy))
+          x: Math.max(printZone.x, Math.min(printZone.x + printZone.width - start.width, start.x + dx)),
+          y: Math.max(printZone.y, Math.min(printZone.y + printZone.height - start.height, start.y + dy))
         }
       }));
     } else {
-      const maxWidth = Math.min(printZone.width, W - 32 - start.x);
-      const maxHeight = Math.min(printZone.height, H - 32 - start.y);
+      const maxWidth = Math.max(40, printZone.x + printZone.width - start.x);
+      const maxHeight = Math.max(40, printZone.y + printZone.height - start.y);
       let width = Math.max(40, Math.min(maxWidth, start.width + dx));
       let height = width * (start.height / start.width);
       if (height > maxHeight) {
