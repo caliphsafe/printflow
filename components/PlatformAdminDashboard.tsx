@@ -40,6 +40,8 @@ type Row = {
   growth: Growth;
 };
 
+type AccountCreationMode = "password" | "invite";
+
 function date(value?: string | null) {
   if (!value) return "Not yet";
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
@@ -64,6 +66,15 @@ function segmentLabel(segment: Growth["segment"]) {
   return { upgrade: "Upgrade opportunity", onboarding: "Onboarding support", retention: "Billing attention", reengage: "Re-engagement", healthy: "Healthy" }[segment];
 }
 
+const freshCreateForm = () => ({
+  ownerName: "",
+  email: "",
+  password: "",
+  businessName: "",
+  planCode: "starter",
+  trialDays: 14
+});
+
 export default function PlatformAdminDashboard({ initialRows }: { initialRows: Row[] }) {
   const [rows, setRows] = useState(initialRows);
   const [view, setView] = useState<"accounts" | "growth" | "users">("accounts");
@@ -75,7 +86,9 @@ export default function PlatformAdminDashboard({ initialRows }: { initialRows: R
   const [note, setNote] = useState("");
   const [extensionDays, setExtensionDays] = useState(14);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({ ownerName: "", email: "", businessName: "", planCode: "starter", trialDays: 14 });
+  const [creationMode, setCreationMode] = useState<AccountCreationMode>("password");
+  const [showPassword, setShowPassword] = useState(false);
+  const [createForm, setCreateForm] = useState(freshCreateForm());
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
 
   const filtered = useMemo(() => rows.filter((row) => {
@@ -123,14 +136,49 @@ export default function PlatformAdminDashboard({ initialRows }: { initialRows: R
     setMessage(`${row.organization.name} updated.`);
   }
 
+  function openCreateAccount() {
+    setCreateForm(freshCreateForm());
+    setCreationMode("password");
+    setShowPassword(false);
+    setMessage("");
+    setCreateOpen(true);
+  }
+
+  function closeCreateAccount() {
+    if (busy === "create") return;
+    setCreateOpen(false);
+    setShowPassword(false);
+  }
+
   async function createAccount() {
     setBusy("create"); setMessage("");
-    const response = await fetch("/api/platform-admin/shops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(createForm) });
+    const payload = {
+      ownerName: createForm.ownerName,
+      email: createForm.email,
+      businessName: createForm.businessName,
+      planCode: createForm.planCode,
+      trialDays: createForm.trialDays,
+      ...(creationMode === "password"
+        ? { password: createForm.password, creationMode: "password" }
+        : {})
+    };
+
+    const response = await fetch("/api/platform-admin/shops", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
     const data = await response.json();
     setBusy("");
+
     if (!response.ok) return setMessage(data.error || "Unable to create account.");
-    setMessage(`Invitation sent to ${data.invitedEmail}. The new shop can complete guided setup from the invitation.`);
+
     setCreateOpen(false);
+    if (creationMode === "password") {
+      setMessage(`${data.createdEmail} is ready to sign in with the password you created.`);
+    } else {
+      setMessage(`Invitation sent to ${data.invitedEmail}. The new shop can complete guided setup from the invitation.`);
+    }
     window.setTimeout(() => window.location.reload(), 900);
   }
 
@@ -160,8 +208,17 @@ export default function PlatformAdminDashboard({ initialRows }: { initialRows: R
     URL.revokeObjectURL(url);
   }
 
+  const directCreateValid =
+    /^\S+@\S+\.\S+$/.test(createForm.email.trim()) &&
+    createForm.businessName.trim().length > 0 &&
+    createForm.password.length >= 8;
+
+  const inviteCreateValid =
+    /^\S+@\S+\.\S+$/.test(createForm.email.trim()) &&
+    createForm.businessName.trim().length > 0;
+
   return <main className="platform-admin-shell platform-command-center">
-    <header className="platform-admin-header"><div><p className="eyebrow">PRINTFLOW SYSTEMS</p><h1>Platform control center</h1><p>Manage accounts, support shop owners, understand order behavior, and identify the right moment for an upgrade conversation.</p></div><div className="platform-header-actions"><button className="primary-button" onClick={() => setCreateOpen(true)}>Add shop account</button><Link className="secondary-button" href="/dashboard">Shop dashboard</Link></div></header>
+    <header className="platform-admin-header"><div><p className="eyebrow">PRINTFLOW SYSTEMS</p><h1>Platform control center</h1><p>Manage accounts, support shop owners, understand order behavior, and identify the right moment for an upgrade conversation.</p></div><div className="platform-header-actions"><button className="primary-button" onClick={openCreateAccount}>Add shop account</button><Link className="secondary-button" href="/dashboard">Shop dashboard</Link></div></header>
 
     <nav className="platform-view-tabs" aria-label="Platform sections">{[["accounts", "Account control"], ["growth", "Growth intelligence"], ["users", "User management"]].map(([key, label]) => <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key as any)}>{label}</button>)}</nav>
 
@@ -184,11 +241,268 @@ export default function PlatformAdminDashboard({ initialRows }: { initialRows: R
 
     {view === "growth" && <section className="platform-growth-section"><header className="platform-section-header"><div><p className="eyebrow">ACCOUNT CADENCE</p><h2>Growth and upgrade intelligence</h2><p>Use recent order behavior, plan utilization, average order value, and inactivity to prioritize outreach.</p></div><button className="secondary-button" onClick={exportGrowthReport}>Download report</button></header><div className="platform-growth-grid">{[...rows].sort((a, b) => b.growth.score - a.growth.score).map((row) => <article key={row.organization.id} className={`platform-growth-card ${row.growth.segment}`}><header><div><span className="platform-shop-avatar">{(row.shop?.name || row.organization.name).slice(0, 2).toUpperCase()}</span><div><h3>{row.shop?.name || row.organization.name}</h3><p>{row.subscription?.plan_code || "starter"} · {row.ownerEmail}</p></div></div><b>{segmentLabel(row.growth.segment)}</b></header><div className="cadence-metric-grid"><div><span>Last 30 days</span><strong>{row.cadence.last30}</strong><small>{trendLabel(row.cadence.growthRate)}</small></div><div><span>Plan usage</span><strong>{row.cadence.monthlyLimit ? `${Math.round(row.cadence.utilization * 100)}%` : "Unlimited"}</strong><small>{row.cadence.monthlyLimit ? `${row.cadence.last30} of ${row.cadence.monthlyLimit}` : "Scale plan"}</small></div><div><span>Average order</span><strong>{money(row.cadence.averageOrderValue)}</strong><small>{money(row.cadence.paidVolume30)} paid volume</small></div><div><span>Last order</span><strong>{row.cadence.daysSinceLastOrder === null ? "None" : `${row.cadence.daysSinceLastOrder}d`}</strong><small>{date(row.cadence.lastOrderAt)}</small></div></div><div className="cadence-spark" aria-label="Six month order cadence">{row.cadence.months.map((month) => <div key={month.label}><i style={{ height: `${Math.max(6, Math.min(100, month.count * 12))}%` }}/><span>{month.label}</span><b>{month.count}</b></div>)}</div><p className="platform-growth-reason">{row.growth.reason}</p><footer>{row.growth.recommendedPlan && <button className="primary-button" onClick={() => { setSelectedId(row.organization.id); setView("accounts"); }}>Review upgrade</button>}<button className="secondary-button" onClick={() => { setSelectedId(row.organization.id); setView("accounts"); }}>Account details</button></footer></article>)}</div></section>}
 
-    {view === "users" && <section className="platform-user-management"><div className="admin-card platform-create-account-card"><div><p className="eyebrow">NEW ACCOUNT</p><h2>Invite a shop owner</h2><p>PrintFlow creates the workspace and sends a secure invitation to complete password setup and onboarding.</p></div><div className="platform-create-grid"><label><span>Owner name</span><input value={createForm.ownerName} onChange={(event) => setCreateForm((value) => ({ ...value, ownerName: event.target.value }))} placeholder="Alex Morgan"/></label><label><span>Owner email</span><input type="email" value={createForm.email} onChange={(event) => setCreateForm((value) => ({ ...value, email: event.target.value }))} placeholder="alex@printshop.com"/></label><label><span>Business name</span><input value={createForm.businessName} onChange={(event) => setCreateForm((value) => ({ ...value, businessName: event.target.value }))} placeholder="Morgan Print Co."/></label><label><span>Starting plan</span><select value={createForm.planCode} onChange={(event) => setCreateForm((value) => ({ ...value, planCode: event.target.value }))}><option value="starter">Starter</option><option value="growth">Growth</option><option value="scale">Scale</option></select></label><label><span>Trial period</span><select value={createForm.trialDays} onChange={(event) => setCreateForm((value) => ({ ...value, trialDays: Number(event.target.value) }))}><option value={7}>7 days</option><option value={14}>14 days</option><option value={30}>30 days</option><option value={60}>60 days</option></select></label></div><button className="primary-button" disabled={busy === "create" || !createForm.email || !createForm.businessName} onClick={createAccount}>{busy === "create" ? "Creating account…" : "Create account and send invitation"}</button></div>
+    {view === "users" && <section className="platform-user-management">
+      <div className="admin-card platform-create-account-card platform-create-compact">
+        <div>
+          <p className="eyebrow">NEW ACCOUNT</p>
+          <h2>Add a shop owner</h2>
+          <p>Create a direct login or send an invitation without leaving the admin control center.</p>
+        </div>
+        <button className="primary-button" onClick={openCreateAccount}>Add shop account</button>
+      </div>
       <div className="admin-card platform-user-directory"><div><p className="eyebrow">USER DIRECTORY</p><h2>Owners and access</h2><p>Review account identity, email confirmation, and recent access.</p></div><div className="platform-user-table"><div className="platform-user-row heading"><span>Owner</span><span>Shop</span><span>Confirmed</span><span>Last sign-in</span><span>Plan</span></div>{rows.map((row) => <button key={row.organization.id} className="platform-user-row" onClick={() => { setSelectedId(row.organization.id); setView("accounts"); }}><span><strong>{row.ownerName || "Owner name missing"}</strong><small>{row.ownerEmail}</small></span><span>{row.shop?.name || row.organization.name}</span><span>{row.ownerEmailConfirmedAt ? "Yes" : "Pending"}</span><span>{date(row.ownerLastSignInAt)}</span><span>{row.subscription?.plan_code || "starter"}</span></button>)}</div></div>
       {selected && <div className="admin-card platform-danger-zone"><div><p className="eyebrow">PERMANENT REMOVAL</p><h2>Delete {selected.shop?.name || selected.organization.name}</h2><p>This permanently removes the shop, its orders, products, settings, connections, and users who do not belong to another PrintFlow organization.</p></div><label><span>Type <b>{selected.shop?.slug || selected.organization.slug}</b> to confirm</span><input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} placeholder={selected.shop?.slug || selected.organization.slug}/></label><button className="danger-button" disabled={busy === "delete" || deleteConfirmation !== (selected.shop?.slug || selected.organization.slug)} onClick={() => deleteAccount(selected)}>{busy === "delete" ? "Deleting account…" : "Permanently delete account"}</button></div>}
     </section>}
 
-    {createOpen && <div className="modal-backdrop" onMouseDown={() => setCreateOpen(false)}><section className="platform-create-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setCreateOpen(false)}>×</button><p className="eyebrow">NEW PRINTFLOW ACCOUNT</p><h2>Invite a shop owner</h2><p>Create the workspace now and email the owner a secure invitation.</p><div className="platform-create-grid"><label><span>Owner name</span><input value={createForm.ownerName} onChange={(event) => setCreateForm((value) => ({ ...value, ownerName: event.target.value }))}/></label><label><span>Owner email</span><input type="email" value={createForm.email} onChange={(event) => setCreateForm((value) => ({ ...value, email: event.target.value }))}/></label><label className="full"><span>Business name</span><input value={createForm.businessName} onChange={(event) => setCreateForm((value) => ({ ...value, businessName: event.target.value }))}/></label><label><span>Plan</span><select value={createForm.planCode} onChange={(event) => setCreateForm((value) => ({ ...value, planCode: event.target.value }))}><option value="starter">Starter</option><option value="growth">Growth</option><option value="scale">Scale</option></select></label><label><span>Trial</span><select value={createForm.trialDays} onChange={(event) => setCreateForm((value) => ({ ...value, trialDays: Number(event.target.value) }))}><option value={7}>7 days</option><option value={14}>14 days</option><option value={30}>30 days</option><option value={60}>60 days</option></select></label></div><button className="primary-button" disabled={busy === "create" || !createForm.email || !createForm.businessName} onClick={createAccount}>{busy === "create" ? "Creating account…" : "Create and send invitation"}</button></section></div>}
+    {createOpen && <div className="modal-backdrop platform-account-modal-backdrop" onMouseDown={closeCreateAccount}>
+      <section className="platform-create-modal platform-account-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="modal-close" onClick={closeCreateAccount}>×</button>
+        <div className="platform-account-modal-heading">
+          <p className="eyebrow">NEW PRINTFLOW ACCOUNT</p>
+          <h2>Add a shop account</h2>
+          <p>Choose how the owner should get access. PrintFlow creates the shop workspace automatically.</p>
+        </div>
+
+        <div className="platform-account-mode-switch" role="tablist" aria-label="Account creation method">
+          <button type="button" className={creationMode === "password" ? "active" : ""} onClick={() => setCreationMode("password")}>
+            <strong>Create login</strong>
+            <small>Email + password</small>
+          </button>
+          <button type="button" className={creationMode === "invite" ? "active" : ""} onClick={() => setCreationMode("invite")}>
+            <strong>Send invitation</strong>
+            <small>Owner sets password</small>
+          </button>
+        </div>
+
+        <div className="platform-account-modal-form">
+          <label>
+            <span>Business name</span>
+            <input value={createForm.businessName} onChange={(event) => setCreateForm((value) => ({ ...value, businessName: event.target.value }))} placeholder="Morgan Print Co." />
+          </label>
+          <label>
+            <span>Owner name <em>optional</em></span>
+            <input value={createForm.ownerName} onChange={(event) => setCreateForm((value) => ({ ...value, ownerName: event.target.value }))} placeholder="Alex Morgan" />
+          </label>
+          <label className="full">
+            <span>Owner email</span>
+            <input type="email" value={createForm.email} onChange={(event) => setCreateForm((value) => ({ ...value, email: event.target.value }))} placeholder="alex@printshop.com" />
+          </label>
+
+          {creationMode === "password" && <label className="full">
+            <span>Temporary password</span>
+            <div className="platform-password-input">
+              <input
+                type={showPassword ? "text" : "password"}
+                minLength={8}
+                autoComplete="new-password"
+                value={createForm.password}
+                onChange={(event) => setCreateForm((value) => ({ ...value, password: event.target.value }))}
+                placeholder="Minimum 8 characters"
+              />
+              <button type="button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? "Hide" : "Show"}</button>
+            </div>
+            <small>The owner can change this after signing in.</small>
+          </label>}
+
+          <label>
+            <span>Starting plan</span>
+            <select value={createForm.planCode} onChange={(event) => setCreateForm((value) => ({ ...value, planCode: event.target.value }))}>
+              <option value="starter">Starter</option>
+              <option value="growth">Growth</option>
+              <option value="scale">Scale</option>
+            </select>
+          </label>
+          <label>
+            <span>Trial period</span>
+            <select value={createForm.trialDays} onChange={(event) => setCreateForm((value) => ({ ...value, trialDays: Number(event.target.value) }))}>
+              <option value={7}>7 days</option>
+              <option value={14}>14 days</option>
+              <option value={30}>30 days</option>
+              <option value={60}>60 days</option>
+            </select>
+          </label>
+        </div>
+
+        {message && createOpen && <div className="error-message">{message}</div>}
+
+        <div className="platform-account-modal-footer">
+          <p>{creationMode === "password" ? "The login is created immediately and email-confirmed by the platform admin." : "The owner receives a secure email and completes password setup themselves."}</p>
+          <div>
+            <button className="secondary-button" type="button" disabled={busy === "create"} onClick={closeCreateAccount}>Cancel</button>
+            <button
+              className="primary-button"
+              disabled={busy === "create" || !(creationMode === "password" ? directCreateValid : inviteCreateValid)}
+              onClick={createAccount}
+            >
+              {busy === "create" ? "Creating account…" : creationMode === "password" ? "Create login" : "Send invitation"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <style jsx>{`
+        .platform-create-compact {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 24px;
+        }
+        .platform-create-compact h2 { margin: 4px 0 5px; }
+        .platform-create-compact p { margin: 0; }
+        .platform-account-modal-backdrop {
+          padding: 24px;
+          overflow-y: auto;
+        }
+        .platform-account-modal {
+          width: min(720px, 100%);
+          max-height: calc(100dvh - 48px);
+          margin: auto;
+          padding: 26px;
+          overflow-y: auto;
+          border-radius: 22px;
+          box-sizing: border-box;
+        }
+        .platform-account-modal-heading {
+          padding-right: 34px;
+        }
+        .platform-account-modal-heading h2 {
+          margin: 4px 0 7px;
+          font-size: clamp(1.5rem, 3vw, 2rem);
+        }
+        .platform-account-modal-heading p:last-child {
+          margin: 0;
+          max-width: 590px;
+          opacity: .65;
+          line-height: 1.5;
+        }
+        .platform-account-mode-switch {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+          margin: 22px 0;
+          padding: 5px;
+          border-radius: 14px;
+          background: rgba(127,127,127,.09);
+        }
+        .platform-account-mode-switch button {
+          display: grid;
+          gap: 2px;
+          min-height: 58px;
+          padding: 10px 13px;
+          border: 1px solid transparent;
+          border-radius: 10px;
+          background: transparent;
+          color: inherit;
+          text-align: left;
+          cursor: pointer;
+        }
+        .platform-account-mode-switch button.active {
+          border-color: rgba(127,127,127,.18);
+          background: var(--panel, #fff);
+          box-shadow: 0 5px 18px rgba(0,0,0,.06);
+        }
+        .platform-account-mode-switch strong { font-size: .82rem; }
+        .platform-account-mode-switch small { font-size: .7rem; opacity: .55; }
+        .platform-account-modal-form {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 17px;
+        }
+        .platform-account-modal-form label {
+          display: grid;
+          min-width: 0;
+          gap: 7px;
+        }
+        .platform-account-modal-form label.full {
+          grid-column: 1 / -1;
+        }
+        .platform-account-modal-form label > span {
+          font-size: .78rem;
+          font-weight: 750;
+        }
+        .platform-account-modal-form label em {
+          font-style: normal;
+          font-weight: 500;
+          opacity: .5;
+        }
+        .platform-account-modal-form label > small {
+          font-size: .7rem;
+          opacity: .55;
+        }
+        .platform-account-modal-form input,
+        .platform-account-modal-form select {
+          width: 100%;
+          min-height: 45px;
+          box-sizing: border-box;
+        }
+        .platform-password-input {
+          position: relative;
+        }
+        .platform-password-input input {
+          padding-right: 65px;
+        }
+        .platform-password-input button {
+          position: absolute;
+          top: 50%;
+          right: 7px;
+          transform: translateY(-50%);
+          padding: 7px 9px;
+          border: 0;
+          background: transparent;
+          color: inherit;
+          font-size: .7rem;
+          font-weight: 750;
+          cursor: pointer;
+        }
+        .platform-account-modal-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          margin-top: 24px;
+          padding-top: 18px;
+          border-top: 1px solid rgba(127,127,127,.15);
+        }
+        .platform-account-modal-footer p {
+          margin: 0;
+          max-width: 390px;
+          font-size: .72rem;
+          line-height: 1.45;
+          opacity: .58;
+        }
+        .platform-account-modal-footer > div {
+          display: flex;
+          gap: 8px;
+          flex: 0 0 auto;
+        }
+        @media (max-width: 680px) {
+          .platform-create-compact {
+            align-items: stretch;
+            flex-direction: column;
+          }
+          .platform-account-modal-backdrop { padding: 10px; }
+          .platform-account-modal {
+            max-height: calc(100dvh - 20px);
+            padding: 20px;
+            border-radius: 17px;
+          }
+          .platform-account-mode-switch,
+          .platform-account-modal-form {
+            grid-template-columns: 1fr;
+          }
+          .platform-account-modal-form label.full {
+            grid-column: auto;
+          }
+          .platform-account-modal-footer {
+            align-items: stretch;
+            flex-direction: column;
+          }
+          .platform-account-modal-footer > div {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+      `}</style>
+    </div>}
   </main>;
 }
