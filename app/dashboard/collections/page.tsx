@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import BrandCollectionsManager from "@/components/BrandCollectionsManager";
 import { getAdminContext } from "@/lib/admin-data";
 import { platformShopAccess } from "@/lib/shop-mode";
+import BrandWorkflowRail from "@/components/BrandWorkflowRail";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export default async function CollectionsPage() {
 
   return (
     <>
+      <BrandWorkflowRail active="merchandise" />
       <header className="admin-header">
         <div>
           <p className="eyebrow">BRAND MERCHANDISING</p>

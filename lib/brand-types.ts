@@ -113,5 +113,5 @@ export type PublicBrandShop = {
   categories: BrandDesignCategory[];
   collections: BrandCollection[];
   paymentReady: boolean;
-  presentation: "full" | "embed";
+  presentation: "full" | "embed" | "preview";
 };

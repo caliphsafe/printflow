@@ -6,6 +6,7 @@ import { normalizeConfiguration } from "@/lib/catalog";
 import { platformShopAccess } from "@/lib/shop-mode";
 import type { CatalogProduct } from "@/lib/types";
 import type { BrandGarmentSetup } from "@/lib/brand-commerce";
+import BrandWorkflowRail from "@/components/BrandWorkflowRail";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,7 @@ export default async function BrandGarmentsPage() {
 
   return (
     <>
+      <BrandWorkflowRail active="source" />
       <header className="admin-header">
         <div>
           <p className="eyebrow">BRAND MERCHANDISE</p>

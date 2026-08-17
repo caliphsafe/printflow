@@ -1,7 +1,14 @@
 import { redirect } from "next/navigation";
+import BrandWorkflowRail from "@/components/BrandWorkflowRail";
 import { getAdminContext } from "@/lib/admin-data";
-import { normalizeBrandBusinessProfile } from "@/lib/brand-retail";
+import { normalizeConfiguration } from "@/lib/catalog";
+import { applyBrandGarmentConfiguration } from "@/lib/brand-commerce";
+import { normalizeBrandBusinessProfile, normalizeBrandProductConfiguration } from "@/lib/brand-retail";
+import { brandStoreReadiness } from "@/lib/brand-readiness";
 import { platformShopAccess } from "@/lib/shop-mode";
+import type { BrandDesign, BrandStoreProduct } from "@/lib/brand-types";
+import type { BrandMerchProduct } from "@/lib/brand-retail";
+import type { CatalogProduct } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +17,65 @@ export default async function BrandStorefrontPage() {
   if (!shop) return null;
   if (!platformShopAccess(shop.settings).brandMerch) redirect("/dashboard/mode");
 
-  const [{ data: businessRow }, { count: productCount }, { count: paymentCount }] = await Promise.all([
+  const [
+    { data: businessRow },
+    { data: garmentRows },
+    { data: sourceRows },
+    { data: designRows },
+    { data: variants },
+    { data: rules },
+    { data: productRows },
+    { count: paymentCount }
+  ] = await Promise.all([
     supabase.from("brand_business_profiles").select("id,name,settings").eq("shop_id", shop.id).maybeSingle(),
-    supabase.from("brand_products").select("id", { count: "exact", head: true }).eq("shop_id", shop.id).eq("active", true),
+    supabase.from("brand_garments").select("id,source_catalog_product_id,active,configuration").eq("shop_id", shop.id),
+    supabase.from("catalog_products").select("id,slug,name,description,active,configuration").eq("shop_id", shop.id),
+    supabase.from("brand_designs").select("*").eq("shop_id", shop.id),
+    supabase.from("brand_design_variants").select("*").eq("shop_id", shop.id),
+    supabase.from("brand_design_product_rules").select("brand_design_id,catalog_product_id,configuration,active").eq("shop_id", shop.id),
+    supabase.from("brand_products").select("*").eq("shop_id", shop.id),
     supabase.from("integration_connections").select("id", { count: "exact", head: true }).eq("shop_id", shop.id).eq("category", "payment").eq("status", "connected")
   ]);
 
   const business = normalizeBrandBusinessProfile(businessRow, shop.name);
+  const garmentRowsBySource = new Map((garmentRows || []).map((row: any) => [row.source_catalog_product_id, row]));
+  const garments: BrandStoreProduct[] = (sourceRows || [])
+    .map((row: any) => ({ ...row, configuration: normalizeConfiguration(row.configuration) } as CatalogProduct))
+    .map((source) => {
+      const row: any = garmentRowsBySource.get(source.id);
+      if (!row) return null;
+      const configured = applyBrandGarmentConfiguration(source, { ...(row.configuration || {}), active: true });
+      return configured ? { ...configured, brandGarmentId: row.id, active: row.active === true } as BrandStoreProduct : null;
+    })
+    .filter((item): item is BrandStoreProduct => Boolean(item));
+
+  const designs: BrandDesign[] = (designRows || []).map((design: any) => ({
+    ...design,
+    variants: (variants || []).filter((variant: any) => variant.brand_design_id === design.id),
+    productIds: (rules || []).filter((rule: any) => rule.brand_design_id === design.id && rule.active !== false).map((rule: any) => rule.catalog_product_id),
+    productRules: (rules || []).filter((rule: any) => rule.brand_design_id === design.id && rule.active !== false).map((rule: any) => ({
+      productId: rule.catalog_product_id,
+      placements: rule.configuration?.placements || {}
+    }))
+  }));
+
+  const garmentById = new Map(garments.map((item) => [item.brandGarmentId, item]));
+  const products: BrandMerchProduct[] = (productRows || []).map((row: any) => ({
+    ...row,
+    retail_price: Number(row.retail_price || 0),
+    compare_at_price: row.compare_at_price ? Number(row.compare_at_price) : null,
+    target_margin_percent: row.target_margin_percent ? Number(row.target_margin_percent) : null,
+    configuration: normalizeBrandProductConfiguration(row.configuration, garmentById.get(row.brand_garment_id))
+  }));
+
+  const readiness = brandStoreReadiness({
+    businessActive: business.settings.active,
+    paymentReady: Number(paymentCount || 0) > 0,
+    products,
+    garments,
+    designs
+  });
+
   const origin = (process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
   const fullUrl = `${origin}/b/${shop.slug}`;
   const embedUrl = `${origin}/e/${shop.slug}`;
@@ -35,57 +94,86 @@ window.addEventListener("message", function(event) {
 });
 </script>`;
 
-  const ready = business.settings.active && Number(productCount || 0) > 0 && Number(paymentCount || 0) > 0;
+  const publicReady = business.settings.active && readiness.readyProducts.length > 0 && Number(paymentCount || 0) > 0;
 
   return (
     <>
+      <BrandWorkflowRail active="publish" />
       <header className="admin-header">
         <div>
           <p className="eyebrow">BRAND STOREFRONT</p>
-          <h1>Sell the merchandise.</h1>
-          <p>The Brand storefront publishes finished retail products. It is separate from the custom-order Print storefront.</p>
+          <h1>Preview first. Publish when ready.</h1>
+          <p>The private preview always shows your work in progress. The public Brand store opens only when you choose to publish it.</p>
         </div>
-        <a className="secondary-button" href="/dashboard/brand-settings">Brand settings</a>
+        <div className="header-actions">
+          <a className="ghost-button" href="/preview/brand" target="_blank" rel="noreferrer">Preview Store ↗</a>
+          <a className="secondary-button" href="/dashboard/brand-settings">Store Design</a>
+        </div>
       </header>
 
-      <section className={`brand-store-status admin-card ${ready ? "ready" : ""}`}>
+      <section className={`store-control-hero admin-card ${publicReady ? "ready" : ""}`}>
         <div>
-          <span>{ready ? "READY" : "SETUP NEEDED"}</span>
+          <span>{business.settings.active ? "PUBLIC STORE · LIVE" : "PUBLIC STORE · DRAFT"}</span>
           <h2>{business.name}</h2>
-          <p>{business.settings.active ? "Brand store published" : "Brand store is draft"} · {productCount || 0} live product{productCount === 1 ? "" : "s"} · {paymentCount ? "Payments connected" : "Payments not connected"}</p>
+          <p>{readiness.readyProducts.length} customer-ready product{readiness.readyProducts.length === 1 ? "" : "s"} · {paymentCount ? "Payments connected" : "Payments not connected"}</p>
         </div>
-        <strong>{ready ? "Brand store can accept orders" : "Finish the missing items below"}</strong>
+        <div className="store-score">
+          <strong>{readiness.completion}%</strong>
+          <span>launch readiness</span>
+        </div>
+        <div className="store-control-actions">
+          <a className="secondary-button" href="/preview/brand" target="_blank" rel="noreferrer">Open private preview</a>
+          <a className="primary-button" href="/dashboard/brand-settings">{business.settings.active ? "Manage publish status" : "Publish controls"}</a>
+        </div>
       </section>
+
+      <div className="storefront-control-grid">
+        <section className="admin-card publish-readiness-card">
+          <div className="card-heading"><div><p className="section-kicker">LAUNCH CHECK</p><h2>What the store needs</h2></div><strong>{readiness.steps.filter((item) => item.done).length}/{readiness.steps.length}</strong></div>
+          <div className="publish-readiness-list">
+            {readiness.steps.map((item, index) => (
+              <a key={item.key} href={item.href} className={item.done ? "done" : ""}>
+                <span>{item.done ? "✓" : String(index + 1).padStart(2, "0")}</span>
+                <div><strong>{item.label}</strong><small>{item.done ? "Ready" : "Needs attention before launch"}</small></div>
+                <b>{item.done ? "Ready" : "Fix →"}</b>
+              </a>
+            ))}
+          </div>
+        </section>
+
+        <aside className="admin-card preview-card">
+          <p className="section-kicker">PRIVATE PREVIEW</p>
+          <h2>See the store while it is Draft.</h2>
+          <p>Preview Mode includes Draft products and shows readiness labels. Checkout is disabled, so you can safely review layout, products, colors, sizes, artwork, and pricing before launch.</p>
+          <a className="primary-button" href="/preview/brand" target="_blank" rel="noreferrer">Preview Brand Store ↗</a>
+        </aside>
+      </div>
 
       <div className="publish-grid">
         <section className="admin-card publish-card">
           <p className="section-kicker">FULL RETAIL STOREFRONT</p>
-          <h2>Standalone Brand store</h2>
-          <p>A complete retail merchandise page for links, campaigns, social profiles, and direct shopping.</p>
+          <h2>Standalone store</h2>
+          <p>For direct links, campaigns, social profiles, and customers shopping the Brand as a full retail experience.</p>
           <code>{fullUrl}</code>
-          <a className="primary-button" href={`/b/${shop.slug}`} target="_blank" rel="noreferrer">Open full Brand store ↗</a>
+          <a className="secondary-button" href={`/b/${shop.slug}`} target="_blank" rel="noreferrer">Open public route ↗</a>
         </section>
 
         <section className="admin-card publish-card">
-          <p className="section-kicker">SEAMLESS RETAIL EMBED</p>
-          <h2>Inside an existing Brand website</h2>
-          <p>The compact version removes duplicate Brand navigation and resizes automatically inside the host page.</p>
-          <textarea readOnly rows={10} value={iframe} />
-          <a className="primary-button" href={`/e/${shop.slug}`} target="_blank" rel="noreferrer">Open embed preview ↗</a>
+          <p className="section-kicker">WEBSITE EMBED</p>
+          <h2>Compact merchandise experience</h2>
+          <p>Use the smaller storefront inside an existing Brand website without duplicating the Brand's navigation or hero.</p>
+          <textarea readOnly rows={9} value={iframe} />
+          <a className="secondary-button" href={`/e/${shop.slug}`} target="_blank" rel="noreferrer">Open embed route ↗</a>
         </section>
       </div>
 
-      <section className="brand-publish-readiness">
-        <a className={business.settings.active ? "done" : ""} href="/dashboard/brand-settings"><span>{business.settings.active ? "✓" : "1"}</span><div><strong>Publish Brand store</strong><small>Brand identity, colors, messaging, and independent Live/Draft status</small></div></a>
-        <a className={Number(productCount || 0) > 0 ? "done" : ""} href="/dashboard/brand-products"><span>{productCount ? "✓" : "2"}</span><div><strong>Live merchandise</strong><small>Create and publish at least one finished Brand Product</small></div></a>
-        <a className={Number(paymentCount || 0) > 0 ? "done" : ""} href="/dashboard/integrations"><span>{paymentCount ? "✓" : "3"}</span><div><strong>Checkout</strong><small>Connect Stripe or Square to accept retail payments</small></div></a>
-      </section>
-
       <style>{`
-        .brand-store-status{display:flex;justify-content:space-between;gap:20px;align-items:center;padding:17px;margin-bottom:12px;border-left:4px solid #c09b42}.brand-store-status.ready{border-left-color:#2f925a}.brand-store-status span{font-size:7px;font-weight:850;letter-spacing:.1em;color:#777}.brand-store-status h2{margin:3px 0}.brand-store-status p{margin:0;color:#777;font-size:8px}.brand-store-status>strong{font-size:9px}
-        .publish-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.publish-card{padding:18px}.publish-card h2{margin:3px 0 5px}.publish-card>p:not(.section-kicker){color:#777;font-size:9px;line-height:1.5}.publish-card code{display:block;overflow:auto;margin:12px 0;padding:10px;border-radius:8px;background:#f5f5f1;font-size:9px}.publish-card textarea{width:100%;box-sizing:border-box;margin:10px 0;font-family:monospace;font-size:8px}
-        .brand-publish-readiness{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px}.brand-publish-readiness a{display:grid;grid-template-columns:26px minmax(0,1fr);gap:8px;align-items:center;padding:11px;border:1px solid #ddd;border-radius:10px;background:#fff;color:inherit;text-decoration:none}.brand-publish-readiness a>span{display:grid;place-items:center;width:24px;height:24px;border-radius:99px;background:#f1f1ed;font-size:8px;font-weight:800}.brand-publish-readiness a.done>span{background:#e9f5ed;color:#27774a}.brand-publish-readiness strong,.brand-publish-readiness small{display:block}.brand-publish-readiness strong{font-size:9px}.brand-publish-readiness small{font-size:7px;color:#777}
-        @media(max-width:760px){.publish-grid,.brand-publish-readiness{grid-template-columns:1fr}.brand-store-status{display:grid}}
+        .store-control-hero{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:24px;align-items:center;padding:18px;margin-bottom:10px;border-left:4px solid #b98d45}.store-control-hero.ready{border-left-color:#2e8557}.store-control-hero>div:first-child>span{font-size:7px;font-weight:900;letter-spacing:.1em;color:#777}.store-control-hero h2{margin:4px 0}.store-control-hero p{margin:0;color:#777;font-size:8px}.store-score{text-align:center}.store-score strong,.store-score span{display:block}.store-score strong{font-size:27px}.store-score span{font-size:7px;color:#777}.store-control-actions{display:flex;gap:6px}
+        .storefront-control-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:10px;margin-bottom:10px}.publish-readiness-card,.preview-card,.publish-card{padding:17px}.publish-readiness-list{display:grid}.publish-readiness-list a{display:grid;grid-template-columns:27px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #eee;color:inherit;text-decoration:none}.publish-readiness-list a>span{display:grid;place-items:center;width:24px;height:24px;border-radius:99px;background:#f1f1ec;font-size:7px;font-weight:900}.publish-readiness-list a.done>span{background:#e8f4ec;color:#2b7a4d}.publish-readiness-list strong,.publish-readiness-list small{display:block}.publish-readiness-list strong{font-size:9px}.publish-readiness-list small{font-size:7px;color:#888}.publish-readiness-list b{font-size:7px;color:#777}
+        .preview-card{display:flex;flex-direction:column;align-items:flex-start;background:#1f2947;color:#fff}.preview-card h2{margin:4px 0 6px;font-size:22px}.preview-card>p:not(.section-kicker){color:#ced3e3;font-size:8px;line-height:1.55}.preview-card .primary-button{margin-top:auto;background:#fff;color:#1f2947}.preview-card .section-kicker{color:#aeb7d3}
+        .publish-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.publish-card h2{margin:4px 0 5px}.publish-card>p:not(.section-kicker){color:#777;font-size:8px;line-height:1.5}.publish-card code{display:block;overflow:auto;margin:11px 0;padding:9px;border-radius:8px;background:#f4f4f0;font-size:8px}.publish-card textarea{width:100%;box-sizing:border-box;margin:9px 0;font-family:monospace;font-size:7px}
+        @media(max-width:900px){.store-control-hero{grid-template-columns:1fr auto}.store-control-actions{grid-column:1/-1}.storefront-control-grid,.publish-grid{grid-template-columns:1fr}}
+        @media(max-width:560px){.store-control-hero{grid-template-columns:1fr}.store-score{text-align:left}.store-control-actions{display:grid}.publish-grid{grid-template-columns:1fr}}
       `}</style>
     </>
   );

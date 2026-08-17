@@ -4,6 +4,7 @@ import { normalizeConfiguration } from "@/lib/catalog";
 import { normalizeBrandRetailProfile, supplierUnitCost } from "@/lib/brand-retail";
 import { platformShopAccess } from "@/lib/shop-mode";
 import BrandRetailManager from "@/components/BrandRetailManager";
+import BrandWorkflowRail from "@/components/BrandWorkflowRail";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function BrandRetailPage() {
 
   return (
     <>
+      <BrandWorkflowRail active="price" />
       <header className="admin-header">
         <div>
           <p className="eyebrow">BRAND COMMERCE</p>

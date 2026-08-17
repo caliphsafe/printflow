@@ -8,6 +8,7 @@ import { platformShopAccess } from "@/lib/shop-mode";
 import type { BrandDesign, BrandStoreProduct } from "@/lib/brand-types";
 import type { BrandMerchProduct } from "@/lib/brand-retail";
 import type { CatalogProduct } from "@/lib/types";
+import BrandWorkflowRail from "@/components/BrandWorkflowRail";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,7 @@ export default async function BrandProductsPage() {
 
   return (
     <>
+      <BrandWorkflowRail active="build" />
       <header className="admin-header">
         <div>
           <p className="eyebrow">BRAND MERCHANDISE</p>

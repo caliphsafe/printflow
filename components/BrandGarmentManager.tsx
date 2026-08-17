@@ -54,6 +54,7 @@ export default function BrandGarmentManager({
   const [previewColorId, setPreviewColorId] = useState(product?.configuration.defaultColorId || product?.configuration.colors[0]?.id || "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [panel, setPanel] = useState<"overview" | "zones">("overview");
 
   const visibleProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -167,7 +168,16 @@ export default function BrandGarmentManager({
           </label>
         </header>
 
-        <section className="admin-card setup-section">
+        <nav className="garment-editor-tabs">
+          <button className={panel === "overview" ? "active" : ""} onClick={() => setPanel("overview")}>
+            <span>01</span><div><strong>Colors & Sizes</strong><small>Customer garment options</small></div>
+          </button>
+          <button className={panel === "zones" ? "active" : ""} onClick={() => setPanel("zones")}>
+            <span>02</span><div><strong>Print Areas</strong><small>Brand-only production zones</small></div>
+          </button>
+        </nav>
+
+        {panel === "overview" && <section className="admin-card setup-section">
           <SectionTitle number="1" title="Brand availability" text="Choose the exact colors, sizes and default presentation for Brand customers." />
           <div className="brand-availability-grid">
             <div>
@@ -243,9 +253,9 @@ export default function BrandGarmentManager({
               </div>
             </div>
           </div>
-        </section>
+        </section>}
 
-        <section className="admin-card setup-section">
+        {panel === "zones" && <section className="admin-card setup-section">
           <SectionTitle number="2" title="Brand print locations" text="Define Brand-only printable areas visually. These zones do not change the Custom Print storefront." />
 
           <div className="zone-toolbar">
@@ -315,7 +325,7 @@ export default function BrandGarmentManager({
           ) : (
             <div className="zone-empty">Enable at least one side and one print size to configure Brand print locations.</div>
           )}
-        </section>
+        </section>}
 
         {message && <div className={message.includes("saved") ? "success-message" : "error-message"}>{message}</div>}
 
@@ -337,7 +347,7 @@ export default function BrandGarmentManager({
         .garment-list button.active{background:#f5f5f1;border-color:#ddd}
         .garment-thumb{display:grid;place-items:center;width:38px;height:38px;border-radius:8px;background:#f0f0ec;overflow:hidden}
         .garment-thumb img{width:100%;height:100%;object-fit:contain}.garment-list strong{display:block;font-size:10px}.garment-list small{display:block;color:#777;font-size:8px}.garment-list i{width:7px;height:7px;border-radius:99px;background:#bbb}.garment-list i.live{background:#34a064}
-        .brand-garment-editor{display:grid;gap:12px;min-width:0}.garment-editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:20px}.garment-editor-head h1{margin:3px 0 5px}.garment-editor-head p{margin:0;color:#777;max-width:700px}
+        .brand-garment-editor{display:grid;gap:12px;min-width:0}.garment-editor-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;border:1px solid #e2e2dd;border-radius:12px;background:#f3f3ef}.garment-editor-tabs button{display:grid;grid-template-columns:25px minmax(0,1fr);gap:7px;align-items:center;padding:9px;border:0;border-radius:8px;background:transparent;color:#686868;text-align:left}.garment-editor-tabs button.active{background:#fff;color:#171717;box-shadow:0 4px 14px rgba(0,0,0,.06)}.garment-editor-tabs button>span{display:grid;place-items:center;width:24px;height:24px;border-radius:99px;background:#e6e6e1;font-size:7px;font-weight:900}.garment-editor-tabs button.active>span{background:#1f2947;color:#fff}.garment-editor-tabs strong,.garment-editor-tabs small{display:block}.garment-editor-tabs strong{font-size:9px}.garment-editor-tabs small{font-size:7px;color:#888}.garment-editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:20px}.garment-editor-head h1{margin:3px 0 5px}.garment-editor-head p{margin:0;color:#777;max-width:700px}
         .setup-section{padding:20px}.brand-availability-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.brand-availability-grid h3{margin:0 0 8px;font-size:11px}
         .brand-color-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.brand-color-list article{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border:1px solid #e1e1dc;border-radius:9px}.brand-color-list article.active{background:#fafaf7;border-color:#aaa}.brand-color-list label{display:flex;align-items:center;gap:6px;min-width:0}.brand-color-list i{width:15px;height:15px;border-radius:99px;border:1px solid rgba(0,0,0,.15)}.brand-color-list span{font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.brand-color-list button{border:0;background:transparent;color:#777;font-size:7px}.brand-color-list button.default{color:#111;font-weight:850}
         .brand-size-list,.method-tags{display:flex;flex-wrap:wrap;gap:5px}.brand-size-list label,.method-tags label{display:flex;align-items:center;gap:5px;padding:6px 8px;border:1px solid #ddd;border-radius:8px;background:#fff;font-size:8px}.brand-size-list label.active,.method-tags label.active{border-color:#111;background:#f5f5f1}.brand-size-list input,.method-tags input{display:none}

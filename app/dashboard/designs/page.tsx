@@ -6,6 +6,7 @@ import { applyBrandGarmentConfiguration } from "@/lib/brand-commerce";
 import { isBrandMode, shopAccountMode } from "@/lib/shop-mode";
 import type { BrandDesign } from "@/lib/brand-types";
 import type { CatalogProduct } from "@/lib/types";
+import BrandWorkflowRail from "@/components/BrandWorkflowRail";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ export default async function BrandDesignsPage() {
 
   return (
     <>
+      <BrandWorkflowRail active="create" />
       <header className="admin-header">
         <div>
           <p className="eyebrow">BRAND STUDIO</p>

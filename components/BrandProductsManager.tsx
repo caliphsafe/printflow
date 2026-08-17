@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { brandArtworkUrl, chooseBrandVariant } from "@/lib/brand-designs";
+import { brandProductReadiness } from "@/lib/brand-readiness";
 import {
   calculateBrandEconomics,
   maxSupplierCostForOptions,
@@ -158,6 +159,7 @@ export default function BrandProductsManager({
   }, [products, query]);
 
   const dirty = JSON.stringify(draft) !== saved;
+  const productHealth = new Map(products.map((item) => [item.id, brandProductReadiness(item, garments, designs)]));
 
   function choose(product: BrandMerchProduct) {
     if (dirty && !window.confirm("You have unsaved Brand product changes. Switch without saving?")) return;
@@ -267,7 +269,10 @@ export default function BrandProductsManager({
           {visible.map((item) => (
             <button key={item.id} className={draft.id === item.id ? "active" : ""} onClick={() => choose(item)}>
               <span>{item.name.slice(0, 2).toUpperCase()}</span>
-              <div><strong>{item.name}</strong><small>${Number(item.retail_price).toFixed(2)} · {item.active ? "Live" : "Draft"}</small></div>
+              <div>
+                <strong>{item.name}</strong>
+                <small>${Number(item.retail_price).toFixed(2)} · {productHealth.get(item.id)?.label || (item.active ? "Live" : "Draft")}</small>
+              </div>
             </button>
           ))}
           {!visible.length && <p>No finished Brand products yet.</p>}
@@ -286,6 +291,20 @@ export default function BrandProductsManager({
             <span /><b>{draft.active ? "Live" : "Draft"}</b>
           </label>
         </header>
+
+        {draft.id && productHealth.get(draft.id) && (
+          <div className={productHealth.get(draft.id)!.ready ? "admin-card product-health-strip ready" : "admin-card product-health-strip"}>
+            <div>
+              <span>PRODUCT HEALTH</span>
+              <strong>{productHealth.get(draft.id)!.label}</strong>
+            </div>
+            <div className="health-items">
+              {productHealth.get(draft.id)!.issues.length
+                ? productHealth.get(draft.id)!.issues.slice(0, 4).map((issue) => <a href={issue.actionHref} key={issue.code}>• {issue.label}</a>)
+                : <span>✓ Garment · ✓ Design · ✓ Placement · ✓ Artwork · ✓ Price · ✓ Options</span>}
+            </div>
+          </div>
+        )}
 
         <div className="brand-product-workspace">
           <div className="product-config-stack">
@@ -436,7 +455,7 @@ export default function BrandProductsManager({
 
       <style jsx>{`
         .brand-product-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:14px;align-items:start}.brand-product-library{position:sticky;top:20px;padding:14px;max-height:calc(100vh - 40px);overflow:auto}.library-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}.library-head h2{margin:2px 0}.brand-product-library>input{width:100%;box-sizing:border-box}.product-list{display:grid;gap:4px;margin-top:8px}.product-list>button{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;align-items:center;padding:8px;border:1px solid transparent;border-radius:8px;background:transparent;color:inherit;text-align:left}.product-list>button.active{background:#f5f5f1;border-color:#ddd}.product-list>button>span{display:grid;place-items:center;width:32px;height:32px;border-radius:7px;background:#171717;color:#fff;font-size:7px;font-weight:850}.product-list strong,.product-list small{display:block}.product-list strong{font-size:9px}.product-list small{font-size:7px;color:#777}.product-list>p{padding:20px;text-align:center;color:#777;font-size:8px}
-        .brand-product-editor{display:grid;gap:12px}.brand-product-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;padding:18px}.brand-product-head h1{margin:3px 0 4px}.brand-product-head p:not(.eyebrow){margin:0;color:#777}
+        .brand-product-editor{display:grid;gap:12px}.brand-product-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;padding:18px}.product-health-strip{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center;padding:11px 14px;border-left:4px solid #bf8a3f}.product-health-strip.ready{border-left-color:#2c8354}.product-health-strip span,.product-health-strip strong{display:block}.product-health-strip>div:first-child>span{font-size:6px;font-weight:900;letter-spacing:.1em;color:#888}.product-health-strip>div:first-child>strong{margin-top:2px;font-size:11px}.health-items{display:flex;flex-wrap:wrap;gap:5px}.health-items a,.health-items>span{padding:5px 7px;border-radius:99px;background:#f5f5f1;color:#666;text-decoration:none;font-size:7px}.brand-product-head h1{margin:3px 0 4px}.brand-product-head p:not(.eyebrow){margin:0;color:#777}
         .brand-product-workspace{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:12px;align-items:start}.product-config-stack{display:grid;gap:10px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.form-grid label{display:grid;gap:5px}.form-grid label>span,.detail-input>span,.retail-pricing-grid label>span{font-size:8px;font-weight:800}.form-grid .wide{grid-column:1/-1}.inline-check{display:flex!important;align-items:center;gap:6px!important}
         .choice-grid,.placement-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.choice-grid button,.placement-choice-grid button{padding:10px;border:1px solid #ddd;border-radius:9px;background:#fff;color:#333;text-align:left}.choice-grid button.active,.placement-choice-grid button.active{border-color:#171717;box-shadow:inset 0 0 0 1px #171717}.choice-grid strong,.placement-choice-grid strong{display:block;font-size:9px}.choice-grid small,.placement-choice-grid small{display:block;margin-top:3px;color:#777;font-size:7px}
         .design-choice-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.design-choice-grid button{padding:6px;border:1px solid #ddd;border-radius:9px;background:#fff;color:#333;text-align:left}.design-choice-grid button.active{border-color:#171717;box-shadow:inset 0 0 0 1px #171717}.design-choice-grid button>div{display:grid;place-items:center;height:86px;border-radius:6px;background:#f5f5f1}.design-choice-grid img{max-width:75%;max-height:75%;object-fit:contain}.design-choice-grid strong{display:block;margin-top:5px;font-size:8px}.inline-empty{grid-column:1/-1;padding:12px;border-radius:8px;background:#f5f5f1;color:#777;font-size:8px}

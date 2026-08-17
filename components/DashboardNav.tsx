@@ -52,19 +52,25 @@ const brandGroups: NavGroup[] = [
     ]
   },
   {
-    label: "Retail Commerce",
+    label: "Business",
     items: [
       { href: "/dashboard/brand-retail", label: "Retail Economics", icon: "pricing" },
-      { href: "/dashboard/brand-storefront", label: "Brand storefront", icon: "settings" }
+      { href: "/dashboard/brand-sourcing", label: "Source Catalog", icon: "suppliers" }
     ]
   },
   {
-    label: "Brand Operations",
+    label: "Storefront",
     items: [
-      { href: "/dashboard/brand-sourcing", label: "Source catalog", icon: "suppliers" },
-      { href: "/dashboard/suppliers", label: "Supplier connections", icon: "suppliers" },
-      { href: "/dashboard/integrations", label: "Payments & integrations", icon: "integrations" },
-      { href: "/dashboard/brand-settings", label: "Brand settings", icon: "settings" }
+      { href: "/dashboard/brand-storefront", label: "Store Controls", icon: "settings" },
+      { href: "/preview/brand", label: "Preview Store", icon: "products" },
+      { href: "/dashboard/brand-settings", label: "Store Design", icon: "settings" }
+    ]
+  },
+  {
+    label: "Shared Connections",
+    items: [
+      { href: "/dashboard/suppliers", label: "Supplier Connections", icon: "suppliers" },
+      { href: "/dashboard/integrations", label: "Payments & Integrations", icon: "integrations" }
     ]
   }
 ];

@@ -38,7 +38,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const brandBusiness = normalizeBrandBusinessProfile(brandBusinessRow, shop.name);
   const workspaceName = activeWorkspace === "brand" ? brandBusiness.name : shop.name;
   const workspaceLabel = activeWorkspace === "brand" ? "BRAND / MERCH" : "PRINT SHOP";
-  const previewHref = activeWorkspace === "brand" ? `/b/${shop.slug}` : "/preview/storefront";
+  const previewHref = activeWorkspace === "brand" ? "/preview/brand" : "/preview/storefront";
   const homeHref = activeWorkspace === "brand" ? "/dashboard/brand" : accountMode === "hybrid" ? "/dashboard/print" : "/dashboard";
 
   return (
@@ -70,7 +70,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
         <div className="sidebar-footer">
           <a className="platform-admin-link" href={previewHref} target="_blank" rel="noreferrer">
-            {activeWorkspace === "brand" ? "Open Brand store" : "Preview Print storefront"}
+            {activeWorkspace === "brand" ? "Preview Brand store" : "Preview Print storefront"}
           </a>
 
           <div className="account-chip">

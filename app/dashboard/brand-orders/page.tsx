@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminContext } from "@/lib/admin-data";
 import { platformShopAccess } from "@/lib/shop-mode";
+import BrandWorkflowRail from "@/components/BrandWorkflowRail";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
@@ -27,6 +28,7 @@ export default async function BrandOrdersPage() {
 
   return (
     <>
+      <BrandWorkflowRail active="sell" />
       <header className="admin-header">
         <div>
           <p className="eyebrow">BRAND SALES</p>
