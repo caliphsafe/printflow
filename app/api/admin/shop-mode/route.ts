@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
-import { brandStorefrontMode, shopAccountMode, type BrandStorefrontMode, type ShopAccountMode } from "@/lib/shop-mode";
+import {
+  brandStorefrontMode,
+  isModeAllowed,
+  platformShopAccess,
+  shopAccountMode,
+  type BrandStorefrontMode,
+  type ShopAccountMode
+} from "@/lib/shop-mode";
 
 const accountModes = new Set<ShopAccountMode>(["custom", "brand", "hybrid"]);
 const storefrontModes = new Set<BrandStorefrontMode>(["full", "embed", "both"]);
@@ -11,7 +18,8 @@ export async function GET() {
 
   return NextResponse.json({
     accountMode: shopAccountMode(shop.settings),
-    brandStorefrontMode: brandStorefrontMode(shop.settings)
+    brandStorefrontMode: brandStorefrontMode(shop.settings),
+    platformAccess: platformShopAccess(shop.settings)
   });
 }
 
@@ -20,26 +28,16 @@ export async function PATCH(request: Request) {
   if (!membership || !shop) return NextResponse.json({ error: "No shop configured." }, { status: 403 });
 
   const body = await request.json();
-  const accountMode = String(body.accountMode || "");
-  const brandMode = String(body.brandStorefrontMode || "");
+  const accountMode = String(body.accountMode || "") as ShopAccountMode;
+  const brandMode = String(body.brandStorefrontMode || "") as BrandStorefrontMode;
+  const access = platformShopAccess(shop.settings);
 
-  if (!accountModes.has(accountMode as ShopAccountMode)) {
-    return NextResponse.json({ error: "Choose a valid store mode." }, { status: 400 });
-  }
+  if (!accountModes.has(accountMode)) return NextResponse.json({ error: "Choose a valid store mode." }, { status: 400 });
+  if (!isModeAllowed(accountMode, access)) return NextResponse.json({ error: "This account does not have access to that commerce mode." }, { status: 403 });
+  if (!storefrontModes.has(brandMode)) return NextResponse.json({ error: "Choose a valid Brand storefront format." }, { status: 400 });
 
-  if (!storefrontModes.has(brandMode as BrandStorefrontMode)) {
-    return NextResponse.json({ error: "Choose a valid Brand storefront format." }, { status: 400 });
-  }
-
-  const current = shop.settings && typeof shop.settings === "object"
-    ? shop.settings as Record<string, unknown>
-    : {};
-
-  const settings = {
-    ...current,
-    accountMode,
-    brandStorefrontMode: brandMode
-  };
+  const current = shop.settings && typeof shop.settings === "object" ? shop.settings as Record<string, unknown> : {};
+  const settings = { ...current, accountMode, brandStorefrontMode: brandMode };
 
   const { data, error } = await supabase
     .from("shops")
@@ -56,10 +54,7 @@ export async function PATCH(request: Request) {
     action: "shop.mode.updated",
     entity_type: "shop",
     entity_id: shop.id,
-    metadata: {
-      accountMode,
-      brandStorefrontMode: brandMode
-    }
+    metadata: { accountMode, brandStorefrontMode: brandMode }
   });
 
   return NextResponse.json({ shop: data });

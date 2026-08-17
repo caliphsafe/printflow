@@ -1,6 +1,6 @@
 import { getAdminContext } from "@/lib/admin-data";
 import StoreModeManager from "@/components/StoreModeManager";
-import { brandStorefrontMode, shopAccountMode } from "@/lib/shop-mode";
+import { brandStorefrontMode, platformShopAccess, shopAccountMode } from "@/lib/shop-mode";
 
 export default async function StoreModePage() {
   const { shop } = await getAdminContext();
@@ -11,6 +11,7 @@ export default async function StoreModePage() {
       shopName={shop.name}
       initialAccountMode={shopAccountMode(shop.settings)}
       initialStorefrontMode={brandStorefrontMode(shop.settings)}
+      platformAccess={platformShopAccess(shop.settings)}
     />
   );
 }

@@ -10,7 +10,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   if (!user) redirect("/signup");
 
   const admin = createSupabaseAdmin();
-  const desiredMode = user.user_metadata?.printflow_account_mode === "brand" ? "brand" : user.user_metadata?.printflow_account_mode === "custom" ? "custom" : "";
+  const desiredMode = ["custom", "brand", "hybrid"].includes(String(user.user_metadata?.printflow_account_mode || "")) ? String(user.user_metadata?.printflow_account_mode) : "";
 
   const { data: membership } = await admin
     .from("organization_members")
@@ -46,6 +46,10 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
           settings: {
             ...currentSettings,
             accountMode: desiredMode,
+            platformAccess: currentSettings.platformAccess || {
+              customPrint: desiredMode === "custom" || desiredMode === "hybrid",
+              brandMerch: desiredMode === "brand" || desiredMode === "hybrid"
+            },
             brandStorefrontMode: currentSettings.brandStorefrontMode || "both"
           },
           updated_at: new Date().toISOString()
