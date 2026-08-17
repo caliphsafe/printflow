@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     active: input.active !== false,
     featured: input.featured === true,
     sort_order: Math.max(0, Number(input.sortOrder || 0)),
-    metadata: { minimumQuantity: Math.max(1, Number(input.minimumQuantity || 1)) }
+    metadata: {}
   };
 
   const result = input.id

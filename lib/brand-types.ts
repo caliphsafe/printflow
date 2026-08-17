@@ -1,4 +1,5 @@
-import type { CatalogProduct, DesignSide, PrintSize, PublicShop, ShirtColor } from "@/lib/types";
+import type { CatalogProduct, DesignSide, PrintSize, ShirtColor } from "@/lib/types";
+import type { BrandBusinessProfile, BrandMerchProduct, BrandRetailProfile } from "@/lib/brand-retail";
 
 export type BrandContrastMode = "light" | "dark";
 
@@ -22,11 +23,7 @@ export type BrandDesignVariant = {
   active: boolean;
 };
 
-export type BrandPlacementConfiguration = {
-  alignX?: "left" | "center" | "right";
-  alignY?: "top" | "center" | "bottom";
-  scalePercent?: number;
-};
+
 
 export type BrandDesignPlacement = {
   id: string;
@@ -39,7 +36,33 @@ export type BrandDesignPlacement = {
   height_inches?: number | null;
   surcharge: number;
   active: boolean;
-  configuration?: BrandPlacementConfiguration;
+  configuration?: {
+    alignX?: "left" | "center" | "right";
+    alignY?: "top" | "center" | "bottom";
+    scalePercent?: number;
+  };
+};
+
+export type BrandLockedPlacement = {
+  enabled: boolean;
+  side: DesignSide;
+  printSize: PrintSize;
+  decorationMethod: string;
+  widthInches: number;
+  heightInches: number;
+  surcharge: number;
+  placement: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation?: number;
+  };
+};
+
+export type BrandDesignProductRule = {
+  productId: string;
+  placements: Record<string, BrandLockedPlacement>;
 };
 
 export type BrandDesign = {
@@ -54,17 +77,16 @@ export type BrandDesign = {
   sort_order: number;
   metadata?: Record<string, unknown>;
   variants: BrandDesignVariant[];
-  placements: BrandDesignPlacement[];
   productIds: string[];
+  productRules: BrandDesignProductRule[];
 };
 
 export type BrandStoreProduct = CatalogProduct & {
+  brandGarmentId: string;
   configuration: CatalogProduct["configuration"] & {
     colors: Array<ShirtColor & { contrastMode?: BrandContrastMode }>;
   };
 };
-
-
 
 export type BrandCollection = {
   id: string;
@@ -74,14 +96,22 @@ export type BrandCollection = {
   active: boolean;
   featured: boolean;
   sort_order: number;
-  designIds: string[];
-  productIds: string[];
+  merchProductIds: string[];
 };
 
-export type PublicBrandShop = PublicShop & {
-  products: BrandStoreProduct[];
+export type PublicBrandShop = {
+  id: string;
+  organization_id: string;
+  slug: string;
+  name: string;
+  active: boolean;
+  business: BrandBusinessProfile;
+  retailProfile: BrandRetailProfile;
+  garments: BrandStoreProduct[];
   brandDesigns: BrandDesign[];
+  merchProducts: BrandMerchProduct[];
   categories: BrandDesignCategory[];
   collections: BrandCollection[];
+  paymentReady: boolean;
   presentation: "full" | "embed";
 };

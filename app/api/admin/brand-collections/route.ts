@@ -1,39 +1,20 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
-import { slugifyBrand } from "@/lib/brand-designs";
+import { safeBrandSlug } from "@/lib/brand-retail";
 
-async function replaceMemberships(
-  supabase: any,
-  collectionId: string,
-  designIds: string[],
-  productIds: string[]
-) {
-  await Promise.all([
-    supabase.from("brand_collection_designs").delete().eq("collection_id", collectionId),
-    supabase.from("brand_collection_products").delete().eq("collection_id", collectionId)
-  ]);
+async function replaceProducts(supabase: any, collectionId: string, productIds: string[]) {
+  await supabase.from("brand_collection_merch_products").delete().eq("collection_id", collectionId);
 
-  if (designIds.length) {
-    const result = await supabase.from("brand_collection_designs").insert(
-      designIds.map((brand_design_id, index) => ({
-        collection_id: collectionId,
-        brand_design_id,
-        sort_order: index
-      }))
-    );
-    if (result.error) throw result.error;
-  }
+  if (!productIds.length) return;
 
-  if (productIds.length) {
-    const result = await supabase.from("brand_collection_products").insert(
-      productIds.map((catalog_product_id, index) => ({
-        collection_id: collectionId,
-        catalog_product_id,
-        sort_order: index
-      }))
-    );
-    if (result.error) throw result.error;
-  }
+  const result = await supabase.from("brand_collection_merch_products").insert(
+    productIds.map((brand_product_id, index) => ({
+      collection_id: collectionId,
+      brand_product_id,
+      sort_order: index
+    }))
+  );
+  if (result.error) throw result.error;
 }
 
 export async function POST(request: Request) {
@@ -50,11 +31,11 @@ export async function POST(request: Request) {
       organization_id: membership.organization_id,
       shop_id: shop.id,
       name,
-      slug: slugifyBrand(name),
+      slug: safeBrandSlug(name),
       description: String(body.description || "").trim() || null,
-      active: body.active !== false,
+      active: body.active === true,
       featured: body.featured === true,
-      sort_order: Math.max(0, Number(body.sortOrder || 0)),
+      sort_order: 0,
       metadata: {}
     })
     .select("*")
@@ -63,18 +44,13 @@ export async function POST(request: Request) {
   if (error || !data) return NextResponse.json({ error: error?.message || "Unable to create collection." }, { status: 400 });
 
   try {
-    await replaceMemberships(
-      supabase,
-      data.id,
-      Array.from(new Set((body.designIds || []).map(String))),
-      Array.from(new Set((body.productIds || []).map(String)))
-    );
+    await replaceProducts(supabase, data.id, Array.from(new Set((body.productIds || []).map(String))));
   } catch (caught) {
     await supabase.from("brand_collections").delete().eq("id", data.id);
-    return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unable to assign collection items." }, { status: 400 });
+    return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unable to assign products." }, { status: 400 });
   }
 
-  return NextResponse.json({ collection: { ...data, designIds: body.designIds || [], productIds: body.productIds || [] } });
+  return NextResponse.json({ collection: { ...data, merchProductIds: body.productIds || [] } });
 }
 
 export async function PATCH(request: Request) {
@@ -88,7 +64,7 @@ export async function PATCH(request: Request) {
   const patch: Record<string, unknown> = {};
   if (typeof body.name === "string" && body.name.trim()) {
     patch.name = body.name.trim();
-    patch.slug = slugifyBrand(body.name);
+    patch.slug = safeBrandSlug(body.name);
   }
   if (typeof body.description === "string") patch.description = body.description.trim() || null;
   if (typeof body.active === "boolean") patch.active = body.active;
@@ -99,17 +75,12 @@ export async function PATCH(request: Request) {
     if (updated.error) return NextResponse.json({ error: updated.error.message }, { status: 400 });
   }
 
-  if (Array.isArray(body.designIds) || Array.isArray(body.productIds)) {
-    try {
-      await replaceMemberships(
-        supabase,
-        id,
-        Array.from(new Set((body.designIds || []).map(String))),
-        Array.from(new Set((body.productIds || []).map(String)))
-      );
-    } catch (caught) {
-      return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unable to save collection items." }, { status: 400 });
+  try {
+    if (Array.isArray(body.productIds)) {
+      await replaceProducts(supabase, id, Array.from(new Set(body.productIds.map(String))));
     }
+  } catch (caught) {
+    return NextResponse.json({ error: caught instanceof Error ? caught.message : "Unable to save collection products." }, { status: 400 });
   }
 
   return NextResponse.json({ ok: true });
@@ -120,8 +91,10 @@ export async function DELETE(request: Request) {
   if (!shop) return NextResponse.json({ error: "No shop configured." }, { status: 403 });
 
   const id = new URL(request.url).searchParams.get("id");
-  const { error } = await supabase.from("brand_collections").delete().eq("id", id).eq("shop_id", shop.id);
+  if (!id) return NextResponse.json({ error: "Collection id is required." }, { status: 400 });
 
+  const { error } = await supabase.from("brand_collections").delete().eq("id", id).eq("shop_id", shop.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
   return NextResponse.json({ ok: true });
 }

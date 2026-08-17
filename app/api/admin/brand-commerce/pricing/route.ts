@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export async function POST() {
   return NextResponse.json(
-    { error: "Brand storefront identity is now managed by /api/admin/brand-business." },
+    { error: "Brand pricing has moved to Retail Economics at /api/admin/brand-retail." },
     { status: 410 }
   );
 }

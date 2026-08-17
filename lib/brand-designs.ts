@@ -59,23 +59,3 @@ export function resolveLockedPlacement(product: CatalogProduct, placement: Brand
 export function brandArtworkUrl(variantId?: string) {
   return variantId ? `/api/public/brand-artwork?variant=${encodeURIComponent(variantId)}` : "";
 }
-
-
-export function applyBrandContrast<T extends CatalogProduct>(product: T, settings: unknown): T {
-  const source = settings && typeof settings === "object" ? settings as Record<string, any> : {};
-  const map = source.brandColorContrast && typeof source.brandColorContrast === "object" ? source.brandColorContrast : {};
-  const productMap = map[product.id] && typeof map[product.id] === "object" ? map[product.id] : {};
-
-  return {
-    ...product,
-    configuration: {
-      ...product.configuration,
-      colors: product.configuration.colors.map((color) => ({
-        ...color,
-        ...(productMap[color.id] === "light" || productMap[color.id] === "dark"
-          ? { contrastMode: productMap[color.id] }
-          : {})
-      }))
-    }
-  } as T;
-}

@@ -1,13 +1,11 @@
 import { DEFAULT_CONFIGURATION, normalizePrintArea } from "@/lib/catalog";
-import { DEFAULT_PRICING_PROFILE, normalizePricingProfile } from "@/lib/pricing-settings";
 import type {
   CatalogProduct,
   DesignSide,
   PrintArea,
   PrintSize,
   ProductConfiguration,
-  ShirtColor,
-  ShopPricingProfile
+  ShirtColor
 } from "@/lib/types";
 
 export type BrandGarmentSetup = {
@@ -26,25 +24,6 @@ export type BrandGarmentSetup = {
     backHeartArea: PrintArea;
     backFullArea: PrintArea;
   };
-};
-
-export type BrandStorefrontSettings = {
-  logoUrl?: string;
-  primaryColor: string;
-  textColor: string;
-  accentColor: string;
-  surfaceColor: string;
-  heroBadge: string;
-  headline: string;
-  introduction: string;
-  trustMessage: string;
-};
-
-export type BrandCommerceSettings = {
-  pricing: ShopPricingProfile;
-  garments: Record<string, BrandGarmentSetup>;
-  colorContrast: Record<string, Record<string, "light" | "dark">>;
-  storefront: BrandStorefrontSettings;
 };
 
 function object(value: unknown): Record<string, any> {
@@ -87,11 +66,11 @@ export function defaultBrandGarmentSetup(product: CatalogProduct): BrandGarmentS
 export function normalizeBrandGarmentSetup(value: unknown, product: CatalogProduct): BrandGarmentSetup {
   const source = object(value);
   const fallback = defaultBrandGarmentSetup(product);
-  const colors = product.configuration.colors.map((item) => item.id);
+  const colorIds = product.configuration.colors.map((item) => item.id);
   const sizes = product.configuration.sizes;
 
   const activeColorIds = Array.isArray(source.activeColorIds)
-    ? source.activeColorIds.map(String).filter((id: string) => colors.includes(id))
+    ? source.activeColorIds.map(String).filter((id: string) => colorIds.includes(id))
     : fallback.activeColorIds;
 
   const activeSizes = Array.isArray(source.sizes)
@@ -121,8 +100,8 @@ export function normalizeBrandGarmentSetup(value: unknown, product: CatalogProdu
     backEnabled: source.backEnabled === true,
     colorContrast: Object.fromEntries(
       Object.entries(object(source.colorContrast))
-        .filter(([, value]) => value === "light" || value === "dark")
-        .map(([key, value]) => [key, value as "light" | "dark"])
+        .filter(([, contrast]) => contrast === "light" || contrast === "dark")
+        .map(([id, contrast]) => [id, contrast as "light" | "dark"])
     ),
     zones: {
       frontHeartArea: normalizePrintArea(zones.frontHeartArea, fallback.zones.frontHeartArea),
@@ -133,36 +112,7 @@ export function normalizeBrandGarmentSetup(value: unknown, product: CatalogProdu
   };
 }
 
-export function normalizeBrandCommerceSettings(settings: unknown): BrandCommerceSettings {
-  const root = object(settings);
-  const brandCommerce = object(root.brandCommerce);
-
-  const sharedBrand = object(root.brand);
-  const sharedExperience = object(root.customerExperience);
-  const storefront = object(brandCommerce.storefront);
-
-  return {
-    pricing: normalizePricingProfile(brandCommerce.pricing || DEFAULT_PRICING_PROFILE),
-    garments: object(brandCommerce.garments),
-    colorContrast: object(brandCommerce.colorContrast),
-    storefront: {
-      logoUrl: typeof storefront.logoUrl === "string" ? storefront.logoUrl : typeof sharedBrand.logoUrl === "string" ? sharedBrand.logoUrl : undefined,
-      primaryColor: String(storefront.primaryColor || sharedBrand.primaryColor || "#171717"),
-      textColor: String(storefront.textColor || sharedBrand.textColor || "#ffffff"),
-      accentColor: String(storefront.accentColor || sharedBrand.accentColor || "#d8ff5f"),
-      surfaceColor: String(storefront.surfaceColor || sharedBrand.surfaceColor || "#f4f4ef"),
-      heroBadge: String(storefront.heroBadge || "BRAND / MERCH"),
-      headline: String(storefront.headline || "Shop the brand."),
-      introduction: String(storefront.introduction || "Choose a garment, color, and approved design."),
-      trustMessage: String(storefront.trustMessage || sharedExperience.trustMessage || "Secure checkout · Production approved · Order updates")
-    }
-  };
-}
-
-export function applyBrandGarmentConfiguration(
-  product: CatalogProduct,
-  configuration: unknown
-): CatalogProduct | null {
+export function applyBrandGarmentConfiguration(product: CatalogProduct, configuration: unknown): CatalogProduct | null {
   const setup = normalizeBrandGarmentSetup(configuration, product);
   if (!setup.active) return null;
 
@@ -176,13 +126,10 @@ export function applyBrandGarmentConfiguration(
       } as ShirtColor & { contrastMode?: "light" | "dark" };
     });
 
-  const frontEnabled = setup.frontEnabled;
-  const backEnabled = setup.backEnabled;
-
   const designModes = [
-    ...(frontEnabled ? ["front"] as const : []),
-    ...(backEnabled ? ["back"] as const : []),
-    ...(frontEnabled && backEnabled ? ["front-back"] as const : [])
+    ...(setup.frontEnabled ? ["front"] as const : []),
+    ...(setup.backEnabled ? ["back"] as const : []),
+    ...(setup.frontEnabled && setup.backEnabled ? ["front-back"] as const : [])
   ];
 
   const configurationNext: ProductConfiguration = {
@@ -194,8 +141,8 @@ export function applyBrandGarmentConfiguration(
       ...product.configuration.customization,
       decorationMethods: setup.decorationMethods,
       printSizes: setup.printSizes,
-      frontEnabled,
-      backEnabled,
+      frontEnabled: setup.frontEnabled,
+      backEnabled: setup.backEnabled,
       designModes: [...designModes],
       frontPrintArea: setup.zones.frontFullArea,
       backPrintArea: setup.zones.backFullArea,
@@ -208,28 +155,6 @@ export function applyBrandGarmentConfiguration(
 
   return { ...product, configuration: configurationNext };
 }
-
-/**
- * Legacy compatibility helper for the immediately previous Brand build.
- * New code should read Brand garment configuration from brand_garments
- * and call applyBrandGarmentConfiguration instead.
- */
-export function applyBrandGarmentSetup(
-  product: CatalogProduct,
-  settings: unknown
-): CatalogProduct | null {
-  const commerce = normalizeBrandCommerceSettings(settings);
-  const raw = commerce.garments[product.id];
-  if (!raw) return null;
-
-  const merged = {
-    ...object(raw),
-    colorContrast: commerce.colorContrast[product.id] || object(raw).colorContrast || {}
-  };
-  return applyBrandGarmentConfiguration(product, merged);
-}
-
-
 
 export function brandZoneKey(side: DesignSide, size: PrintSize): keyof BrandGarmentSetup["zones"] {
   return `${side}${size === "heart" ? "Heart" : "Full"}Area` as keyof BrandGarmentSetup["zones"];
