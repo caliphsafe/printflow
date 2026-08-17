@@ -229,3 +229,8 @@ export function applyBrandGarmentSetup(
   return applyBrandGarmentConfiguration(product, merged);
 }
 
+
+
+export function brandZoneKey(side: DesignSide, size: PrintSize): keyof BrandGarmentSetup["zones"] {
+  return `${side}${size === "heart" ? "Heart" : "Full"}Area` as keyof BrandGarmentSetup["zones"];
+}
