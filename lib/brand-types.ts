@@ -2,6 +2,7 @@ import type { CatalogProduct, DesignSide, PrintSize, ShirtColor } from "@/lib/ty
 import type { BrandBusinessProfile, BrandMerchProduct, BrandRetailProfile } from "@/lib/brand-retail";
 
 export type BrandContrastMode = "light" | "dark";
+export type BrandPlacementKey = "front-heart" | "front-full" | "back-full";
 
 export type BrandDesignCategory = {
   id: string;
@@ -57,6 +58,13 @@ export type BrandLockedPlacement = {
 export type BrandDesignProductRule = {
   productId: string;
   placements: Record<string, BrandLockedPlacement>;
+};
+
+export type BrandDesignCustomerOffer = {
+  enabled: boolean;
+  retailPrice: number;
+  side: DesignSide;
+  printSize: PrintSize;
 };
 
 export type BrandDesign = {

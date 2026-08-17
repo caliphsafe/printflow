@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import BrandWorkflowRail from "@/components/BrandWorkflowRail";
 import { getAdminContext } from "@/lib/admin-data";
 import { normalizeBrandBusinessProfile } from "@/lib/brand-retail";
-import { designOffer } from "@/lib/brand-builder";
+import { designOffers } from "@/lib/brand-builder";
 import { platformShopAccess } from "@/lib/shop-mode";
 
 export const dynamic="force-dynamic";
@@ -20,13 +20,17 @@ export default async function BrandStorefrontControls(){
   ]);
   const business=normalizeBrandBusinessProfile(businessRow,shop.name);
   const garmentReady=(garments||[]).some((x:any)=>x.active&&Number(x.configuration?.retailPrice||0)>0);
-  const designReady=(designs||[]).some((x:any)=>x.active&&Number((x.metadata as any)?.customerOffer?.retailPrice??0)>=0);
+  const designReady=(designs||[]).some((x:any)=>{
+    if(!x.active)return false;
+    const offers=designOffers({...x,variants:[],productIds:[],productRules:[]} as any);
+    return Object.values(offers).some((offer:any)=>offer.enabled);
+  });
   const paymentReady=Number(payments||0)>0;
   const steps=[{label:"At least one priced garment",done:garmentReady,href:"/dashboard/brand-garments"},{label:"At least one approved design",done:designReady,href:"/dashboard/designs"},{label:"Payments connected",done:paymentReady,href:"/dashboard/integrations"},{label:"Brand store published",done:business.settings.active,href:"/dashboard/brand-settings"}];
   const score=Math.round(steps.filter(x=>x.done).length/steps.length*100);
   const origin=(process.env.NEXT_PUBLIC_SITE_URL||process.env.NEXT_PUBLIC_APP_URL||"").replace(/\/$/,"");
   const full=`${origin}/b/${shop.slug}`,embed=`${origin}/e/${shop.slug}`;
-  return <><BrandWorkflowRail active="store"/><header className="admin-header"><div><p className="eyebrow">BRAND BUILDER · STEP 03</p><h1>Storefront controls</h1><p>Your Brand storefront is a guided builder: garment first, design second, size/quantity third. No fixed product URLs are required.</p></div><div className="header-actions"><Link className="ghost-button" href="/preview/brand" target="_blank">Preview Builder ↗</Link><Link className="secondary-button" href="/dashboard/brand-settings">Store Design</Link></div></header>
+  return <><BrandWorkflowRail active="store"/><header className="admin-header"><div><p className="eyebrow">BRAND BUILDER · STEP 03</p><h1>Your Brand webstore</h1><p>Customers shop garments like a real store, open a product, choose an available placement and design, see the finished mockup, and then checkout.</p></div><div className="header-actions"><Link className="ghost-button" href="/preview/brand" target="_blank">Preview Builder ↗</Link><Link className="secondary-button" href="/dashboard/brand-settings">Store Design</Link></div></header>
   <section className="admin-card storefront-v3-status"><div><span>{business.settings.active?"PUBLIC BUILDER · LIVE":"PUBLIC BUILDER · DRAFT"}</span><h2>{business.name}</h2><p>Customer flow: Garment → Design → Order</p></div><strong>{score}% ready</strong><Link className="primary-button" href="/preview/brand" target="_blank">Preview customer experience</Link></section>
   <div className="storefront-v3-grid"><section className="admin-card readiness"><div className="card-heading"><div><p className="section-kicker">LAUNCH CHECK</p><h2>Builder readiness</h2></div><strong>{steps.filter(x=>x.done).length}/{steps.length}</strong></div>{steps.map((x,i)=><Link key={x.label} href={x.href} className={x.done?"done":""}><span>{x.done?"✓":i+1}</span><div><strong>{x.label}</strong><small>{x.done?"Ready":"Needs attention"}</small></div><b>{x.done?"Ready":"Fix →"}</b></Link>)}</section>
   <aside className="admin-card builder-explainer"><p className="section-kicker">CUSTOMER EXPERIENCE</p><h2>How the Brand builder works</h2><div><span>1</span><p><strong>Choose garment</strong>Customer sees the garment base price.</p></div><div><span>2</span><p><strong>Add design</strong>Customer sees Front Heart, Front Full, and Back Full options approved for that garment.</p></div><div><span>3</span><p><strong>See mockups</strong>Front and back previews update before checkout.</p></div><div><span>4</span><p><strong>Order</strong>Garment price + design price(s) = unit price.</p></div></aside></div>

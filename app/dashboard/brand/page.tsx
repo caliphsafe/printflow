@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import BrandWorkflowRail from "@/components/BrandWorkflowRail";
 import { getAdminContext } from "@/lib/admin-data";
 import { normalizeBrandBusinessProfile } from "@/lib/brand-retail";
-import { designOffer } from "@/lib/brand-builder";
+import { designOffers } from "@/lib/brand-builder";
 import { platformShopAccess } from "@/lib/shop-mode";
 
 function money(v:number){return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(v)}
@@ -24,7 +24,11 @@ export default async function BrandOverview(){
   ]);
   const business=normalizeBrandBusinessProfile(businessRow,shop.name);
   const liveGarments=(garments||[]).filter((x:any)=>x.active&&Number(x.configuration?.retailPrice||0)>0);
-  const liveDesigns=(designs||[]).filter((x:any)=>x.active&&designOffer({...x,variants:[],productIds:[],productRules:[]} as any).retailPrice>=0);
+  const liveDesigns=(designs||[]).filter((x:any)=>{
+    if(!x.active)return false;
+    const offers=designOffers({...x,variants:[],productIds:[],productRules:[]} as any);
+    return Object.values(offers).some((offer:any)=>offer.enabled);
+  });
   const rows=orders||[];
   const paid=rows.filter((x:any)=>x.payment_status==="paid"||["paid","in_production","delivered"].includes(x.status));
   const revenue=paid.reduce((s:number,x:any)=>s+Number(x.paid_amount??x.package_price??0),0);
@@ -38,9 +42,9 @@ export default async function BrandOverview(){
   ];
   const completion=Math.round(steps.filter(x=>x.done).length/steps.length*100);
 
-  return <><BrandWorkflowRail/><header className="admin-header"><div><p className="eyebrow">BRAND / MERCH · {business.name}</p><h1>Build-your-own merchandise.</h1><p>Your customer chooses a garment first, adds an approved design, sees the front/back mockup, then buys the finished piece.</p></div><div className="header-actions"><Link className="ghost-button" href="/preview/brand">Preview Builder</Link><Link className="secondary-button" href="/dashboard/designs">Add Design</Link></div></header>
+  return <><BrandWorkflowRail/><header className="admin-header"><div><p className="eyebrow">BRAND / MERCH · {business.name}</p><h1>Run the Brand webstore.</h1><p>Customers shop garments first, choose an approved placement and design, see the finished front/back mockup, and checkout at one final item price.</p></div><div className="header-actions"><Link className="ghost-button" href="/preview/brand">Preview Builder</Link><Link className="secondary-button" href="/dashboard/designs">Add Design</Link></div></header>
 
-  <section className="builder-model-card admin-card"><div><span>CUSTOMER FLOW</span><h2>Garment <i>+</i> Design <i>=</i> Finished item</h2><p>There are no fixed one-design products and no product URL step. Pricing is additive and transparent.</p></div><div className="builder-model-math"><div><small>Garment</small><strong>Base price</strong></div><b>+</b><div><small>Design</small><strong>Add-on price</strong></div><b>=</b><div><small>Customer pays</small><strong>Unit total</strong></div></div></section>
+  <section className="builder-model-card admin-card"><div><span>CUSTOMER FLOW</span><h2>Garment <i>+</i> Design <i>=</i> Finished item</h2><p>There are no fixed one-design products and no product URL step. Internally PrintFlow combines garment and design pricing; customers only see the finished item price.</p></div><div className="builder-model-math"><div><small>Garment</small><strong>Base price</strong></div><b>+</b><div><small>Design</small><strong>Add-on price</strong></div><b>=</b><div><small>Customer pays</small><strong>Unit total</strong></div></div></section>
 
   <section className="brand-v3-metrics"><article><span>Gross sales</span><strong>{money(revenue)}</strong><small>{paid.length} paid Brand orders</small></article><article><span>Units sold</span><strong>{units}</strong><small>Build-your-own items</small></article><article><span>Live garments</span><strong>{liveGarments.length}</strong><small>{garments?.length||0} configured</small></article><article><span>Live designs</span><strong>{liveDesigns.length}</strong><small>{designs?.length||0} uploaded</small></article></section>
 

@@ -5,6 +5,8 @@ export type BrandGarmentSetup = {
   active: boolean;
   retailPrice: number;
   defaultColorId?: string;
+  defaultDesignId?: string;
+  defaultPlacementKey?: "front-heart" | "front-full" | "back-full";
   activeColorIds: string[];
   sizes: string[];
   decorationMethods: string[];
@@ -43,6 +45,8 @@ export function defaultBrandGarmentSetup(product: CatalogProduct): BrandGarmentS
     active: false,
     retailPrice: 0,
     defaultColorId,
+    defaultDesignId: undefined,
+    defaultPlacementKey: undefined,
     activeColorIds: activeColors.map((item) => item.id),
     sizes: [...product.configuration.sizes],
     decorationMethods: headwear ? ["Embroidery"] : ["Screen Print", "DTF", "Embroidery"],
@@ -71,6 +75,10 @@ export function normalizeBrandGarmentSetup(value: unknown, product: CatalogProdu
     retailPrice: Math.max(0, Number(source.retailPrice || 0)),
     defaultColorId: typeof source.defaultColorId === "string" && activeColorIds.includes(source.defaultColorId)
       ? source.defaultColorId : activeColorIds[0],
+    defaultDesignId: typeof source.defaultDesignId === "string" && source.defaultDesignId ? source.defaultDesignId : undefined,
+    defaultPlacementKey: source.defaultPlacementKey === "front-heart" || source.defaultPlacementKey === "front-full" || source.defaultPlacementKey === "back-full"
+      ? source.defaultPlacementKey
+      : undefined,
     activeColorIds,
     sizes: activeSizes.length ? activeSizes : fallback.sizes,
     decorationMethods: Array.isArray(source.decorationMethods) && source.decorationMethods.length ? source.decorationMethods.map(String) : fallback.decorationMethods,
@@ -120,6 +128,8 @@ export function applyBrandGarmentConfiguration(product: CatalogProduct, configur
     }
   };
   (configurationNext as any).brandRetailPrice = setup.retailPrice;
+  (configurationNext as any).brandDefaultDesignId = setup.defaultDesignId;
+  (configurationNext as any).brandDefaultPlacementKey = setup.defaultPlacementKey;
   return { ...product, configuration: configurationNext };
 }
 

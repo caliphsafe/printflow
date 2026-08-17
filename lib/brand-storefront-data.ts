@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { normalizeConfiguration } from "@/lib/catalog";
 import { applyBrandGarmentConfiguration } from "@/lib/brand-commerce";
+import { compatibleOffer } from "@/lib/brand-builder";
 import { normalizeBrandBusinessProfile, normalizeBrandRetailProfile } from "@/lib/brand-retail";
 import { platformShopAccess } from "@/lib/shop-mode";
 import type { BrandDesign, BrandStoreProduct, PublicBrandShop } from "@/lib/brand-types";
@@ -78,6 +79,16 @@ export async function getPublicBrandShop(
     }))
   }));
 
+  const storefrontGarments = preview
+    ? garments
+    : garments.filter((garment) =>
+        brandDesigns.some((design) =>
+          (["front-heart", "front-full", "back-full"] as const).some((placementKey) =>
+            compatibleOffer(design, garment, placementKey)
+          )
+        )
+      );
+
   if (!preview && !publiclyActive) {
     return {
       id: shop.id,
@@ -105,7 +116,7 @@ export async function getPublicBrandShop(
     active: preview ? true : publiclyActive,
     business,
     retailProfile,
-    garments,
+    garments: storefrontGarments,
     brandDesigns,
     merchProducts: [],
     categories: (categories || []).filter((item: any) => preview || item.active === true) as any,

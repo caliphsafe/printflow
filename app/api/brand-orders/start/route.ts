@@ -5,14 +5,14 @@ import { normalizeConfiguration } from "@/lib/catalog";
 import { applyBrandGarmentConfiguration } from "@/lib/brand-commerce";
 import {
   builderUnitPrice,
-  compatibleDesign,
+  compatibleOffer,
   designArtworkVariant,
-  designOffer,
+  designOffers,
   garmentRetailPrice,
   lockedPlacementFor
 } from "@/lib/brand-builder";
 import { platformShopAccess } from "@/lib/shop-mode";
-import type { BrandDesign, BrandStoreProduct } from "@/lib/brand-types";
+import type { BrandDesign, BrandPlacementKey, BrandStoreProduct } from "@/lib/brand-types";
 import type { CatalogProduct, DesignSide, SizeQuantity } from "@/lib/types";
 
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status });
@@ -213,9 +213,21 @@ export async function POST(request: Request) {
       } as BrandDesign;
     }
 
+    const frontPlacementKey: BrandPlacementKey | undefined =
+      body.frontSelection?.placementKey === "front-heart"
+        ? "front-heart"
+        : body.frontSelection?.placementKey === "front-full"
+          ? "front-full"
+          : undefined;
+
+    const backPlacementKey: BrandPlacementKey | undefined =
+      body.backSelection?.placementKey === "back-full"
+        ? "back-full"
+        : undefined;
+
     const [frontDesign, backDesign] = await Promise.all([
-      loadDesign(body.frontDesignId),
-      loadDesign(body.backDesignId)
+      loadDesign(body.frontSelection?.designId || body.frontDesignId),
+      loadDesign(body.backSelection?.designId || body.backDesignId)
     ]);
 
     if (!frontDesign && !backDesign) {
@@ -223,40 +235,22 @@ export async function POST(request: Request) {
     }
 
     if (frontDesign) {
-      const offer = designOffer(frontDesign);
-
-      if (
-        offer.side !== "front" ||
-        !compatibleDesign(frontDesign, garment)
-      ) {
-        return fail(
-          "The selected front design is not approved for this garment."
-        );
+      if (!frontPlacementKey || !compatibleOffer(frontDesign, garment, frontPlacementKey)) {
+        return fail("The selected front design and placement are not approved for this garment.");
       }
 
       if (!designArtworkVariant(frontDesign, color)) {
-        return fail(
-          "The front design does not have artwork for this garment color."
-        );
+        return fail("The front design does not have artwork for this garment color.");
       }
     }
 
     if (backDesign) {
-      const offer = designOffer(backDesign);
-
-      if (
-        offer.side !== "back" ||
-        !compatibleDesign(backDesign, garment)
-      ) {
-        return fail(
-          "The selected back design is not approved for this garment."
-        );
+      if (!backPlacementKey || !compatibleOffer(backDesign, garment, backPlacementKey)) {
+        return fail("The selected back design and placement are not approved for this garment.");
       }
 
       if (!designArtworkVariant(backDesign, color)) {
-        return fail(
-          "The back design does not have artwork for this garment color."
-        );
+        return fail("The back design does not have artwork for this garment color.");
       }
     }
 
@@ -266,11 +260,12 @@ export async function POST(request: Request) {
       return fail("This garment does not have a customer price.");
     }
 
-    const unitPrice = builderUnitPrice(
+    const unitPrice = builderUnitPrice({
       garment,
       frontDesign,
+      frontPlacement: frontPlacementKey as "front-heart" | "front-full" | undefined,
       backDesign
-    );
+    });
 
     const totalPrice = Number((unitPrice * quantity).toFixed(2));
 
@@ -349,7 +344,8 @@ export async function POST(request: Request) {
       let artworkId: string | null = null;
 
       if (design) {
-        placement = lockedPlacementFor(design, garment)!;
+        const placementKey: BrandPlacementKey = side === "front" ? frontPlacementKey! : "back-full";
+        placement = lockedPlacementFor(design, garment, placementKey)!;
 
         const artwork = designArtworkVariant(
           design,
@@ -458,7 +454,7 @@ export async function POST(request: Request) {
         designName:
           design?.name || "No design selected",
         designPrice: design
-          ? designOffer(design).retailPrice
+          ? designOffers(design)[side === "front" ? frontPlacementKey! : "back-full"].retailPrice
           : 0
       };
 
@@ -474,8 +470,14 @@ export async function POST(request: Request) {
       Boolean
     ) as BrandDesign[];
 
+    const placementKeyForDesign = (design: BrandDesign): BrandPlacementKey =>
+      frontDesign?.id === design.id && frontPlacementKey ? frontPlacementKey : "back-full";
+
+    const selectedOfferForDesign = (design: BrandDesign) =>
+      designOffers(design)[placementKeyForDesign(design)];
+
     const snapshot = {
-      builderVersion: 3,
+      builderVersion: 4,
       garment: {
         brandGarmentId: garment.brandGarmentId,
         sourceCatalogProductId: garment.id,
@@ -487,10 +489,12 @@ export async function POST(request: Request) {
       designs: selectedDesigns.map((design) => ({
         id: design.id,
         name: design.name,
-        offer: designOffer(design),
+        offer: selectedOfferForDesign(design),
+        placementKey: placementKeyForDesign(design),
         placement: lockedPlacementFor(
           design,
-          garment
+          garment,
+          placementKeyForDesign(design)
         )
       })),
       unitPrice,
@@ -544,21 +548,22 @@ export async function POST(request: Request) {
         design_sides: sideData,
         design_configuration: {
           orderSource: "brand",
-          brandBuilderVersion: 3,
+          brandBuilderVersion: 4,
           designMode,
           decorationMethod: selectedDesigns
             .map(
               (d) =>
                 lockedPlacementFor(
                   d,
-                  garment
+                  garment,
+                  placementKeyForDesign(d)
                 )?.decorationMethod
             )
             .filter(Boolean)
             .join(" + "),
           printSizes: {
-            front: frontDesign
-              ? designOffer(frontDesign).printSize
+            front: frontDesign && frontPlacementKey
+              ? designOffers(frontDesign)[frontPlacementKey].printSize
               : undefined,
             back: backDesign ? "full" : undefined
           },
@@ -590,17 +595,18 @@ export async function POST(request: Request) {
             (design) => ({
               id: design.id,
               name: design.name,
-              side: designOffer(design).side,
+              side: selectedOfferForDesign(design).side,
+              placementKey: placementKeyForDesign(design),
               printSize:
-                designOffer(design).printSize,
+                selectedOfferForDesign(design).printSize,
               retailPrice:
-                designOffer(design).retailPrice
+                selectedOfferForDesign(design).retailPrice
             })
           ),
           designAddOnTotalPerItem:
             selectedDesigns.reduce(
               (sum, design) =>
-                sum + designOffer(design).retailPrice,
+                sum + selectedOfferForDesign(design).retailPrice,
               0
             ),
           printSubtotal: Number(
@@ -608,18 +614,19 @@ export async function POST(request: Request) {
               selectedDesigns.reduce(
                 (sum, design) =>
                   sum +
-                  designOffer(design).retailPrice,
+                  selectedOfferForDesign(design).retailPrice,
                 0
               ) * quantity
             ).toFixed(2)
           ),
           printLines: selectedDesigns.map(
             (design) => ({
-              side: designOffer(design).side,
+              side: selectedOfferForDesign(design).side,
+              placementKey: placementKeyForDesign(design),
               printSize:
-                designOffer(design).printSize,
+                selectedOfferForDesign(design).printSize,
               unitPrice:
-                designOffer(design).retailPrice,
+                selectedOfferForDesign(design).retailPrice,
               designName: design.name
             })
           ),
