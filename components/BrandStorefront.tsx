@@ -2,11 +2,18 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useState } from "react";
-import { brandArtworkUrl, chooseBrandVariant } from "@/lib/brand-designs";
-import { brandProductReadiness } from "@/lib/brand-readiness";
-import type { BrandMerchProduct } from "@/lib/brand-retail";
-import type { PublicBrandShop } from "@/lib/brand-types";
-import type { SizeQuantity } from "@/lib/types";
+import { brandArtworkUrl } from "@/lib/brand-designs";
+import {
+  builderUnitPrice,
+  compatibleDesign,
+  designArtworkVariant,
+  designOffer,
+  designPlacementLabel,
+  garmentRetailPrice,
+  lockedPlacementFor
+} from "@/lib/brand-builder";
+import type { BrandDesign, BrandStoreProduct, PublicBrandShop } from "@/lib/brand-types";
+import type { DesignSide, SizeQuantity } from "@/lib/types";
 
 const W = 800;
 const H = 800;
@@ -24,39 +31,36 @@ function assetUrl(url?: string) {
   }
 }
 
-function loadImage(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Unable to load product preview."));
-    image.src = src;
-  });
+function garmentImage(garment: BrandStoreProduct, colorId: string, side: DesignSide) {
+  const color = garment.configuration.colors.find((item) => item.id === colorId) || garment.configuration.colors[0];
+  return assetUrl(side === "back"
+    ? color?.backImageUrl || garment.configuration.mockupImageUrl
+    : color?.frontImageUrl || garment.configuration.mockupImageUrl);
 }
 
-function linksFor(shop: PublicBrandShop, product?: BrandMerchProduct) {
-  if (!product) return { garment: undefined, design: undefined, placement: undefined };
-  const garment = shop.garments.find((item) => item.brandGarmentId === product.brand_garment_id);
-  const design = shop.brandDesigns.find((item) => item.id === product.brand_design_id);
-  const rule = design?.productRules.find((item) => item.productId === garment?.id);
-  return { garment, design, placement: rule?.placements?.[product.placement_key] };
-}
-
-function ProductVisual({ shop, product, colorId, className = "" }: { shop: PublicBrandShop; product: BrandMerchProduct; colorId?: string; className?: string }) {
-  const { garment, design, placement } = linksFor(shop, product);
-  const colors = garment?.configuration.colors.filter((item) => product.configuration.colorIds.includes(item.id)) || [];
-  const color = colors.find((item) => item.id === colorId) || colors[0];
-  const variant = design ? chooseBrandVariant(design.variants, color as any) : null;
-  const garmentImage = placement?.side === "back"
-    ? color?.backImageUrl || garment?.configuration.mockupImageUrl
-    : color?.frontImageUrl || garment?.configuration.mockupImageUrl;
+function Composite({
+  garment,
+  colorId,
+  side,
+  design
+}: {
+  garment: BrandStoreProduct;
+  colorId: string;
+  side: DesignSide;
+  design?: BrandDesign;
+}) {
+  const color = garment.configuration.colors.find((item) => item.id === colorId) || garment.configuration.colors[0];
+  const placement = design ? lockedPlacementFor(design, garment) : undefined;
+  const variant = design ? designArtworkVariant(design, color) : undefined;
 
   return (
-    <div className={`brand-product-visual ${className}`}>
-      <svg viewBox="0 0 800 800" aria-label={`${product.name} product preview`}>
+    <div className="brand-builder-composite">
+      <svg viewBox="0 0 800 800">
         <rect width="800" height="800" fill="#f3f3ef" />
-        {garmentImage && <image href={assetUrl(garmentImage)} x="28" y="28" width="744" height="744" preserveAspectRatio="xMidYMid meet" />}
-        {variant && placement && (
+        {garmentImage(garment, color?.id || "", side) && (
+          <image href={garmentImage(garment, color?.id || "", side)} x="28" y="28" width="744" height="744" preserveAspectRatio="xMidYMid meet" />
+        )}
+        {placement && placement.side === side && variant && (
           <image
             href={brandArtworkUrl(variant.id)}
             x={placement.placement.x}
@@ -73,32 +77,32 @@ function ProductVisual({ shop, product, colorId, className = "" }: { shop: Publi
 export default function BrandStorefront({ shop }: { shop: PublicBrandShop }) {
   const preview = shop.presentation === "preview";
   const compact = shop.presentation === "embed";
-  const [collectionId, setCollectionId] = useState("All");
-  const [selectedId, setSelectedId] = useState("");
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [garmentId, setGarmentId] = useState("");
+  const garment = shop.garments.find((item) => item.brandGarmentId === garmentId);
   const [colorId, setColorId] = useState("");
+  const [frontDesignId, setFrontDesignId] = useState("");
+  const [backDesignId, setBackDesignId] = useState("");
+  const [previewSide, setPreviewSide] = useState<DesignSide>("front");
   const [sizes, setSizes] = useState<SizeQuantity[]>([]);
   const [customer, setCustomer] = useState({ name: "", email: "", phone: "" });
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const collection = shop.collections.find((item) => item.id === collectionId);
-  const visibleProducts = useMemo(() => {
-    const products = collection
-      ? shop.merchProducts.filter((item) => collection.merchProductIds.includes(item.id))
-      : shop.merchProducts;
-    return preview ? products : products.filter((item) => brandProductReadiness(item, shop.garments, shop.brandDesigns).ready);
-  }, [shop.merchProducts, shop.garments, shop.brandDesigns, collection, preview]);
+  const frontDesign = shop.brandDesigns.find((item) => item.id === frontDesignId);
+  const backDesign = shop.brandDesigns.find((item) => item.id === backDesignId);
 
-  const selected = shop.merchProducts.find((item) => item.id === selectedId);
-  const { garment, design, placement } = linksFor(shop, selected);
-  const availableColors = garment?.configuration.colors.filter((item) => selected?.configuration.colorIds.includes(item.id)) || [];
-  const color = availableColors.find((item) => item.id === colorId) || availableColors[0];
-  const variant = design ? chooseBrandVariant(design.variants, color as any) : null;
-  const totalQuantity = sizes.reduce((sum, item) => sum + item.quantity, 0);
-  const unitPrice = Number(selected?.retail_price || 0);
-  const totalPrice = unitPrice * totalQuantity;
+  const compatible = useMemo(
+    () => garment ? shop.brandDesigns.filter((design) => compatibleDesign(design, garment)) : [],
+    [shop.brandDesigns, garment]
+  );
+  const frontDesigns = compatible.filter((design) => designOffer(design).side === "front");
+  const backDesigns = compatible.filter((design) => designOffer(design).side === "back");
+  const unitPrice = garment ? builderUnitPrice(garment, frontDesign, backDesign) : 0;
+  const totalQty = sizes.reduce((sum, item) => sum + item.quantity, 0);
+  const total = unitPrice * totalQty;
+  const selectedColor = garment?.configuration.colors.find((item) => item.id === colorId) || garment?.configuration.colors[0];
 
   useEffect(() => {
     if (!compact) return;
@@ -107,33 +111,41 @@ export default function BrandStorefront({ shop }: { shop: PublicBrandShop }) {
     const observer = new ResizeObserver(send);
     observer.observe(document.body);
     return () => observer.disconnect();
-  }, [compact, detailOpen, selectedId]);
+  }, [compact, step, garmentId, frontDesignId, backDesignId]);
 
-  function openProduct(product: BrandMerchProduct) {
-    const links = linksFor(shop, product);
-    const colors = links.garment?.configuration.colors.filter((item) => product.configuration.colorIds.includes(item.id)) || [];
-    const sizeNames = links.garment?.configuration.sizes.filter((size) => product.configuration.sizes.includes(size)) || [];
-
-    setSelectedId(product.id);
-    setColorId(colors[0]?.id || "");
-    setSizes(sizeNames.map((size) => ({ size, quantity: 0 })));
+  function chooseGarment(item: BrandStoreProduct) {
+    const firstColor = item.configuration.colors.find((color) => color.active !== false) || item.configuration.colors[0];
+    setGarmentId(item.brandGarmentId);
+    setColorId(firstColor?.id || "");
+    setFrontDesignId("");
+    setBackDesignId("");
+    setPreviewSide("front");
+    setSizes(item.configuration.sizes.map((size) => ({ size, quantity: 0 })));
+    setStep(2);
     setError("");
-    setDetailOpen(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
-    if (compact) {
-      setTimeout(() => document.getElementById("brand-product-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 20);
+  function chooseDesign(design: BrandDesign) {
+    const offer = designOffer(design);
+    if (offer.side === "back") {
+      setBackDesignId((current) => current === design.id ? "" : design.id);
+      setPreviewSide("back");
+    } else {
+      setFrontDesignId((current) => current === design.id ? "" : design.id);
+      setPreviewSide("front");
     }
   }
 
   function updateSize(size: string, quantity: number) {
-    setSizes((current) => current.map((item) =>
-      item.size === size ? { ...item, quantity: Math.max(0, Math.floor(quantity || 0)) } : item
-    ));
+    setSizes((current) => current.map((item) => item.size === size
+      ? { ...item, quantity: Math.max(0, Math.floor(quantity || 0)) }
+      : item));
   }
 
-  async function renderPreview() {
-    if (!selected || !garment || !color || !variant || !placement) throw new Error("Product preview is incomplete.");
-
+  async function renderSide(side: DesignSide) {
+    if (!garment || !selectedColor) throw new Error("Choose a garment and color.");
+    const design = side === "front" ? frontDesign : backDesign;
     const canvas = document.createElement("canvas");
     canvas.width = W;
     canvas.height = H;
@@ -141,33 +153,47 @@ export default function BrandStorefront({ shop }: { shop: PublicBrandShop }) {
     ctx.fillStyle = "#f3f3ef";
     ctx.fillRect(0, 0, W, H);
 
-    const background = assetUrl(
-      placement.side === "back"
-        ? color.backImageUrl || garment.configuration.mockupImageUrl
-        : color.frontImageUrl || garment.configuration.mockupImageUrl
-    );
-
+    const background = garmentImage(garment, selectedColor.id, side);
     if (background) {
-      const image = await loadImage(background);
-      const scale = Math.min(W / image.width, H / image.height) * .92;
-      ctx.drawImage(image, (W - image.width * scale) / 2, (H - image.height * scale) / 2, image.width * scale, image.height * scale);
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error(`Unable to load ${side} garment mockup.`));
+        img.src = background;
+      });
+      const scale = Math.min(W / img.width, H / img.height) * .92;
+      ctx.drawImage(img, (W - img.width * scale) / 2, (H - img.height * scale) / 2, img.width * scale, img.height * scale);
     }
 
-    const art = await loadImage(brandArtworkUrl(variant.id));
-    ctx.drawImage(art, placement.placement.x, placement.placement.y, placement.placement.width, placement.placement.height);
+    if (design) {
+      const placement = lockedPlacementFor(design, garment);
+      const variant = designArtworkVariant(design, selectedColor);
+      if (placement && variant) {
+        const art = new Image();
+        art.crossOrigin = "anonymous";
+        await new Promise<void>((resolve, reject) => {
+          art.onload = () => resolve();
+          art.onerror = () => reject(new Error(`Unable to load ${side} design artwork.`));
+          art.src = brandArtworkUrl(variant.id);
+        });
+        ctx.drawImage(art, placement.placement.x, placement.placement.y, placement.placement.width, placement.placement.height);
+      }
+    }
 
     return await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Unable to render product mockup.")), "image/png", .95)
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Unable to create mockup.")), "image/png", .95)
     );
   }
 
   async function checkout() {
     setError("");
-    if (preview) return setError("Preview mode does not create real orders.");
-    if (!selected || !garment || !design || !placement || !variant || !color) return setError("This product is not fully configured.");
-    if (totalQuantity < 1) return setError("Choose at least one size.");
+    if (preview) return setError("Preview Mode does not create real orders.");
+    if (!garment || !selectedColor) return setError("Choose a garment.");
+    if (!frontDesign && !backDesign) return setError("Choose at least one design.");
+    if (totalQty < 1) return setError("Choose at least one size.");
     if (!customer.name.trim() || !customer.email.trim()) return setError("Enter your name and email.");
-    if (!shop.paymentReady) return setError("Checkout is not connected yet.");
+    if (!shop.paymentReady) return setError("Checkout is not connected.");
 
     setBusy(true);
     try {
@@ -176,8 +202,10 @@ export default function BrandStorefront({ shop }: { shop: PublicBrandShop }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shopSlug: shop.slug,
-          brandProductId: selected.id,
-          colorId: color.id,
+          brandGarmentId: garment.brandGarmentId,
+          colorId: selectedColor.id,
+          frontDesignId: frontDesign?.id || null,
+          backDesignId: backDesign?.id || null,
           sizes,
           customer,
           notes
@@ -186,202 +214,158 @@ export default function BrandStorefront({ shop }: { shop: PublicBrandShop }) {
       const data = await start.json();
       if (!start.ok) throw new Error(data.error || "Unable to create Brand order.");
 
-      const previewBlob = await renderPreview();
       const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         { auth: { persistSession: false } }
       );
 
-      const upload = data.previewUpload;
-      const uploaded = await supabase.storage
-        .from(upload.bucket)
-        .uploadToSignedUrl(upload.path, upload.token, previewBlob, { contentType: "image/png" });
-
-      if (uploaded.error) throw uploaded.error;
+      for (const side of ["front", "back"] as DesignSide[]) {
+        const upload = data.previewUploads?.[side];
+        if (!upload) continue;
+        const mockup = await renderSide(side);
+        const result = await supabase.storage
+          .from(upload.bucket)
+          .uploadToSignedUrl(upload.path, upload.token, mockup, { contentType: "image/png" });
+        if (result.error) throw result.error;
+      }
 
       const finish = await fetch("/api/designs/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ designId: data.designId })
       });
-
-      const completed = await finish.json();
-      if (!finish.ok) throw new Error(completed.error || "Unable to prepare secure checkout.");
-      window.location.href = completed.checkoutUrl;
+      const complete = await finish.json();
+      if (!finish.ok) throw new Error(complete.error || "Unable to prepare checkout.");
+      window.location.href = complete.checkoutUrl;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to continue to checkout.");
+      setError(caught instanceof Error ? caught.message : "Unable to continue.");
       setBusy(false);
     }
   }
 
+  if (!shop.active && !preview) {
+    return <main className="brand-builder-store"><section className="brand-builder-empty"><h1>{shop.business.name}</h1><p>This Brand store is currently unavailable.</p></section></main>;
+  }
+
   return (
-    <main
-      className={`brand-commerce-store ${compact ? "embed" : ""} ${preview ? "preview" : ""}`}
-      style={{
-        "--brand": shop.business.settings.primaryColor,
-        "--brand-text": shop.business.settings.textColor,
-        "--accent": shop.business.settings.accentColor,
-        "--surface": shop.business.settings.surfaceColor
-      } as React.CSSProperties}
-    >
-      {preview && (
-        <div className="brand-preview-banner">
-          <div><strong>PREVIEW MODE</strong><span>This is the private Brand storefront preview. Draft products are visible here but customers cannot purchase them.</span></div>
-          <a href="/dashboard/brand-storefront">Store controls</a>
+    <main className={`brand-builder-store ${compact ? "embed" : ""}`} style={{
+      "--brand": shop.business.settings.primaryColor,
+      "--brandText": shop.business.settings.textColor,
+      "--surface": shop.business.settings.surfaceColor
+    } as React.CSSProperties}>
+      {preview && <div className="builder-preview-banner"><strong>PREVIEW MODE</strong><span>Draft Brand experience · checkout disabled</span><a href="/dashboard/brand-storefront">Store controls</a></div>}
+
+      {!compact && <header className="builder-store-header">
+        <div>{shop.business.settings.logoUrl ? <img src={shop.business.settings.logoUrl} alt={shop.business.name}/> : <strong>{shop.business.name}</strong>}</div>
+        <span>Build Your Own</span>
+      </header>}
+
+      {!compact && <section className="builder-hero">
+        <p>{shop.business.settings.heroBadge || "BUILD YOUR OWN"}</p>
+        <h1>{shop.business.settings.headline || "Choose the garment. Choose the design. Make it yours."}</h1>
+        <span>{shop.business.settings.introduction || "Start with a garment, then add an approved Brand design and see the finished piece before checkout."}</span>
+      </section>}
+
+      <nav className="builder-steps">
+        <button className={step === 1 ? "active" : step > 1 ? "done" : ""} onClick={() => setStep(1)}><span>{step > 1 ? "✓" : "1"}</span><div><strong>Garment</strong><small>Choose your blank</small></div></button>
+        <i/>
+        <button className={step === 2 ? "active" : step > 2 ? "done" : ""} disabled={!garment} onClick={() => garment && setStep(2)}><span>{step > 2 ? "✓" : "2"}</span><div><strong>Design</strong><small>Build front & back</small></div></button>
+        <i/>
+        <button className={step === 3 ? "active" : ""} disabled={!garment || (!frontDesign && !backDesign)} onClick={() => garment && (frontDesign || backDesign) && setStep(3)}><span>3</span><div><strong>Order</strong><small>Sizes & checkout</small></div></button>
+      </nav>
+
+      {step === 1 && <section className="builder-step-panel garment-step">
+        <header><div><small>STEP 01</small><h2>Choose a garment</h2><p>The garment price is the base of your item. You will add a design next.</p></div></header>
+        <div className="builder-garment-grid">
+          {shop.garments.map((item) => {
+            const first = item.configuration.colors[0];
+            return <button key={item.brandGarmentId} onClick={() => chooseGarment(item)}>
+              <div className="garment-card-image">{first?.frontImageUrl || item.configuration.mockupImageUrl ? <img src={assetUrl(first?.frontImageUrl || item.configuration.mockupImageUrl)} alt={item.name}/> : <span>GARMENT</span>}</div>
+              <div className="garment-card-copy"><small>{item.configuration.customization.category}</small><h3>{item.name}</h3><p>{item.description}</p><div><strong>${garmentRetailPrice(item).toFixed(2)}</strong><span>{item.configuration.colors.length} colors · {item.configuration.sizes.length} sizes</span></div></div>
+            </button>;
+          })}
         </div>
-      )}
+      </section>}
 
-      {!compact && (
-        <header className="brand-store-header">
-          <div className="brand-mark">
-            {shop.business.settings.logoUrl
-              ? <img src={shop.business.settings.logoUrl} alt={shop.business.name} />
-              : <strong>{shop.business.name}</strong>}
+      {step === 2 && garment && <section className="builder-design-layout">
+        <div className="builder-live-preview">
+          <div className="preview-top">
+            <button onClick={() => setStep(1)}>← Change garment</button>
+            <div><button className={previewSide === "front" ? "active" : ""} onClick={() => setPreviewSide("front")}>Front</button><button className={previewSide === "back" ? "active" : ""} onClick={() => setPreviewSide("back")}>Back</button></div>
           </div>
-          <nav><a href="#shop">Shop</a>{shop.collections.slice(0, 3).map((item) => <button key={item.id} onClick={() => setCollectionId(item.id)}>{item.name}</button>)}</nav>
-          <span>Merchandise</span>
-        </header>
-      )}
-
-      {!compact && (
-        <section className="brand-store-hero">
-          <div>
-            <p>{shop.business.settings.heroBadge}</p>
-            <h1>{shop.business.settings.headline}</h1>
-            <span>{shop.business.settings.introduction}</span>
-            <a href="#shop">Shop merchandise ↓</a>
+          <Composite garment={garment} colorId={colorId} side={previewSide} design={previewSide === "front" ? frontDesign : backDesign}/>
+          <div className="preview-color-row">
+            <span>Garment color</span>
+            <div>{garment.configuration.colors.map((item) => <button key={item.id} className={selectedColor?.id === item.id ? "active" : ""} title={item.name} onClick={() => setColorId(item.id)}><i style={{background:item.hex}}/></button>)}</div>
+            <strong>{selectedColor?.name}</strong>
           </div>
-          {visibleProducts[0] && <ProductVisual shop={shop} product={visibleProducts[0]} className="hero-product" />}
-        </section>
-      )}
-
-      <section id="shop" className="brand-shop-section">
-        <header>
-          <div><small>MERCHANDISE</small><h2>{collection?.name || "Shop All"}</h2></div>
-          <strong>{visibleProducts.length} product{visibleProducts.length === 1 ? "" : "s"}</strong>
-        </header>
-
-        {shop.collections.length > 0 && (
-          <nav className="brand-collection-tabs">
-            <button className={collectionId === "All" ? "active" : ""} onClick={() => setCollectionId("All")}>All</button>
-            {shop.collections.map((item) => (
-              <button key={item.id} className={collectionId === item.id ? "active" : ""} onClick={() => setCollectionId(item.id)}>{item.name}</button>
-            ))}
-          </nav>
-        )}
-
-        {visibleProducts.length ? (
-          <div className="brand-product-grid">
-            {visibleProducts.map((product) => {
-              const state = brandProductReadiness(product, shop.garments, shop.brandDesigns);
-              const linked = linksFor(shop, product);
-              return (
-                <button key={product.id} className="brand-store-card" onClick={() => openProduct(product)}>
-                  <div className="card-art">
-                    <ProductVisual shop={shop} product={product} />
-                    {preview && <span className={state.ready ? "ready" : "issue"}>{product.active ? state.label : "DRAFT"}</span>}
-                    {product.configuration.badge && <em>{product.configuration.badge}</em>}
-                  </div>
-                  <div className="card-copy">
-                    <small>{linked.garment?.configuration.customization.category || "Brand Product"}</small>
-                    <h3>{product.name}</h3>
-                    <div><strong>${Number(product.retail_price || 0).toFixed(2)}</strong>{Number(product.compare_at_price || 0) > Number(product.retail_price || 0) && <del>${Number(product.compare_at_price).toFixed(2)}</del>}</div>
-                  </div>
-                </button>
-              );
-            })}
+          <div className="builder-price-summary">
+            <div><span>{garment.name}</span><b>${garmentRetailPrice(garment).toFixed(2)}</b></div>
+            {frontDesign && <div><span>{frontDesign.name} · {designPlacementLabel(frontDesign)}</span><b>+${designOffer(frontDesign).retailPrice.toFixed(2)}</b></div>}
+            {backDesign && <div><span>{backDesign.name} · Back</span><b>+${designOffer(backDesign).retailPrice.toFixed(2)}</b></div>}
+            <div className="total"><span>Price per item</span><b>${unitPrice.toFixed(2)}</b></div>
           </div>
-        ) : (
-          <div className="brand-store-empty">
-            <span>01</span>
-            <h2>{preview ? "No previewable Brand products yet." : "The collection is being prepared."}</h2>
-            <p>{preview ? "Build a product from a Brand garment, approved design, placement, colors, sizes, and retail price." : "Please check back shortly."}</p>
-            {preview && <a href="/dashboard/brand-products">Build Brand Product</a>}
-          </div>
-        )}
-      </section>
+        </div>
 
-      {selected && detailOpen && (
-        <div className={compact ? "brand-product-detail inline" : "brand-product-detail-backdrop"} onClick={(event) => { if (!compact && event.currentTarget === event.target) setDetailOpen(false); }}>
-          <section id="brand-product-detail" className="brand-product-detail">
-            <button className="detail-close" onClick={() => setDetailOpen(false)}>×</button>
+        <div className="builder-design-picker">
+          <header><small>STEP 02</small><h2>Add your design</h2><p>Choose a front design, a back design, or both. Selecting another design for the same side replaces the previous one.</p></header>
 
-            <div className="detail-visual-wrap">
-              <ProductVisual shop={shop} product={selected} colorId={color?.id} className="detail-visual" />
-              <div className="detail-visual-caption"><span>{garment?.name}</span><small>{placement ? `${placement.side} · ${placement.printSize}` : "Brand product"}</small></div>
-            </div>
-
-            <div className="detail-buy">
-              <div className="detail-heading">
-                <small>{garment?.configuration.customization.category || "MERCHANDISE"}</small>
-                <h2>{selected.name}</h2>
-                {selected.description && <p>{selected.description}</p>}
-                <div className="detail-price"><strong>${unitPrice.toFixed(2)}</strong>{Number(selected.compare_at_price || 0) > unitPrice && <del>${Number(selected.compare_at_price).toFixed(2)}</del>}</div>
-              </div>
-
-              {availableColors.length > 1 && (
-                <section className="detail-option">
-                  <header><strong>Color</strong><span>{color?.name}</span></header>
-                  <div className="detail-colors">
-                    {availableColors.map((item) => (
-                      <button key={item.id} className={item.id === color?.id ? "active" : ""} onClick={() => setColorId(item.id)} title={item.name}>
-                        <i style={{ background: item.hex }} /><span>{item.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              <section className="detail-option">
-                <header><strong>Size & quantity</strong><span>{totalQuantity} selected</span></header>
-                <div className="detail-sizes">
-                  {sizes.map((item) => (
-                    <label key={item.size}>
-                      <span>{item.size}</span>
-                      <div>
-                        <button onClick={() => updateSize(item.size, item.quantity - 1)}>−</button>
-                        <input type="number" min="0" value={item.quantity || ""} onChange={(event) => updateSize(item.size, Number(event.target.value))} />
-                        <button onClick={() => updateSize(item.size, item.quantity + 1)}>+</button>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </section>
-
-              <section className="detail-customer">
-                <input placeholder="Full name" value={customer.name} onChange={(event) => setCustomer({ ...customer, name: event.target.value })} />
-                <input type="email" placeholder="Email" value={customer.email} onChange={(event) => setCustomer({ ...customer, email: event.target.value })} />
-                <input placeholder="Phone (optional)" value={customer.phone} onChange={(event) => setCustomer({ ...customer, phone: event.target.value })} />
-                <textarea rows={2} placeholder="Order note (optional)" value={notes} onChange={(event) => setNotes(event.target.value)} />
-              </section>
-
-              {error && <div className="detail-error">{error}</div>}
-              <button className="detail-checkout" disabled={busy || totalQuantity < 1 || (!preview && !shop.paymentReady)} onClick={checkout}>
-                {preview ? "Preview mode · checkout disabled" : busy ? "Preparing checkout…" : !shop.paymentReady ? "Checkout unavailable" : totalQuantity ? `Checkout · $${totalPrice.toFixed(2)}` : "Choose size & quantity"}
-              </button>
-              <small className="detail-trust">{shop.business.settings.trustMessage}</small>
+          <section>
+            <div className="design-section-title"><div><strong>Front designs</strong><small>Heart Size or Full Size</small></div>{frontDesign && <button onClick={() => setFrontDesignId("")}>Remove front</button>}</div>
+            <div className="builder-design-grid">
+              {frontDesigns.map((design) => {
+                const offer = designOffer(design);
+                const variant = designArtworkVariant(design, selectedColor);
+                return <button key={design.id} className={frontDesignId === design.id ? "selected" : ""} onClick={() => chooseDesign(design)}>
+                  <div className="design-art">{variant ? <img src={brandArtworkUrl(variant.id)} alt={design.name}/> : <span>No artwork</span>}</div>
+                  <div><small>{offer.printSize === "heart" ? "HEART SIZE" : "FULL FRONT"}</small><h3>{design.name}</h3><strong>+${offer.retailPrice.toFixed(2)}</strong></div>
+                </button>;
+              })}
+              {!frontDesigns.length && <p className="design-empty">No front designs are approved for this garment yet.</p>}
             </div>
           </section>
-        </div>
-      )}
 
-      {!compact && <footer className="brand-store-footer"><strong>{shop.business.name}</strong><span>Powered by PrintFlow Brand Commerce</span></footer>}
+          {garment.configuration.customization.backEnabled !== false && <section>
+            <div className="design-section-title"><div><strong>Back designs</strong><small>Full Back</small></div>{backDesign && <button onClick={() => setBackDesignId("")}>Remove back</button>}</div>
+            <div className="builder-design-grid">
+              {backDesigns.map((design) => {
+                const offer = designOffer(design);
+                const variant = designArtworkVariant(design, selectedColor);
+                return <button key={design.id} className={backDesignId === design.id ? "selected" : ""} onClick={() => chooseDesign(design)}>
+                  <div className="design-art">{variant ? <img src={brandArtworkUrl(variant.id)} alt={design.name}/> : <span>No artwork</span>}</div>
+                  <div><small>FULL BACK</small><h3>{design.name}</h3><strong>+${offer.retailPrice.toFixed(2)}</strong></div>
+                </button>;
+              })}
+              {!backDesigns.length && <p className="design-empty">No back designs are approved for this garment yet.</p>}
+            </div>
+          </section>}
+
+          <button className="builder-primary" disabled={!frontDesign && !backDesign} onClick={() => setStep(3)}>Continue with this design · ${unitPrice.toFixed(2)}</button>
+        </div>
+      </section>}
+
+      {step === 3 && garment && (frontDesign || backDesign) && <section className="builder-review-layout">
+        <div className="review-mockups">
+          <div className="review-side-tabs"><button className={previewSide === "front" ? "active":""} onClick={() => setPreviewSide("front")}>Front</button><button className={previewSide === "back" ? "active":""} onClick={() => setPreviewSide("back")}>Back</button></div>
+          <Composite garment={garment} colorId={colorId} side={previewSide} design={previewSide === "front" ? frontDesign : backDesign}/>
+          <small>This mockup is saved with your order for production review.</small>
+        </div>
+        <div className="review-order">
+          <header><small>STEP 03</small><h2>Finish your order</h2><p>{garment.name} · {selectedColor?.name}</p></header>
+          <section><strong>Sizes & quantities</strong><div className="builder-size-grid">{sizes.map((item) => <label key={item.size}><span>{item.size}</span><div><button onClick={() => updateSize(item.size,item.quantity-1)}>−</button><input type="number" min="0" value={item.quantity||""} onChange={(e)=>updateSize(item.size,Number(e.target.value))}/><button onClick={()=>updateSize(item.size,item.quantity+1)}>+</button></div></label>)}</div></section>
+          <section className="order-contact"><strong>Contact</strong><input placeholder="Full name" value={customer.name} onChange={(e)=>setCustomer({...customer,name:e.target.value})}/><input type="email" placeholder="Email" value={customer.email} onChange={(e)=>setCustomer({...customer,email:e.target.value})}/><input placeholder="Phone (optional)" value={customer.phone} onChange={(e)=>setCustomer({...customer,phone:e.target.value})}/><textarea rows={2} placeholder="Order note (optional)" value={notes} onChange={(e)=>setNotes(e.target.value)}/></section>
+          <section className="final-price"><div><span>Garment</span><b>${garmentRetailPrice(garment).toFixed(2)}</b></div>{frontDesign&&<div><span>{frontDesign.name}</span><b>+${designOffer(frontDesign).retailPrice.toFixed(2)}</b></div>}{backDesign&&<div><span>{backDesign.name}</span><b>+${designOffer(backDesign).retailPrice.toFixed(2)}</b></div>}<div><span>Unit price</span><b>${unitPrice.toFixed(2)}</b></div><div><span>{totalQty} item{totalQty===1?"":"s"}</span><b>${total.toFixed(2)}</b></div></section>
+          {error && <div className="builder-error">{error}</div>}
+          <button className="builder-primary" disabled={busy || totalQty<1 || (!preview&&!shop.paymentReady)} onClick={checkout}>{preview?"Preview Mode · Checkout disabled":busy?"Preparing checkout…":`Checkout · $${total.toFixed(2)}`}</button>
+          <button className="builder-link" onClick={()=>setStep(2)}>← Edit designs</button>
+        </div>
+      </section>}
 
       <style jsx>{`
-        .brand-commerce-store{min-height:100vh;padding:14px;background:var(--surface);color:#171717}.brand-commerce-store.embed{min-height:0;padding:0;background:transparent}
-        .brand-preview-banner{position:sticky;top:0;z-index:90;display:flex;justify-content:space-between;gap:14px;align-items:center;max-width:1440px;margin:0 auto 8px;padding:9px 12px;border-radius:10px;background:#1f2947;color:#fff}.brand-preview-banner strong,.brand-preview-banner span{display:block}.brand-preview-banner strong{font-size:7px;letter-spacing:.1em}.brand-preview-banner span{margin-top:2px;font-size:7px;color:#cfd5e8}.brand-preview-banner a{color:#fff;font-size:8px;font-weight:800}
-        .brand-store-header{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;max-width:1440px;margin:0 auto;padding:12px 14px;border:1px solid rgba(0,0,0,.08);border-radius:12px;background:#fff}.brand-mark img{max-width:160px;max-height:34px}.brand-mark strong{font-size:15px}.brand-store-header nav{display:flex;gap:14px;align-items:center}.brand-store-header nav a,.brand-store-header nav button{border:0;background:transparent;color:#333;text-decoration:none;font-size:8px}.brand-store-header>span{text-align:right;font-size:7px;letter-spacing:.09em;text-transform:uppercase;color:#888}
-        .brand-store-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.7fr);gap:10px;max-width:1440px;margin:10px auto;background:#fff;border-radius:16px;overflow:hidden}.brand-store-hero>div:first-child{display:flex;flex-direction:column;justify-content:center;padding:clamp(28px,6vw,80px)}.brand-store-hero p{margin:0 0 8px;font-size:8px;font-weight:900;letter-spacing:.12em;color:var(--brand)}.brand-store-hero h1{max-width:760px;margin:0;font-size:clamp(45px,7vw,96px);line-height:.88;letter-spacing:-.055em}.brand-store-hero>div:first-child>span{max-width:600px;margin-top:15px;color:#676767;line-height:1.5}.brand-store-hero a{align-self:flex-start;margin-top:20px;color:#171717;font-size:9px;font-weight:850;text-decoration:none}.hero-product{height:100%;min-height:440px;background:#f1f1ed}
-        .brand-shop-section{max-width:1440px;margin:0 auto;padding:18px;border-radius:16px;background:rgba(255,255,255,.82)}.brand-shop-section>header{display:flex;justify-content:space-between;gap:16px;align-items:end}.brand-shop-section>header small{font-size:7px;font-weight:900;letter-spacing:.12em;color:#888}.brand-shop-section>header h2{margin:2px 0 0;font-size:28px}.brand-shop-section>header>strong{font-size:8px;color:#888}.brand-collection-tabs{display:flex;gap:5px;overflow:auto;margin:12px 0}.brand-collection-tabs button{padding:7px 10px;border:1px solid #deded9;border-radius:99px;background:#fff;color:#444;white-space:nowrap;font-size:8px}.brand-collection-tabs button.active{background:var(--brand);border-color:var(--brand);color:var(--brand-text)}
-        .brand-product-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.brand-store-card{min-width:0;padding:0;border:1px solid #e2e2dd;border-radius:12px;background:#fff;color:#171717;text-align:left;overflow:hidden}.brand-store-card:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(0,0,0,.06)}.card-art{position:relative}.card-art>span,.card-art>em{position:absolute;top:8px;padding:4px 6px;border-radius:99px;font-size:6px;font-style:normal;font-weight:900}.card-art>span{left:8px;background:#171717;color:#fff}.card-art>span.issue{background:#8e6427}.card-art>span.ready{background:#2b7b50}.card-art>em{right:8px;background:#fff;color:#171717}.card-copy{padding:10px}.card-copy small{font-size:6px;text-transform:uppercase;letter-spacing:.08em;color:#8a8a8a}.card-copy h3{min-height:31px;margin:3px 0 9px;font-size:12px;line-height:1.25}.card-copy>div{display:flex;gap:6px;align-items:baseline}.card-copy strong{font-size:14px}.card-copy del{font-size:8px;color:#999}
-        :global(.brand-product-visual){background:#f3f3ef}.brand-store-card :global(.brand-product-visual svg){display:block;width:100%}.hero-product :global(svg){display:block;width:100%;height:100%}
-        .brand-store-empty{display:grid;justify-items:center;padding:55px 20px;text-align:center}.brand-store-empty>span{display:grid;place-items:center;width:36px;height:36px;border-radius:99px;background:#171717;color:#fff;font-size:8px}.brand-store-empty h2{margin:12px 0 4px}.brand-store-empty p{max-width:520px;margin:0;color:#777}.brand-store-empty a{margin-top:12px;color:#171717;font-size:9px;font-weight:850}
-        .brand-product-detail-backdrop{position:fixed;inset:0;z-index:120;display:grid;place-items:center;padding:18px;background:rgba(12,14,18,.58);backdrop-filter:blur(5px)}.brand-product-detail{position:relative;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(330px,.7fr);width:min(1060px,100%);max-height:92vh;border-radius:18px;background:#fff;overflow:auto;box-shadow:0 30px 90px rgba(0,0,0,.3)}.brand-product-detail.inline{position:static;width:100%;max-height:none;margin-top:10px;border:1px solid #ddd;box-shadow:none}.detail-close{position:absolute;right:10px;top:10px;z-index:3;display:grid;place-items:center;width:30px;height:30px;border:0;border-radius:99px;background:#fff;font-size:18px;box-shadow:0 3px 12px rgba(0,0,0,.08)}.detail-visual-wrap{min-height:560px;background:#f3f3ef}.detail-visual :global(svg){display:block;width:100%;height:100%;max-height:650px}.detail-visual-caption{display:flex;justify-content:space-between;padding:10px 14px;font-size:7px;color:#777}.detail-buy{display:grid;align-content:start;gap:13px;padding:28px 24px}.detail-heading>small{font-size:7px;letter-spacing:.1em;color:#888}.detail-heading h2{margin:4px 0;font-size:30px;line-height:.98}.detail-heading p{margin:8px 0;color:#777;font-size:9px;line-height:1.5}.detail-price{display:flex;gap:7px;align-items:baseline;margin-top:9px}.detail-price strong{font-size:24px}.detail-price del{font-size:9px;color:#999}.detail-option{padding-top:12px;border-top:1px solid #eee}.detail-option>header{display:flex;justify-content:space-between;margin-bottom:8px}.detail-option>header strong{font-size:9px}.detail-option>header span{font-size:8px;color:#777}.detail-colors{display:flex;flex-wrap:wrap;gap:5px}.detail-colors button{display:flex;align-items:center;gap:5px;padding:6px 8px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#333;font-size:7px}.detail-colors button.active{border-color:#171717;box-shadow:inset 0 0 0 1px #171717}.detail-colors i{width:13px;height:13px;border:1px solid rgba(0,0,0,.15);border-radius:99px}.detail-sizes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.detail-sizes label{display:grid;gap:4px;padding:6px;border-radius:8px;background:#f4f4f0}.detail-sizes label>span{font-size:8px;font-weight:850}.detail-sizes label>div{display:grid;grid-template-columns:23px minmax(0,1fr) 23px}.detail-sizes button{border:0;background:#fff}.detail-sizes input{min-width:0;width:100%;box-sizing:border-box;border:0;text-align:center}.detail-customer{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-top:12px;border-top:1px solid #eee}.detail-customer input,.detail-customer textarea{width:100%;box-sizing:border-box}.detail-customer textarea{grid-column:1/-1}.detail-error{padding:8px;border-radius:8px;background:#fff0f0;color:#982f2f;font-size:8px}.detail-checkout{width:100%;padding:13px;border:0;border-radius:9px;background:var(--brand);color:var(--brand-text);font-weight:900}.detail-checkout:disabled{opacity:.45}.detail-trust{text-align:center;color:#888;font-size:6px}.brand-store-footer{display:flex;justify-content:space-between;max-width:1440px;margin:10px auto 0;padding:22px 8px;color:#666}.brand-store-footer strong{font-size:10px}.brand-store-footer span{font-size:7px}
-        .embed .brand-shop-section{padding:12px;border-radius:12px}.embed .brand-product-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.embed .brand-product-detail.inline{grid-template-columns:minmax(0,1fr) minmax(300px,.8fr)}
-        @media(max-width:980px){.brand-store-hero{grid-template-columns:1fr}.hero-product{min-height:360px}.brand-product-detail{grid-template-columns:1fr 1fr}.detail-visual-wrap{min-height:430px}}
-        @media(max-width:760px){.brand-commerce-store{padding:6px}.brand-store-header{grid-template-columns:1fr auto}.brand-store-header nav{display:none}.brand-store-hero>div:first-child{padding:35px 22px}.brand-store-hero h1{font-size:50px}.brand-product-grid,.embed .brand-product-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.brand-product-detail,.embed .brand-product-detail.inline{grid-template-columns:1fr}.detail-visual-wrap{min-height:0}.detail-buy{padding:18px 14px}.detail-customer{grid-template-columns:1fr}.detail-customer textarea{grid-column:auto}}
-        @media(max-width:480px){.brand-preview-banner{display:grid}.brand-product-grid,.embed .brand-product-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.card-copy{padding:8px}.card-copy h3{font-size:10px}.detail-sizes{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        .brand-builder-store{min-height:100vh;padding:14px;background:var(--surface,#f3f3ef);color:#171717}.brand-builder-store.embed{min-height:0;padding:0;background:transparent}.builder-preview-banner{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:1380px;margin:0 auto 8px;padding:9px 12px;border-radius:9px;background:#1f2947;color:#fff}.builder-preview-banner strong{font-size:7px;letter-spacing:.12em}.builder-preview-banner span{font-size:7px;color:#ccd2e3}.builder-preview-banner a{color:#fff;font-size:7px}.builder-store-header{display:flex;justify-content:space-between;align-items:center;max-width:1380px;margin:0 auto;padding:12px 14px;border-radius:12px;background:#fff}.builder-store-header img{max-height:34px;max-width:160px}.builder-store-header>span{font-size:7px;letter-spacing:.12em;color:#888}.builder-hero{max-width:1380px;margin:8px auto;padding:clamp(28px,6vw,70px);border-radius:16px;background:#fff}.builder-hero p{margin:0 0 8px;color:var(--brand);font-size:8px;font-weight:900;letter-spacing:.12em}.builder-hero h1{max-width:900px;margin:0;font-size:clamp(42px,6vw,78px);line-height:.92;letter-spacing:-.055em}.builder-hero>span{display:block;max-width:650px;margin-top:12px;color:#717171;line-height:1.5}.builder-steps{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;max-width:900px;margin:10px auto;padding:5px;border-radius:12px;background:#e9e9e4}.builder-steps>i{width:24px;height:1px;background:#c9c9c4}.builder-steps button{display:grid;grid-template-columns:26px 1fr;gap:7px;align-items:center;padding:8px;border:0;border-radius:8px;background:transparent;color:#777;text-align:left}.builder-steps button.active,.builder-steps button.done{background:#fff;color:#171717}.builder-steps button>span{display:grid;place-items:center;width:25px;height:25px;border-radius:99px;background:#d9d9d4;font-size:7px;font-weight:900}.builder-steps button.active>span{background:var(--brand);color:var(--brandText)}.builder-steps strong,.builder-steps small{display:block}.builder-steps strong{font-size:8px}.builder-steps small{font-size:6px}.builder-step-panel,.builder-design-layout,.builder-review-layout{max-width:1380px;margin:0 auto}.builder-step-panel{padding:18px;border-radius:15px;background:#fff}.builder-step-panel>header small,.builder-design-picker header small,.review-order header small{font-size:7px;font-weight:900;letter-spacing:.11em;color:#888}.builder-step-panel h2,.builder-design-picker h2,.review-order h2{margin:3px 0;font-size:27px}.builder-step-panel header p,.builder-design-picker header p,.review-order header p{margin:0;color:#777}.builder-garment-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.builder-garment-grid>button{padding:0;border:1px solid #e2e2dd;border-radius:12px;background:#fff;color:#171717;text-align:left;overflow:hidden}.garment-card-image{height:270px;background:#f3f3ef}.garment-card-image img{width:100%;height:100%;object-fit:contain}.garment-card-image span{display:grid;place-items:center;height:100%;color:#aaa}.garment-card-copy{padding:10px}.garment-card-copy small{font-size:6px;color:#888}.garment-card-copy h3{margin:3px 0;font-size:13px}.garment-card-copy p{min-height:28px;margin:3px 0 9px;color:#777;font-size:7px}.garment-card-copy>div{display:flex;justify-content:space-between;align-items:baseline}.garment-card-copy strong{font-size:15px}.garment-card-copy span{font-size:7px;color:#888}.builder-design-layout{display:grid;grid-template-columns:minmax(360px,.8fr) minmax(0,1.2fr);gap:10px;align-items:start}.builder-live-preview,.builder-design-picker,.review-mockups,.review-order{border-radius:15px;background:#fff}.builder-live-preview{position:sticky;top:10px;padding:10px}.preview-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}.preview-top>button,.preview-top div button{padding:6px 8px;border:0;border-radius:7px;background:#f1f1ed;font-size:7px}.preview-top div{display:flex;gap:4px}.preview-top div button.active{background:#171717;color:#fff}:global(.brand-builder-composite svg){display:block;width:100%;max-height:560px}.preview-color-row{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:8px 2px}.preview-color-row>span,.preview-color-row>strong{font-size:7px}.preview-color-row>div{display:flex;gap:4px;flex-wrap:wrap}.preview-color-row button{display:grid;place-items:center;width:22px;height:22px;border:1px solid #ddd;border-radius:99px;background:#fff}.preview-color-row button.active{border:2px solid #171717}.preview-color-row i{width:14px;height:14px;border-radius:99px;border:1px solid rgba(0,0,0,.15)}.builder-price-summary{padding:9px;border-radius:9px;background:#f4f4f0}.builder-price-summary>div{display:flex;justify-content:space-between;padding:4px 0;font-size:8px}.builder-price-summary .total{margin-top:4px;padding-top:8px;border-top:1px solid #ddd;font-weight:900}.builder-design-picker{padding:18px}.builder-design-picker>section{margin-top:18px;padding-top:15px;border-top:1px solid #eee}.design-section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.design-section-title strong,.design-section-title small{display:block}.design-section-title strong{font-size:10px}.design-section-title small{font-size:7px;color:#888}.design-section-title>button{border:0;background:transparent;color:#9a4d43;font-size:7px}.builder-design-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.builder-design-grid>button{padding:0;border:1px solid #e1e1dc;border-radius:10px;background:#fff;color:#171717;text-align:left;overflow:hidden}.builder-design-grid>button.selected{border-color:var(--brand);box-shadow:inset 0 0 0 1px var(--brand)}.design-art{height:150px;padding:15px;background:#f3f3ef}.design-art img{width:100%;height:100%;object-fit:contain}.builder-design-grid>button>div:last-child{padding:8px}.builder-design-grid small{font-size:6px;color:#888}.builder-design-grid h3{min-height:25px;margin:3px 0;font-size:10px}.builder-design-grid strong{font-size:10px}.design-empty{grid-column:1/-1;padding:18px;border-radius:9px;background:#f3f3ef;color:#777;font-size:8px}.builder-primary{width:100%;margin-top:15px;padding:12px;border:0;border-radius:9px;background:var(--brand);color:var(--brandText);font-weight:900}.builder-primary:disabled{opacity:.4}.builder-review-layout{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:10px;align-items:start}.review-mockups{position:sticky;top:10px;padding:10px}.review-side-tabs{display:flex;gap:4px;margin-bottom:6px}.review-side-tabs button{padding:6px 12px;border:0;border-radius:7px;background:#eee;font-size:7px}.review-side-tabs button.active{background:#171717;color:#fff}.review-mockups>small{display:block;padding:8px;color:#888;text-align:center;font-size:6px}.review-order{display:grid;gap:13px;padding:18px}.review-order>section{display:grid;gap:7px;padding-top:12px;border-top:1px solid #eee}.review-order>section>strong{font-size:9px}.builder-size-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.builder-size-grid label{display:grid;gap:4px;padding:6px;border-radius:8px;background:#f3f3ef}.builder-size-grid label>span{font-size:8px;font-weight:850}.builder-size-grid label>div{display:grid;grid-template-columns:22px 1fr 22px}.builder-size-grid button{border:0;background:#fff}.builder-size-grid input{min-width:0;width:100%;border:0;text-align:center}.order-contact input,.order-contact textarea{width:100%;box-sizing:border-box}.final-price>div{display:flex;justify-content:space-between;font-size:8px}.final-price>div:last-child{padding-top:8px;border-top:1px solid #ddd;font-size:11px}.builder-error{padding:8px;border-radius:7px;background:#fff0ef;color:#9a3830;font-size:8px}.builder-link{border:0;background:transparent;color:#777;font-size:7px}.brand-builder-empty{display:grid;place-items:center;min-height:60vh;text-align:center}.embed .builder-steps{margin-top:0}.embed .builder-step-panel,.embed .builder-design-layout,.embed .builder-review-layout{max-width:none}
+        @media(max-width:950px){.builder-design-layout,.builder-review-layout{grid-template-columns:1fr}.builder-live-preview,.review-mockups{position:static}.builder-garment-grid{grid-template-columns:repeat(2,1fr)}}
+        @media(max-width:650px){.brand-builder-store{padding:6px}.builder-store-header{padding:9px}.builder-hero{padding:30px 20px}.builder-hero h1{font-size:44px}.builder-steps{grid-template-columns:1fr 1fr 1fr}.builder-steps>i{display:none}.builder-steps button{grid-template-columns:22px 1fr}.builder-garment-grid{grid-template-columns:repeat(2,1fr);gap:5px}.garment-card-image{height:190px}.builder-design-grid{grid-template-columns:repeat(2,1fr)}.builder-design-picker{padding:12px}.builder-size-grid{grid-template-columns:repeat(2,1fr)}}
       `}</style>
     </main>
   );

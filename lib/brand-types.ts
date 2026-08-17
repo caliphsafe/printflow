@@ -23,8 +23,6 @@ export type BrandDesignVariant = {
   active: boolean;
 };
 
-
-
 export type BrandDesignPlacement = {
   id: string;
   brand_design_id: string;
@@ -36,11 +34,7 @@ export type BrandDesignPlacement = {
   height_inches?: number | null;
   surcharge: number;
   active: boolean;
-  configuration?: {
-    alignX?: "left" | "center" | "right";
-    alignY?: "top" | "center" | "bottom";
-    scalePercent?: number;
-  };
+  configuration?: Record<string, unknown>;
 };
 
 export type BrandLockedPlacement = {
@@ -85,6 +79,7 @@ export type BrandStoreProduct = CatalogProduct & {
   brandGarmentId: string;
   configuration: CatalogProduct["configuration"] & {
     colors: Array<ShirtColor & { contrastMode?: BrandContrastMode }>;
+    brandRetailPrice?: number;
   };
 };
 

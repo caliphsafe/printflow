@@ -1,15 +1,9 @@
 import { DEFAULT_CONFIGURATION, normalizePrintArea } from "@/lib/catalog";
-import type {
-  CatalogProduct,
-  DesignSide,
-  PrintArea,
-  PrintSize,
-  ProductConfiguration,
-  ShirtColor
-} from "@/lib/types";
+import type { CatalogProduct, DesignSide, PrintArea, PrintSize, ProductConfiguration, ShirtColor } from "@/lib/types";
 
 export type BrandGarmentSetup = {
   active: boolean;
+  retailPrice: number;
   defaultColorId?: string;
   activeColorIds: string[];
   sizes: string[];
@@ -41,16 +35,13 @@ function defaultZones() {
 
 export function defaultBrandGarmentSetup(product: CatalogProduct): BrandGarmentSetup {
   const activeColors = product.configuration.colors.filter((item) => item.active !== false);
-  const defaultColorId =
-    product.configuration.defaultColorId && activeColors.some((item) => item.id === product.configuration.defaultColorId)
-      ? product.configuration.defaultColorId
-      : activeColors[0]?.id;
-
+  const defaultColorId = product.configuration.defaultColorId && activeColors.some((item) => item.id === product.configuration.defaultColorId)
+    ? product.configuration.defaultColorId : activeColors[0]?.id;
   const descriptor = `${product.name} ${product.configuration.customization.category}`.toLowerCase();
   const headwear = /hat|cap|beanie|headwear|visor/.test(descriptor);
-
   return {
     active: false,
+    retailPrice: 0,
     defaultColorId,
     activeColorIds: activeColors.map((item) => item.id),
     sizes: [...product.configuration.sizes],
@@ -68,41 +59,25 @@ export function normalizeBrandGarmentSetup(value: unknown, product: CatalogProdu
   const fallback = defaultBrandGarmentSetup(product);
   const colorIds = product.configuration.colors.map((item) => item.id);
   const sizes = product.configuration.sizes;
-
   const activeColorIds = Array.isArray(source.activeColorIds)
-    ? source.activeColorIds.map(String).filter((id: string) => colorIds.includes(id))
-    : fallback.activeColorIds;
-
+    ? source.activeColorIds.map(String).filter((id: string) => colorIds.includes(id)) : fallback.activeColorIds;
   const activeSizes = Array.isArray(source.sizes)
-    ? source.sizes.map(String).filter((size: string) => sizes.includes(size))
-    : fallback.sizes;
-
+    ? source.sizes.map(String).filter((size: string) => sizes.includes(size)) : fallback.sizes;
   const printSizes = Array.isArray(source.printSizes)
-    ? source.printSizes.filter((item: unknown): item is PrintSize => item === "heart" || item === "full")
-    : fallback.printSizes;
-
+    ? source.printSizes.filter((item: unknown): item is PrintSize => item === "heart" || item === "full") : fallback.printSizes;
   const zones = object(source.zones);
-
   return {
     active: source.active === true,
-    defaultColorId:
-      typeof source.defaultColorId === "string" && activeColorIds.includes(source.defaultColorId)
-        ? source.defaultColorId
-        : activeColorIds[0],
+    retailPrice: Math.max(0, Number(source.retailPrice || 0)),
+    defaultColorId: typeof source.defaultColorId === "string" && activeColorIds.includes(source.defaultColorId)
+      ? source.defaultColorId : activeColorIds[0],
     activeColorIds,
     sizes: activeSizes.length ? activeSizes : fallback.sizes,
-    decorationMethods:
-      Array.isArray(source.decorationMethods) && source.decorationMethods.length
-        ? source.decorationMethods.map(String)
-        : fallback.decorationMethods,
+    decorationMethods: Array.isArray(source.decorationMethods) && source.decorationMethods.length ? source.decorationMethods.map(String) : fallback.decorationMethods,
     printSizes: printSizes.length ? printSizes : fallback.printSizes,
     frontEnabled: source.frontEnabled !== false,
     backEnabled: source.backEnabled === true,
-    colorContrast: Object.fromEntries(
-      Object.entries(object(source.colorContrast))
-        .filter(([, contrast]) => contrast === "light" || contrast === "dark")
-        .map(([id, contrast]) => [id, contrast as "light" | "dark"])
-    ),
+    colorContrast: Object.fromEntries(Object.entries(object(source.colorContrast)).filter(([, contrast]) => contrast === "light" || contrast === "dark")),
     zones: {
       frontHeartArea: normalizePrintArea(zones.frontHeartArea, fallback.zones.frontHeartArea),
       frontFullArea: normalizePrintArea(zones.frontFullArea, fallback.zones.frontFullArea),
@@ -115,23 +90,15 @@ export function normalizeBrandGarmentSetup(value: unknown, product: CatalogProdu
 export function applyBrandGarmentConfiguration(product: CatalogProduct, configuration: unknown): CatalogProduct | null {
   const setup = normalizeBrandGarmentSetup(configuration, product);
   if (!setup.active) return null;
-
-  const colors = product.configuration.colors
-    .filter((item) => setup.activeColorIds.includes(item.id))
-    .map((item) => {
-      const contrast = setup.colorContrast[item.id];
-      return {
-        ...item,
-        ...(contrast === "light" || contrast === "dark" ? { contrastMode: contrast } : {})
-      } as ShirtColor & { contrastMode?: "light" | "dark" };
-    });
-
+  const colors = product.configuration.colors.filter((item) => setup.activeColorIds.includes(item.id)).map((item) => {
+    const contrast = setup.colorContrast[item.id];
+    return { ...item, ...(contrast ? { contrastMode: contrast } : {}) } as ShirtColor & { contrastMode?: "light" | "dark" };
+  });
   const designModes = [
     ...(setup.frontEnabled ? ["front"] as const : []),
     ...(setup.backEnabled ? ["back"] as const : []),
     ...(setup.frontEnabled && setup.backEnabled ? ["front-back"] as const : [])
   ];
-
   const configurationNext: ProductConfiguration = {
     ...product.configuration,
     sizes: setup.sizes,
@@ -152,7 +119,7 @@ export function applyBrandGarmentConfiguration(product: CatalogProduct, configur
       backFullArea: setup.zones.backFullArea
     }
   };
-
+  (configurationNext as any).brandRetailPrice = setup.retailPrice;
   return { ...product, configuration: configurationNext };
 }
 

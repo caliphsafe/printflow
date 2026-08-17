@@ -3,17 +3,17 @@ import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { makeDesignDisplayId } from "@/lib/design-id";
 import { normalizeConfiguration } from "@/lib/catalog";
 import { applyBrandGarmentConfiguration } from "@/lib/brand-commerce";
-import { chooseBrandVariant } from "@/lib/brand-designs";
 import {
-  calculateBrandEconomics,
-  maxSupplierCostForOptions,
-  normalizeBrandProductConfiguration,
-  normalizeBrandRetailProfile,
-  resolvedBrandRetailPrice
-} from "@/lib/brand-retail";
+  builderUnitPrice,
+  compatibleDesign,
+  designArtworkVariant,
+  designOffer,
+  garmentRetailPrice,
+  lockedPlacementFor
+} from "@/lib/brand-builder";
 import { platformShopAccess } from "@/lib/shop-mode";
-import type { BrandDesignVariant, BrandLockedPlacement } from "@/lib/brand-types";
-import type { CatalogProduct, SizeQuantity } from "@/lib/types";
+import type { BrandDesign, BrandStoreProduct } from "@/lib/brand-types";
+import type { CatalogProduct, DesignSide, SizeQuantity } from "@/lib/types";
 
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status });
 
@@ -31,15 +31,8 @@ export async function POST(request: Request) {
     if (!shop) return fail("Brand store not found.", 404);
     if (!platformShopAccess(shop.settings).brandMerch) return fail("Brand commerce is not enabled.", 403);
 
-    const { data: brandBusiness } = await admin
-      .from("brand_business_profiles")
-      .select("settings")
-      .eq("shop_id", shop.id)
-      .maybeSingle();
-
-    if (brandBusiness?.settings?.active !== true) {
-      return fail("This Brand storefront is not published.", 403);
-    }
+    const { data: business } = await admin.from("brand_business_profiles").select("settings").eq("shop_id", shop.id).maybeSingle();
+    if (business?.settings?.active !== true) return fail("This Brand storefront is not published.", 403);
 
     const { data: subscription } = await admin
       .from("subscription_accounts")
@@ -49,69 +42,27 @@ export async function POST(request: Request) {
 
     if (subscription) {
       const status = String(subscription.status || "trialing");
-      const trialValid = status === "trialing" &&
-        (!subscription.current_period_end || new Date(subscription.current_period_end).getTime() > Date.now());
+      const trialValid = status === "trialing" && (!subscription.current_period_end || new Date(subscription.current_period_end).getTime() > Date.now());
+      if (!(["active", "pilot"].includes(status) || trialValid)) return fail("This storefront is temporarily unavailable.", 403);
 
-      if (!(["active", "pilot"].includes(status) || trialValid)) {
-        return fail("This storefront is temporarily unavailable.", 403);
-      }
-
-      const { data: plan } = await admin
-        .from("subscription_plans")
-        .select("order_limit")
-        .eq("code", subscription.plan_code)
-        .eq("active", true)
-        .maybeSingle();
-
+      const { data: plan } = await admin.from("subscription_plans").select("order_limit").eq("code", subscription.plan_code).eq("active", true).maybeSingle();
       if (plan?.order_limit) {
         const now = new Date();
         const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-        const { count } = await admin
-          .from("designs")
-          .select("id", { count: "exact", head: true })
-          .eq("organization_id", shop.organization_id)
-          .gte("created_at", monthStart);
-
-        if (Number(count || 0) >= Number(plan.order_limit)) {
-          return fail("This account has reached its monthly order capacity.", 403);
-        }
+        const { count } = await admin.from("designs").select("id", { count: "exact", head: true }).eq("organization_id", shop.organization_id).gte("created_at", monthStart);
+        if (Number(count || 0) >= Number(plan.order_limit)) return fail("This account has reached its monthly order capacity.", 403);
       }
     }
 
-    const brandProductId = String(body.brandProductId || "");
-    const { data: merchRow } = await admin
-      .from("brand_products")
-      .select("*")
-      .eq("id", brandProductId)
+    const garmentId = String(body.brandGarmentId || "");
+    const { data: garmentRow } = await admin
+      .from("brand_garments")
+      .select("id,source_catalog_product_id,active,configuration")
+      .eq("id", garmentId)
       .eq("shop_id", shop.id)
       .eq("active", true)
       .maybeSingle();
-
-    if (!merchRow) return fail("This Brand product is unavailable.", 404);
-
-    const [
-      { data: garmentRow },
-      { data: designRow },
-      { data: variants },
-      { data: retailRow }
-    ] = await Promise.all([
-      admin.from("brand_garments").select("id,source_catalog_product_id,active,configuration").eq("id", merchRow.brand_garment_id).eq("shop_id", shop.id).eq("active", true).maybeSingle(),
-      admin.from("brand_designs").select("*").eq("id", merchRow.brand_design_id).eq("shop_id", shop.id).eq("active", true).maybeSingle(),
-      admin.from("brand_design_variants").select("*").eq("brand_design_id", merchRow.brand_design_id).eq("shop_id", shop.id).eq("active", true),
-      admin.from("brand_retail_profiles").select("configuration").eq("shop_id", shop.id).maybeSingle()
-    ]);
-
-    if (!garmentRow || !designRow) return fail("This Brand product is not fully configured.");
-
-    const { data: ruleRow } = await admin
-      .from("brand_design_product_rules")
-      .select("catalog_product_id,configuration")
-      .eq("brand_design_id", merchRow.brand_design_id)
-      .eq("catalog_product_id", garmentRow.source_catalog_product_id)
-      .eq("active", true)
-      .maybeSingle();
-
-    if (!ruleRow) return fail("The approved design no longer matches this garment.");
+    if (!garmentRow) return fail("This garment is unavailable.", 404);
 
     const { data: sourceRow } = await admin
       .from("catalog_products")
@@ -119,261 +70,265 @@ export async function POST(request: Request) {
       .eq("id", garmentRow.source_catalog_product_id)
       .eq("shop_id", shop.id)
       .maybeSingle();
-
     if (!sourceRow) return fail("The source garment is unavailable.");
 
     const source: CatalogProduct = { ...sourceRow, configuration: normalizeConfiguration(sourceRow.configuration) };
-    const garment = applyBrandGarmentConfiguration(source, garmentRow.configuration);
-    if (!garment) return fail("The Brand garment is unavailable.");
+    const configured = applyBrandGarmentConfiguration(source, garmentRow.configuration);
+    if (!configured) return fail("This Brand garment is unavailable.");
+    const garment: BrandStoreProduct = { ...configured, brandGarmentId: garmentRow.id } as BrandStoreProduct;
 
-    const configuration = normalizeBrandProductConfiguration(merchRow.configuration, garment);
-    const color = garment.configuration.colors.find((item) => item.id === body.colorId && configuration.colorIds.includes(item.id));
-    if (!color) return fail("Choose an available product color.");
+    const color = garment.configuration.colors.find((item) => item.id === String(body.colorId || ""));
+    if (!color) return fail("Choose an available garment color.");
 
     const sizes: SizeQuantity[] = Array.isArray(body.sizes)
-      ? body.sizes.map((item: any) => ({
-          size: String(item.size),
-          quantity: Math.max(0, Math.floor(Number(item.quantity || 0)))
-        })).filter((item: SizeQuantity) => configuration.sizes.includes(item.size))
+      ? body.sizes.map((item: any) => ({ size: String(item.size), quantity: Math.max(0, Math.floor(Number(item.quantity || 0))) }))
+        .filter((item: SizeQuantity) => garment.configuration.sizes.includes(item.size))
       : [];
+    const quantity = sizes.reduce((sum, item) => sum + item.quantity, 0);
+    if (quantity < 1) return fail("Choose at least one item.");
 
-    const totalQuantity = sizes.reduce((sum, item) => sum + item.quantity, 0);
-    if (totalQuantity < 1) return fail("Choose at least one item.");
     if (!body.customer?.name?.trim() || !body.customer?.email?.trim()) return fail("Customer name and email are required.");
 
-    const placements = ruleRow.configuration?.placements || {};
-    const placement = placements[merchRow.placement_key] as BrandLockedPlacement | undefined;
-    if (!placement?.enabled) return fail("The approved product placement is unavailable.");
+    async function loadDesign(id: unknown): Promise<BrandDesign | undefined> {
+      const designId = String(id || "");
+      if (!designId) return undefined;
+      const [{ data: row }, { data: variants }, { data: rule }] = await Promise.all([
+        admin.from("brand_designs").select("*").eq("id", designId).eq("shop_id", shop.id).eq("active", true).maybeSingle(),
+        admin.from("brand_design_variants").select("*").eq("brand_design_id", designId).eq("shop_id", shop.id).eq("active", true),
+        admin.from("brand_design_product_rules").select("catalog_product_id,configuration,active").eq("brand_design_id", designId).eq("catalog_product_id", garment.id).eq("active", true).maybeSingle()
+      ]);
+      if (!row || !rule) return undefined;
+      return {
+        ...row,
+        variants: variants || [],
+        productIds: [garment.id],
+        productRules: [{ productId: garment.id, placements: rule.configuration?.placements || {} }]
+      } as BrandDesign;
+    }
 
-    const variant = chooseBrandVariant((variants || []) as BrandDesignVariant[], color as any);
-    if (!variant) return fail("Artwork is unavailable for this garment color.");
+    const [frontDesign, backDesign] = await Promise.all([loadDesign(body.frontDesignId), loadDesign(body.backDesignId)]);
+    if (!frontDesign && !backDesign) return fail("Choose at least one design.");
 
-    const retailProfile = normalizeBrandRetailProfile(retailRow?.configuration);
-    const maxBlankCost = maxSupplierCostForOptions(garment, configuration.colorIds, configuration.sizes);
+    if (frontDesign) {
+      const offer = designOffer(frontDesign);
+      if (offer.side !== "front" || !compatibleDesign(frontDesign, garment)) return fail("The selected front design is not approved for this garment.");
+      if (!designArtworkVariant(frontDesign, color)) return fail("The front design does not have artwork for this garment color.");
+    }
+    if (backDesign) {
+      const offer = designOffer(backDesign);
+      if (offer.side !== "back" || !compatibleDesign(backDesign, garment)) return fail("The selected back design is not approved for this garment.");
+      if (!designArtworkVariant(backDesign, color)) return fail("The back design does not have artwork for this garment color.");
+    }
 
-    const unitPrice = resolvedBrandRetailPrice({
-      profile: retailProfile,
-      pricingMode: merchRow.pricing_mode === "target_margin" ? "target_margin" : "manual",
-      manualRetailPrice: Number(merchRow.retail_price || 0),
-      targetMarginPercent: merchRow.target_margin_percent ? Number(merchRow.target_margin_percent) : retailProfile.defaultTargetMarginPercent,
-      supplierCost: maxBlankCost,
-      placement,
-      inkColors: configuration.inkColors,
-      stitchEstimate: configuration.stitchEstimate,
-      productionCostOverride: configuration.productionCostOverride
-    });
-
-    if (unitPrice <= 0) return fail("This product does not have a valid retail price.");
-    const totalPrice = Number((unitPrice * totalQuantity).toFixed(2));
+    const garmentPrice = garmentRetailPrice(garment);
+    if (garmentPrice <= 0) return fail("This garment does not have a customer price.");
+    const unitPrice = builderUnitPrice(garment, frontDesign, backDesign);
+    const totalPrice = Number((unitPrice * quantity).toFixed(2));
+    if (totalPrice <= 0) return fail("This order does not have a valid price.");
 
     const supplierItems: any[] = [];
-    let actualBlankCostTotal = 0;
+    let supplierGarmentCost = 0;
     const supplier = garment.configuration.supplier;
-
     if (supplier) {
       for (const size of sizes.filter((item) => item.quantity > 0)) {
-        const supplierVariant = supplier.variants.find((item) =>
-          item.active !== false &&
-          item.colorName === color.name &&
-          item.sizeName === size.size
-        );
-
-        if (!supplierVariant) {
-          return fail(`${color.name} / ${size.size} is currently unavailable from ${supplier.supplierName || supplier.provider}.`);
-        }
-
-        const unitCost = Number(supplierVariant.customerPrice || 0);
-        actualBlankCostTotal += unitCost * size.quantity;
-
+        const variant = supplier.variants.find((item) => item.active !== false && item.colorName === color.name && item.sizeName === size.size);
+        if (!variant) return fail(`${color.name} / ${size.size} is currently unavailable from ${supplier.supplierName || supplier.provider}.`);
+        supplierGarmentCost += Number(variant.customerPrice || 0) * size.quantity;
         supplierItems.push({
           provider: supplier.provider,
           supplierName: supplier.supplierName || supplier.provider,
           sourceMode: supplier.sourceMode || "live",
-          sku: supplierVariant.sku,
-          skuId: supplierVariant.skuId,
-          gtin: supplierVariant.gtin,
+          sku: variant.sku,
+          skuId: variant.skuId,
+          gtin: variant.gtin,
           brandName: supplier.brandName,
           styleName: supplier.styleName,
-          colorName: supplierVariant.colorName,
-          sizeName: supplierVariant.sizeName,
+          colorName: variant.colorName,
+          sizeName: variant.sizeName,
           quantity: size.quantity,
-          unitCost,
-          inventorySnapshot: supplierVariant.quantity,
+          unitCost: Number(variant.customerPrice || 0),
+          inventorySnapshot: variant.quantity,
           imageUrl: color.frontImageUrl || garment.configuration.mockupImageUrl || "",
           productId: garment.id
         });
       }
-    } else {
-      actualBlankCostTotal = Number(garment.configuration.manualUnitCost || 0) * totalQuantity;
     }
 
-    const actualBlankCostPerItem = totalQuantity ? actualBlankCostTotal / totalQuantity : maxBlankCost;
-    const economics = calculateBrandEconomics({
-      profile: retailProfile,
-      supplierCost: actualBlankCostPerItem,
-      placement,
-      retailPrice: unitPrice,
-      inkColors: configuration.inkColors,
-      stitchEstimate: configuration.stitchEstimate,
-      productionCostOverride: configuration.productionCostOverride
-    });
-
     const displayId = makeDesignDisplayId();
-    const previewPath = `${shop.id}/${displayId}/${placement.side}-brand-product-preview.png`;
-    const filename = String(variant.original_filename || `${designRow.slug}.png`);
-    const ext = filename.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
-    const productionCopyPath = `${shop.id}/${displayId}/${placement.side}-brand-original.${ext}`;
+    const sideData: Record<string, any> = {};
+    const previewUploads: Record<string, any> = {};
+    const copiedPaths: string[] = [];
+    let primaryOriginalPath = "";
+    let primaryPreviewPath = "";
+    let primaryFilename = "";
+    let primaryMime = "";
 
-    const sourceArtwork = await admin.storage.from("brand-artwork").download(variant.artwork_path);
-    if (sourceArtwork.error || !sourceArtwork.data) return fail("Unable to prepare Brand production artwork.", 500);
+    for (const side of ["front", "back"] as DesignSide[]) {
+      const design = side === "front" ? frontDesign : backDesign;
+      const previewPath = `${shop.id}/${displayId}/${side}-brand-builder-mockup.png`;
+      let originalPath = "";
+      let filename = "";
+      let mimeType = "image/svg+xml";
+      let placement: any = null;
+      let artworkId: string | null = null;
 
-    const copied = await admin.storage
-      .from("artwork")
-      .upload(productionCopyPath, sourceArtwork.data, {
-        contentType: variant.mime_type || "image/png",
-        upsert: false
-      });
+      if (design) {
+        placement = lockedPlacementFor(design, garment)!;
+        const artwork = designArtworkVariant(design, color)!;
+        filename = String(artwork.original_filename || `${design.slug}.png`);
+        const ext = filename.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+        originalPath = `${shop.id}/${displayId}/${side}-brand-original.${ext}`;
+        mimeType = artwork.mime_type || "image/png";
+        artworkId = artwork.id;
 
-    if (copied.error) return fail("Unable to prepare Brand production artwork.", 500);
+        const downloaded = await admin.storage.from("brand-artwork").download(artwork.artwork_path);
+        if (downloaded.error || !downloaded.data) return fail(`Unable to prepare ${side} production artwork.`, 500);
+        const uploaded = await admin.storage.from("artwork").upload(originalPath, downloaded.data, { contentType: mimeType, upsert: false });
+        if (uploaded.error) return fail(`Unable to save ${side} production artwork.`, 500);
+      } else {
+        filename = "no-design-selected.svg";
+        originalPath = `${shop.id}/${displayId}/${side}-no-design.svg`;
+        const blankSvg = new Blob(
+          [`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200"><rect width="100%" height="100%" fill="white"/><text x="300" y="100" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="24" fill="#222">No ${side} design selected</text></svg>`],
+          { type: "image/svg+xml" }
+        );
+        const uploaded = await admin.storage.from("artwork").upload(originalPath, blankSvg, { contentType: "image/svg+xml", upsert: false });
+        if (uploaded.error) return fail(`Unable to save ${side} production note.`, 500);
+      }
 
-    const brandSnapshot = {
-      brandProduct: {
-        id: merchRow.id,
-        name: merchRow.name,
-        slug: merchRow.slug,
-        retailUnitPrice: unitPrice,
-        pricingMode: merchRow.pricing_mode,
-        compareAtPrice: merchRow.compare_at_price
-      },
+      copiedPaths.push(originalPath);
+      const signed = await admin.storage.from("previews").createSignedUploadUrl(previewPath);
+      if (signed.error) return fail(`Unable to prepare ${side} mockup.`, 500);
+      previewUploads[side] = { bucket: "previews", path: previewPath, token: signed.data.token };
+
+      sideData[side] = {
+        originalPath,
+        previewPath,
+        filename,
+        mimeType,
+        placement: placement?.placement || null,
+        printSize: placement?.printSize || null,
+        garmentImageUrl: side === "back" ? color.backImageUrl : color.frontImageUrl,
+        locked: Boolean(design),
+        blankSide: !design,
+        brandDesignId: design?.id || null,
+        brandDesignVariantId: artworkId,
+        designName: design?.name || "No design selected",
+        designPrice: design ? designOffer(design).retailPrice : 0
+      };
+
+      if (!primaryOriginalPath && design) {
+        primaryOriginalPath = originalPath;
+        primaryPreviewPath = previewPath;
+        primaryFilename = filename;
+        primaryMime = mimeType;
+      }
+    }
+
+    const selectedDesigns = [frontDesign, backDesign].filter(Boolean) as BrandDesign[];
+    const snapshot = {
+      builderVersion: 3,
       garment: {
-        brandGarmentId: garmentRow.id,
+        brandGarmentId: garment.brandGarmentId,
         sourceCatalogProductId: garment.id,
         name: garment.name,
         colorId: color.id,
-        colorName: color.name
+        colorName: color.name,
+        retailPrice: garmentPrice
       },
-      design: {
-        id: designRow.id,
-        name: designRow.name,
-        variantId: variant.id,
-        variantType: variant.variant_type
-      },
-      placement: {
-        key: merchRow.placement_key,
-        side: placement.side,
-        printSize: placement.printSize,
-        decorationMethod: placement.decorationMethod,
-        widthInches: placement.widthInches,
-        heightInches: placement.heightInches,
-        placement: placement.placement
-      },
-      economics: {
-        supplierCostPerItem: economics.supplierCost,
-        productionCostPerItem: economics.productionCost,
-        packagingCostPerItem: economics.packagingCost,
-        fulfillmentCostPerItem: economics.fulfillmentCost,
-        paymentReservePerItem: economics.paymentReserve,
-        estimatedCostPerItem: economics.totalEstimatedCost,
-        grossProfitPerItem: economics.grossProfit,
-        estimatedMarginPercent: economics.marginPercent
-      }
+      designs: selectedDesigns.map((design) => ({
+        id: design.id,
+        name: design.name,
+        offer: designOffer(design),
+        placement: lockedPlacementFor(design, garment)
+      })),
+      unitPrice,
+      quantity,
+      totalPrice
     };
 
-    const sideData: Record<string, any> = {
-      [placement.side]: {
-        originalPath: productionCopyPath,
-        previewPath,
-        filename,
-        mimeType: variant.mime_type || "image/png",
-        placement: placement.placement,
-        printSize: placement.printSize,
-        garmentImageUrl: placement.side === "back" ? color.backImageUrl : color.frontImageUrl,
-        locked: true,
-        brandProductId: merchRow.id,
-        brandDesignId: designRow.id,
-        brandDesignVariantId: variant.id
+    const designMode = frontDesign && backDesign ? "front-back" : frontDesign ? "front" : "back";
+    const { data: order, error: orderError } = await admin.from("designs").insert({
+      organization_id: shop.organization_id,
+      shop_id: shop.id,
+      display_id: displayId,
+      status: "draft",
+      order_source: "brand",
+      brand_design_id: frontDesign?.id || backDesign?.id || null,
+      brand_design_variant_id: null,
+      brand_design_snapshot: snapshot,
+      customer_name: body.customer.name.trim(),
+      customer_email: body.customer.email.trim().toLowerCase(),
+      customer_phone: body.customer.phone?.trim() || null,
+      catalog_product_id: garment.id,
+      product_name: garment.name,
+      package_id: `brand-builder:${garment.brandGarmentId}`,
+      package_label: `${garment.name} · Custom Brand Design`,
+      package_quantity: quantity,
+      package_price: totalPrice,
+      shirt_color_id: color.id,
+      shirt_color_name: color.name,
+      print_location: designMode,
+      size_breakdown: sizes,
+      supplier_items: supplierItems,
+      customer_notes: String(body.notes || "").trim() || null,
+      original_artwork_path: primaryOriginalPath,
+      preview_path: primaryPreviewPath,
+      original_filename: primaryFilename,
+      original_mime_type: primaryMime,
+      checkout_url: `${new URL(request.url).origin}/order/${displayId}/success`,
+      design_sides: sideData,
+      design_configuration: {
+        orderSource: "brand",
+        brandBuilderVersion: 3,
+        designMode,
+        decorationMethod: selectedDesigns.map((d) => lockedPlacementFor(d, garment)?.decorationMethod).filter(Boolean).join(" + "),
+        printSizes: {
+          front: frontDesign ? designOffer(frontDesign).printSize : undefined,
+          back: backDesign ? "full" : undefined
+        },
+        quantity,
+        unitPrice,
+        garmentRetailPrice: garmentPrice,
+        supplierGarmentCost,
+        garmentSubtotal: Number((garmentPrice * quantity).toFixed(2)),
+        garmentMarkupAmount: Number((garmentPrice * quantity - supplierGarmentCost).toFixed(2)),
+        garmentMarkupPercent: supplierGarmentCost > 0 ? Number((((garmentPrice * quantity - supplierGarmentCost) / supplierGarmentCost) * 100).toFixed(2)) : 0,
+        designSelections: selectedDesigns.map((design) => ({
+          id: design.id,
+          name: design.name,
+          side: designOffer(design).side,
+          printSize: designOffer(design).printSize,
+          retailPrice: designOffer(design).retailPrice
+        })),
+        designAddOnTotalPerItem: selectedDesigns.reduce((sum, design) => sum + designOffer(design).retailPrice, 0),
+        printSubtotal: Number((selectedDesigns.reduce((sum, design) => sum + designOffer(design).retailPrice, 0) * quantity).toFixed(2)),
+        printLines: selectedDesigns.map((design) => ({
+          side: designOffer(design).side,
+          printSize: designOffer(design).printSize,
+          unitPrice: designOffer(design).retailPrice,
+          designName: design.name
+        })),
+        merchandiseSubtotal: totalPrice,
+        totalPrice,
+        productId: garment.id,
+        brandGarmentId: garment.brandGarmentId,
+        colorId: color.id,
+        lockedPlacement: true
       }
-    };
-
-    const { data: order, error: orderError } = await admin
-      .from("designs")
-      .insert({
-        organization_id: shop.organization_id,
-        shop_id: shop.id,
-        display_id: displayId,
-        status: "draft",
-        order_source: "brand",
-        brand_design_id: designRow.id,
-        brand_design_variant_id: variant.id,
-        brand_design_snapshot: brandSnapshot,
-        customer_name: body.customer.name.trim(),
-        customer_email: body.customer.email.trim().toLowerCase(),
-        customer_phone: body.customer.phone?.trim() || null,
-        catalog_product_id: garment.id,
-        product_name: merchRow.name,
-        package_id: `brand-product:${merchRow.id}`,
-        package_label: merchRow.name,
-        package_quantity: totalQuantity,
-        package_price: totalPrice,
-        shirt_color_id: color.id,
-        shirt_color_name: color.name,
-        print_location: placement.side,
-        size_breakdown: sizes,
-        supplier_items: supplierItems,
-        customer_notes: String(body.notes || "").trim() || null,
-        original_artwork_path: productionCopyPath,
-        preview_path: previewPath,
-        original_filename: filename,
-        original_mime_type: variant.mime_type || "image/png",
-        checkout_url: `${new URL(request.url).origin}/order/${displayId}/success`,
-        design_sides: sideData,
-        design_configuration: {
-          orderSource: "brand",
-          brandProductId: merchRow.id,
-          brandProductName: merchRow.name,
-          brandGarmentId: garmentRow.id,
-          designMode: placement.side,
-          decorationMethod: placement.decorationMethod,
-          printSizes: { [placement.side]: placement.printSize },
-          quantity: totalQuantity,
-          unitPrice,
-          merchandiseSubtotal: totalPrice,
-          setupFee: 0,
-          addOns: [],
-          addOnTotal: 0,
-          totalPrice,
-          productId: garment.id,
-          colorId: color.id,
-          lockedPlacement: true,
-          brandEconomics: {
-            estimatedCostPerItem: economics.totalEstimatedCost,
-            grossProfitPerItem: economics.grossProfit,
-            marginPercent: economics.marginPercent,
-            retailUnitPrice: unitPrice
-          }
-        }
-      })
-      .select("id,display_id")
-      .single();
+    }).select("id,display_id").single();
 
     if (orderError || !order) {
-      await admin.storage.from("artwork").remove([productionCopyPath]);
+      if (copiedPaths.length) await admin.storage.from("artwork").remove(copiedPaths);
       return fail(orderError?.message || "Unable to create Brand order.", 500);
     }
-
-    const preview = await admin.storage.from("previews").createSignedUploadUrl(previewPath);
-    if (preview.error) return fail("Unable to prepare Brand product preview.", 500);
 
     return NextResponse.json({
       designId: order.id,
       displayId: order.display_id,
       unitPrice,
       totalPrice,
-      previewUpload: {
-        bucket: "previews",
-        path: previewPath,
-        token: preview.data.token
-      }
+      previewUploads
     });
   } catch (caught) {
     return fail(caught instanceof Error ? caught.message : "Unexpected Brand checkout error.", 500);
