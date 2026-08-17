@@ -1,12 +1,15 @@
 /*
-  PrintFlow Storefront Theme System
-  Loaded AFTER storefront.css so printer branding is the final visual layer.
+  PrintFlow — Exact Storefront Surface Theme
 
-  Source variables are supplied by DesignerApp:
-    --brand          = Primary color
-    --brand-text     = Text/icons placed ON the primary color
-    --brand-accent   = Accent/highlight color
-    --brand-surface  = Storefront background/surface color
+  IMPORTANT:
+  --sf-surface is the exact printer-selected Storefront surface.
+  It is NEVER mixed with white for the page itself.
+
+  Existing variables supplied by DesignerApp:
+    --brand          Primary color
+    --brand-text     Text/icons placed on primary controls
+    --brand-accent   Accent color
+    --brand-surface  Exact storefront surface
 */
 
 .modern-customer-shell {
@@ -15,38 +18,52 @@
   --sf-accent: var(--brand-accent, #d8ff5f);
   --sf-surface: var(--brand-surface, #f4f4ef);
 
-  /* Derived neutrals preserve readability while still reflecting the shop surface. */
-  --sf-page: color-mix(in srgb, var(--sf-surface) 88%, white 12%);
-  --sf-panel: color-mix(in srgb, var(--sf-surface) 18%, white 82%);
-  --sf-panel-strong: color-mix(in srgb, var(--sf-surface) 8%, white 92%);
-  --sf-panel-soft: color-mix(in srgb, var(--sf-surface) 48%, white 52%);
-  --sf-image-stage: color-mix(in srgb, var(--sf-surface) 72%, white 28%);
-
+  /*
+    Fallback first, then modern relative-color override.
+    The relative-color rule automatically creates a light foreground on dark
+    storefronts and a dark foreground on light storefronts.
+  */
   --sf-ink: #151515;
-  --sf-muted: color-mix(in srgb, var(--sf-ink) 58%, var(--sf-surface) 42%);
-  --sf-faint: color-mix(in srgb, var(--sf-ink) 36%, var(--sf-surface) 64%);
-  --sf-line: color-mix(in srgb, var(--sf-ink) 12%, var(--sf-surface) 88%);
-  --sf-line-strong: color-mix(in srgb, var(--sf-ink) 21%, var(--sf-surface) 79%);
+  --sf-ink: oklch(
+    from var(--sf-surface)
+    clamp(0.12, calc(1.15 - l), 0.96)
+    0
+    0
+  );
 
-  --sf-primary-soft: color-mix(in srgb, var(--sf-primary) 10%, var(--sf-panel) 90%);
-  --sf-primary-medium: color-mix(in srgb, var(--sf-primary) 18%, var(--sf-panel) 82%);
-  --sf-accent-soft: color-mix(in srgb, var(--sf-accent) 20%, var(--sf-panel) 80%);
-  --sf-accent-medium: color-mix(in srgb, var(--sf-accent) 36%, var(--sf-panel) 64%);
-  --sf-shadow: 0 14px 40px color-mix(in srgb, var(--sf-primary) 7%, transparent);
+  --sf-muted: color-mix(in srgb, var(--sf-ink) 66%, var(--sf-surface) 34%);
+  --sf-faint: color-mix(in srgb, var(--sf-ink) 46%, var(--sf-surface) 54%);
 
+  /* Supporting UI is derived from the exact surface, not from white pages. */
+  --sf-panel: color-mix(in srgb, var(--sf-surface) 90%, var(--sf-ink) 10%);
+  --sf-panel-strong: color-mix(in srgb, var(--sf-surface) 94%, var(--sf-ink) 6%);
+  --sf-panel-soft: color-mix(in srgb, var(--sf-surface) 84%, var(--sf-ink) 16%);
+  --sf-image-stage: color-mix(in srgb, var(--sf-surface) 82%, var(--sf-ink) 18%);
+
+  --sf-line: color-mix(in srgb, var(--sf-ink) 17%, transparent);
+  --sf-line-strong: color-mix(in srgb, var(--sf-ink) 29%, transparent);
+
+  --sf-primary-soft: color-mix(in srgb, var(--sf-primary) 16%, var(--sf-surface) 84%);
+  --sf-primary-medium: color-mix(in srgb, var(--sf-primary) 26%, var(--sf-surface) 74%);
+  --sf-accent-soft: color-mix(in srgb, var(--sf-accent) 22%, var(--sf-surface) 78%);
+  --sf-accent-medium: color-mix(in srgb, var(--sf-accent) 38%, var(--sf-surface) 62%);
+
+  --sf-shadow: 0 14px 40px color-mix(in srgb, #000 15%, transparent);
+
+  min-height: 100vh;
   color: var(--sf-ink);
-  background:
-    radial-gradient(
-      circle at 8% 0%,
-      color-mix(in srgb, var(--sf-accent) 12%, transparent),
-      transparent 25rem
-    ),
-    radial-gradient(
-      circle at 96% 18%,
-      color-mix(in srgb, var(--sf-primary) 5%, transparent),
-      transparent 29rem
-    ),
-    var(--sf-page);
+
+  /*
+    This is intentionally literal.
+    If the printer saves #0B223B, the page itself is #0B223B.
+  */
+  background: var(--sf-surface) !important;
+}
+
+/* Make route/body edges inherit the exact surface rather than showing white. */
+html:has(.modern-customer-shell),
+body:has(.modern-customer-shell) {
+  background: var(--brand-surface, #f4f4ef);
 }
 
 /* ---------- Header ---------- */
@@ -54,8 +71,8 @@
 .modern-customer-shell .customer-header.modern {
   color: var(--sf-ink);
   border-bottom-color: var(--sf-line);
-  background: color-mix(in srgb, var(--sf-panel-strong) 91%, transparent);
-  box-shadow: 0 8px 30px color-mix(in srgb, var(--sf-primary) 4%, transparent);
+  background: color-mix(in srgb, var(--sf-surface) 96%, transparent);
+  box-shadow: 0 8px 30px color-mix(in srgb, #000 9%, transparent);
 }
 
 .modern-customer-shell .customer-header.modern small {
@@ -70,7 +87,7 @@
 .modern-customer-shell .customer-header.modern button {
   color: var(--sf-ink);
   border-color: var(--sf-line-strong);
-  background: var(--sf-panel-strong);
+  background: var(--sf-panel);
 }
 
 .modern-customer-shell .customer-header.modern button:hover {
@@ -83,7 +100,7 @@
 
 .modern-customer-shell .storefront-preview-banner {
   color: var(--sf-ink);
-  border-color: color-mix(in srgb, var(--sf-accent) 40%, var(--sf-line) 60%);
+  border-color: color-mix(in srgb, var(--sf-accent) 48%, var(--sf-line) 52%);
   background: var(--sf-accent-soft);
 }
 
@@ -96,12 +113,12 @@
 .modern-customer-shell .customer-progress-strip {
   color: var(--sf-muted);
   border-color: var(--sf-line);
-  background: color-mix(in srgb, var(--sf-panel) 88%, transparent);
-  box-shadow: 0 8px 25px color-mix(in srgb, var(--sf-primary) 3%, transparent);
+  background: var(--sf-panel);
+  box-shadow: 0 8px 25px color-mix(in srgb, #000 8%, transparent);
 }
 
 .modern-customer-shell .customer-progress-strip span.active {
-  color: var(--sf-primary);
+  color: var(--sf-ink);
 }
 
 .modern-customer-shell .customer-progress-strip span.complete {
@@ -114,7 +131,7 @@
 }
 
 .modern-customer-shell .customer-progress-strip i {
-  background: var(--sf-line);
+  background: var(--sf-line-strong);
 }
 
 /* ---------- Catalog intro ---------- */
@@ -128,25 +145,21 @@
 }
 
 .modern-customer-shell .customer-hero-badge {
-  color: var(--sf-ink);
-  border-color: color-mix(in srgb, var(--sf-accent) 40%, var(--sf-line) 60%);
-  background: var(--sf-accent-soft);
+  color: var(--sf-on-primary);
+  border-color: var(--sf-primary);
+  background: var(--sf-primary);
 }
 
 .modern-customer-shell .customer-trust-row span {
   color: var(--sf-muted);
 }
 
-.modern-customer-shell .customer-trust-row span::first-letter {
-  color: var(--sf-primary);
-}
-
 /* ---------- Search / categories ---------- */
 
 .modern-customer-shell .customer-catalog-toolbar {
   border-color: var(--sf-line);
-  background: color-mix(in srgb, var(--sf-panel) 88%, transparent);
-  box-shadow: 0 10px 30px color-mix(in srgb, var(--sf-primary) 4%, transparent);
+  background: var(--sf-panel);
+  box-shadow: 0 10px 30px color-mix(in srgb, #000 8%, transparent);
 }
 
 .modern-customer-shell .customer-catalog-toolbar input {
@@ -161,7 +174,7 @@
 
 .modern-customer-shell .customer-catalog-toolbar input:focus {
   border-color: var(--sf-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sf-primary) 13%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sf-primary) 20%, transparent);
 }
 
 .modern-customer-shell .customer-category-tabs button {
@@ -171,8 +184,8 @@
 }
 
 .modern-customer-shell .customer-category-tabs button:hover {
-  color: var(--sf-primary);
-  border-color: color-mix(in srgb, var(--sf-primary) 38%, var(--sf-line) 62%);
+  color: var(--sf-ink);
+  border-color: color-mix(in srgb, var(--sf-primary) 50%, var(--sf-line) 50%);
   background: var(--sf-primary-soft);
 }
 
@@ -180,7 +193,6 @@
   color: var(--sf-on-primary);
   border-color: var(--sf-primary);
   background: var(--sf-primary);
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--sf-primary) 16%, transparent);
 }
 
 /* ---------- Product cards ---------- */
@@ -188,27 +200,21 @@
 .modern-customer-shell .customer-product-card.modern {
   color: var(--sf-ink);
   border-color: var(--sf-line);
-  background: color-mix(in srgb, var(--sf-panel) 94%, transparent);
+  background: var(--sf-panel);
   box-shadow: var(--sf-shadow);
 }
 
 .modern-customer-shell .customer-product-card.modern:hover {
-  border-color: color-mix(in srgb, var(--sf-primary) 32%, var(--sf-line) 68%);
-  box-shadow: 0 19px 46px color-mix(in srgb, var(--sf-primary) 11%, transparent);
+  border-color: color-mix(in srgb, var(--sf-primary) 50%, var(--sf-line) 50%);
+  box-shadow: 0 19px 46px color-mix(in srgb, #000 19%, transparent);
 }
 
 .modern-customer-shell .customer-product-card.modern:focus-visible {
-  outline-color: color-mix(in srgb, var(--sf-primary) 45%, transparent);
+  outline-color: color-mix(in srgb, var(--sf-primary) 55%, transparent);
 }
 
 .modern-customer-shell .customer-product-card.modern > .customer-product-image {
-  background:
-    linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--sf-panel-strong) 72%, transparent),
-      transparent
-    ),
-    var(--sf-image-stage);
+  background: var(--sf-image-stage);
 }
 
 .modern-customer-shell .product-placeholder {
@@ -218,11 +224,10 @@
 .modern-customer-shell .product-card-arrow {
   color: var(--sf-on-primary);
   background: var(--sf-primary);
-  box-shadow: 0 7px 19px color-mix(in srgb, var(--sf-primary) 24%, transparent);
 }
 
 .modern-customer-shell .customer-product-card.modern > div:last-child > span:first-child {
-  color: var(--sf-primary);
+  color: var(--sf-accent);
 }
 
 .modern-customer-shell .customer-product-card h2,
@@ -240,9 +245,10 @@
   background: var(--sf-panel-soft);
 }
 
-/* ---------- Main designer ---------- */
+/* ---------- Designer stage ---------- */
 
 .modern-customer-shell .modern-stage-column {
+  color: var(--sf-ink);
   border-color: var(--sf-line);
   background: var(--sf-panel-soft);
 }
@@ -269,7 +275,7 @@
 }
 
 .modern-customer-shell .side-tabs.modern button i {
-  color: var(--sf-ink);
+  color: #111;
   background: var(--sf-accent);
 }
 
@@ -288,21 +294,18 @@
 .modern-customer-shell .design-stage.modern {
   border-color: var(--sf-line);
   background: var(--sf-image-stage);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--sf-primary) 9%, transparent);
+  box-shadow: 0 12px 32px color-mix(in srgb, #000 14%, transparent);
 }
 
 .modern-customer-shell .stage-upload.modern {
+  color: var(--sf-ink);
   border-top-color: var(--sf-line);
-  background: color-mix(in srgb, var(--sf-panel) 94%, transparent);
+  background: var(--sf-panel);
 }
 
 .modern-customer-shell .stage-upload.modern label {
   color: var(--sf-on-primary);
   background: var(--sf-primary);
-}
-
-.modern-customer-shell .stage-upload.modern label:hover {
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--sf-primary) 20%, transparent);
 }
 
 .modern-customer-shell .stage-upload.modern button {
@@ -311,20 +314,28 @@
   background: var(--sf-panel-strong);
 }
 
-/* ---------- Configuration / order panels ---------- */
+/*
+  Keep the actual garment/artwork canvas neutral.
+  Branding colors must not change the customer's production preview.
+*/
+.modern-customer-shell .design-stage svg > rect:first-child {
+  fill: #f6f6f3;
+}
+
+/* ---------- Configuration / order ---------- */
 
 .modern-customer-shell .designer-step-panel,
 .modern-customer-shell .modern-order-panel {
   color: var(--sf-ink);
   border-color: var(--sf-line);
-  background: color-mix(in srgb, var(--sf-panel) 94%, transparent);
-  box-shadow: 0 12px 35px color-mix(in srgb, var(--sf-primary) 5%, transparent);
+  background: var(--sf-panel);
+  box-shadow: 0 12px 35px color-mix(in srgb, #000 10%, transparent);
 }
 
 .modern-customer-shell .eyebrow,
 .modern-customer-shell .designer-step-heading .eyebrow,
 .modern-customer-shell .modern-order-panel .eyebrow {
-  color: var(--sf-primary);
+  color: var(--sf-accent);
 }
 
 .modern-customer-shell .designer-step-heading > p:last-child,
@@ -346,18 +357,28 @@
   color: var(--sf-ink);
 }
 
-/* Design mode cards */
-.modern-customer-shell .radio-card {
+/* Selection cards */
+
+.modern-customer-shell .radio-card,
+.modern-customer-shell .print-size-choice,
+.modern-customer-shell .modern-color-picker button,
+.modern-customer-shell .service-choice {
   color: var(--sf-ink);
   border-color: var(--sf-line);
   background: var(--sf-panel-strong);
 }
 
-.modern-customer-shell .radio-card:hover {
-  border-color: color-mix(in srgb, var(--sf-primary) 35%, var(--sf-line) 65%);
+.modern-customer-shell .radio-card:hover,
+.modern-customer-shell .print-size-choice:hover,
+.modern-customer-shell .modern-color-picker button:hover,
+.modern-customer-shell .service-choice:hover {
+  border-color: var(--sf-line-strong);
 }
 
-.modern-customer-shell .radio-card.selected {
+.modern-customer-shell .radio-card.selected,
+.modern-customer-shell .print-size-choice.selected,
+.modern-customer-shell .modern-color-picker button.selected,
+.modern-customer-shell .service-choice.selected {
   border-color: var(--sf-primary);
   background: var(--sf-primary-soft);
   box-shadow: inset 0 0 0 1px var(--sf-primary);
@@ -368,41 +389,13 @@
   background: var(--sf-primary);
 }
 
-/* Print size choices */
-.modern-customer-shell .print-size-choice {
-  color: var(--sf-ink);
-  border-color: var(--sf-line);
-  background: var(--sf-panel-strong);
+.modern-customer-shell .print-size-choice em,
+.modern-customer-shell .service-choice em {
+  color: var(--sf-accent);
 }
 
-.modern-customer-shell .print-size-choice.selected {
-  border-color: var(--sf-primary);
-  background: var(--sf-primary-soft);
-  box-shadow: inset 0 0 0 1px var(--sf-primary);
-}
+/* Form controls */
 
-.modern-customer-shell .print-size-choice em {
-  color: var(--sf-primary);
-}
-
-/* Garment colors */
-.modern-customer-shell .modern-color-picker button {
-  color: var(--sf-ink);
-  border-color: var(--sf-line);
-  background: var(--sf-panel-strong);
-}
-
-.modern-customer-shell .modern-color-picker button:hover {
-  border-color: var(--sf-line-strong);
-}
-
-.modern-customer-shell .modern-color-picker button.selected {
-  border-color: var(--sf-primary);
-  background: var(--sf-primary-soft);
-  box-shadow: inset 0 0 0 1px var(--sf-primary);
-}
-
-/* Selects / inputs */
 .modern-customer-shell .modern-select,
 .modern-customer-shell .ink-color-estimator select,
 .modern-customer-shell .modern-size-grid input,
@@ -419,28 +412,15 @@
 .modern-customer-shell .customer-details input:focus,
 .modern-customer-shell .customer-details textarea:focus {
   border-color: var(--sf-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sf-primary) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sf-primary) 18%, transparent);
 }
 
-/* Method / pricing helpers */
 .modern-customer-shell .ink-color-estimator,
 .modern-customer-shell .method-explainer,
 .modern-customer-shell .included-fee-card {
   color: var(--sf-ink);
   border-color: var(--sf-line);
   background: var(--sf-panel-soft);
-}
-
-/* Add-ons */
-.modern-customer-shell .service-choice {
-  color: var(--sf-ink);
-  border-color: var(--sf-line);
-  background: var(--sf-panel-strong);
-}
-
-.modern-customer-shell .service-choice.selected {
-  border-color: var(--sf-primary);
-  background: var(--sf-primary-soft);
 }
 
 .modern-customer-shell .service-choice .fake-check {
@@ -455,11 +435,8 @@
   background: var(--sf-primary);
 }
 
-.modern-customer-shell .service-choice em {
-  color: var(--sf-primary);
-}
+/* Quantities */
 
-/* Quantity */
 .modern-customer-shell .modern-size-grid label {
   color: var(--sf-ink);
   border-color: var(--sf-line);
@@ -488,7 +465,8 @@
   background: var(--sf-accent-soft);
 }
 
-/* Pricing card */
+/* Pricing */
+
 .modern-customer-shell .live-price-card {
   color: var(--sf-ink);
   border-color: var(--sf-line);
@@ -501,14 +479,15 @@
 
 .modern-customer-shell .live-price-card .unit b,
 .modern-customer-shell .live-price-card .total b {
-  color: var(--sf-primary);
+  color: var(--sf-accent);
 }
 
 .modern-customer-shell .live-price-card .total {
   border-top-color: var(--sf-line-strong);
 }
 
-/* Details */
+/* Contact */
+
 .modern-customer-shell .customer-details {
   color: var(--sf-ink);
   border-color: var(--sf-line);
@@ -519,42 +498,15 @@
   color: var(--sf-ink);
 }
 
-/* Warnings */
+/* Warnings / status */
+
 .modern-customer-shell .customer-payment-warning,
 .modern-customer-shell .customer-payment-warning.preview {
   color: var(--sf-ink);
-  border-color: color-mix(in srgb, var(--sf-accent) 48%, var(--sf-line) 52%);
+  border-color: color-mix(in srgb, var(--sf-accent) 45%, var(--sf-line) 55%);
   background: var(--sf-accent-soft);
 }
 
-/* Main customer CTA */
-.modern-customer-shell .designer-primary,
-.modern-customer-shell .designer-primary.full,
-.modern-customer-shell .designer-primary.modern {
-  color: var(--sf-on-primary);
-  border-color: var(--sf-primary);
-  background: var(--sf-primary);
-  box-shadow: 0 9px 24px color-mix(in srgb, var(--sf-primary) 18%, transparent);
-}
-
-.modern-customer-shell .designer-primary:hover:not(:disabled) {
-  filter: brightness(.94);
-  box-shadow: 0 12px 28px color-mix(in srgb, var(--sf-primary) 25%, transparent);
-}
-
-.modern-customer-shell .designer-primary:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--sf-accent) 55%, transparent);
-  outline-offset: 3px;
-}
-
-.modern-customer-shell .designer-primary:disabled {
-  color: color-mix(in srgb, var(--sf-ink) 45%, transparent);
-  border-color: var(--sf-line);
-  background: var(--sf-panel-soft);
-  box-shadow: none;
-}
-
-/* Submission */
 .modern-customer-shell .submission-status {
   color: var(--sf-ink);
   border-color: var(--sf-line);
@@ -566,17 +518,43 @@
   border-top-color: var(--sf-primary);
 }
 
+/* Primary customer actions */
+
+.modern-customer-shell .designer-primary,
+.modern-customer-shell .designer-primary.full,
+.modern-customer-shell .designer-primary.modern {
+  color: var(--sf-on-primary);
+  border-color: var(--sf-primary);
+  background: var(--sf-primary);
+  box-shadow: 0 9px 24px color-mix(in srgb, #000 18%, transparent);
+}
+
+.modern-customer-shell .designer-primary:hover:not(:disabled) {
+  filter: brightness(.94);
+}
+
+.modern-customer-shell .designer-primary:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--sf-accent) 58%, transparent);
+  outline-offset: 3px;
+}
+
+.modern-customer-shell .designer-primary:disabled {
+  color: var(--sf-faint);
+  border-color: var(--sf-line);
+  background: var(--sf-panel-soft);
+  box-shadow: none;
+}
+
 /* ---------- Help ---------- */
 
 .modern-customer-shell .storefront-help-trigger {
   color: var(--sf-on-primary);
   border-color: var(--sf-primary);
   background: var(--sf-primary);
-  box-shadow: 0 9px 24px color-mix(in srgb, var(--sf-primary) 18%, transparent);
 }
 
 .modern-customer-shell .storefront-help-trigger span {
-  color: var(--sf-ink);
+  color: #111;
   background: var(--sf-accent);
 }
 
@@ -584,7 +562,7 @@
   color: var(--sf-ink);
   border-color: var(--sf-line);
   background: var(--sf-panel-strong);
-  box-shadow: 0 20px 60px color-mix(in srgb, var(--sf-primary) 12%, transparent);
+  box-shadow: 0 20px 60px color-mix(in srgb, #000 22%, transparent);
 }
 
 .modern-customer-shell .storefront-help aside header button {
@@ -597,58 +575,33 @@
   background: var(--sf-primary);
 }
 
-/* ---------- Errors ---------- */
+/* Error */
 
 .modern-customer-shell .error-message {
-  border-color: color-mix(in srgb, #b42318 42%, var(--sf-line) 58%);
-  background: color-mix(in srgb, #fff1f1 72%, var(--sf-panel) 28%);
+  color: var(--sf-ink);
+  border-color: color-mix(in srgb, #ff5d52 48%, var(--sf-line) 52%);
+  background: color-mix(in srgb, #b42318 20%, var(--sf-surface) 80%);
 }
 
-/* ---------- Accessibility ---------- */
-
-.modern-customer-shell button:focus-visible,
-.modern-customer-shell a:focus-visible,
-.modern-customer-shell input:focus-visible,
-.modern-customer-shell select:focus-visible,
-.modern-customer-shell textarea:focus-visible {
-  outline-color: var(--sf-primary);
-}
-
-/*
-  Keep the garment/artwork canvas neutral. It represents production output,
-  so brand colors should not tint the customer's actual garment preview.
-*/
-.modern-customer-shell .design-stage svg > rect:first-child {
-  fill: #f6f6f3;
-}
-
-/* ---------- Mobile theme consistency ---------- */
+/* ---------- Mobile ---------- */
 
 @media (max-width: 680px) {
   .modern-customer-shell .customer-header.modern {
-    background: color-mix(in srgb, var(--sf-panel-strong) 95%, transparent);
+    background: color-mix(in srgb, var(--sf-surface) 97%, transparent);
   }
 
   .modern-customer-shell .customer-progress-strip,
-  .modern-customer-shell .customer-catalog-toolbar {
-    background: color-mix(in srgb, var(--sf-panel) 95%, transparent);
-  }
-
-  .modern-customer-shell .customer-product-card.modern {
-    background: var(--sf-panel-strong);
+  .modern-customer-shell .customer-catalog-toolbar,
+  .modern-customer-shell .customer-product-card.modern,
+  .modern-customer-shell .designer-step-panel,
+  .modern-customer-shell .modern-order-panel {
+    background: var(--sf-panel);
   }
 
   .modern-customer-shell .modern-stage-column {
     background: var(--sf-panel-soft);
   }
-
-  .modern-customer-shell .designer-step-panel,
-  .modern-customer-shell .modern-order-panel {
-    background: var(--sf-panel-strong);
-  }
 }
-
-/* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
   .modern-customer-shell *,
