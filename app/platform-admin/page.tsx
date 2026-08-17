@@ -1,4 +1,5 @@
 import PlatformAdminDashboard from "@/components/PlatformAdminDashboard";
+import PlatformDirectAccountCreator from "@/components/PlatformDirectAccountCreator";
 import { getPlatformAdminContext } from "@/lib/platform-admin";
 
 export const dynamic = "force-dynamic";
@@ -108,5 +109,12 @@ export default async function PlatformAdminPage() {
     return row;
   });
 
-  return <PlatformAdminDashboard initialRows={rows} />;
+  return (
+    <>
+      <div style={{ maxWidth: 1540, margin: "0 auto", padding: "24px 24px 0" }}>
+        <PlatformDirectAccountCreator />
+      </div>
+      <PlatformAdminDashboard initialRows={rows} />
+    </>
+  );
 }

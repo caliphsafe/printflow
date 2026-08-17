@@ -30,10 +30,14 @@ export async function POST(request: Request) {
   const email = String(body.email || "").trim().toLowerCase();
   const ownerName = String(body.ownerName || "").trim();
   const businessName = String(body.businessName || "").trim();
+  const password = String(body.password || "");
+  const directPasswordMode = body.creationMode === "password" || password.length > 0;
   const planCode = plans.includes(body.planCode) ? body.planCode : "starter";
   const trialDays = Math.max(0, Math.min(365, Number(body.trialDays || 14)));
+
   if (!/^\S+@\S+\.\S+$/.test(email)) return NextResponse.json({ error: "Enter a valid owner email." }, { status: 400 });
   if (!businessName) return NextResponse.json({ error: "Business name is required." }, { status: 400 });
+  if (directPasswordMode && password.length < 8) return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
 
   const existingUsers = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
   if (existingUsers.data.users.some((item) => item.email?.toLowerCase() === email)) {
@@ -43,16 +47,45 @@ export async function POST(request: Request) {
   const base = slugify(businessName);
   const shopSlug = await uniqueSlug(admin, base, "shops");
   const organizationSlug = await uniqueSlug(admin, `${base}-account`, "organizations");
-  const redirectTo = `${appOrigin(request)}/auth/callback?next=${encodeURIComponent("/account/setup-password")}&plan=${planCode}`;
-  const invite = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo,
-    data: { full_name: ownerName, business_name: businessName, selected_plan: planCode, platform_invited: true }
-  });
-  if (invite.error || !invite.data.user) return NextResponse.json({ error: invite.error?.message || "The invitation could not be sent." }, { status: 400 });
 
-  const invitedUser = invite.data.user;
+  const authResult = directPasswordMode
+    ? await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: ownerName,
+          business_name: businessName,
+          selected_plan: planCode,
+          platform_created: true
+        }
+      })
+    : await admin.auth.admin.inviteUserByEmail(email, {
+        redirectTo: `${appOrigin(request)}/auth/callback?next=${encodeURIComponent("/account/setup-password")}&plan=${planCode}`,
+        data: {
+          full_name: ownerName,
+          business_name: businessName,
+          selected_plan: planCode,
+          platform_invited: true
+        }
+      });
+
+  if (authResult.error || !authResult.data.user) {
+    return NextResponse.json(
+      { error: authResult.error?.message || (directPasswordMode ? "The login could not be created." : "The invitation could not be sent.") },
+      { status: 400 }
+    );
+  }
+
+  const accountUser = authResult.data.user;
+
   try {
-    const { data: organization, error: organizationError } = await admin.from("organizations").insert({ name: businessName, slug: organizationSlug, subscription_status: "trialing" }).select("id,name,slug").single();
+    const { data: organization, error: organizationError } = await admin
+      .from("organizations")
+      .insert({ name: businessName, slug: organizationSlug, subscription_status: "trialing" })
+      .select("id,name,slug")
+      .single();
+
     if (organizationError || !organization) throw organizationError || new Error("Organization could not be created.");
 
     const settings = normalizeShopSettings({
@@ -71,29 +104,51 @@ export async function POST(request: Request) {
       upload: { maxBytes: 500 * 1024 * 1024 }
     });
 
-    const { data: shop, error: shopError } = await admin.from("shops").insert({
-      organization_id: organization.id,
-      slug: shopSlug,
-      name: businessName,
-      settings,
-      active: false,
-      onboarding_state: { step: "business", invitedByPlatform: true }
-    }).select("id,slug,name").single();
+    const { data: shop, error: shopError } = await admin
+      .from("shops")
+      .insert({
+        organization_id: organization.id,
+        slug: shopSlug,
+        name: businessName,
+        settings,
+        active: false,
+        onboarding_state: {
+          step: "business",
+          invitedByPlatform: !directPasswordMode,
+          createdByPlatform: directPasswordMode
+        }
+      })
+      .select("id,slug,name")
+      .single();
+
     if (shopError || !shop) throw shopError || new Error("Shop could not be created.");
 
     const end = new Date(Date.now() + trialDays * 86400000).toISOString();
     const results = await Promise.all([
-      admin.from("organization_members").insert({ organization_id: organization.id, user_id: invitedUser.id, role: "owner" }),
+      admin.from("organization_members").insert({ organization_id: organization.id, user_id: accountUser.id, role: "owner" }),
       admin.from("shop_pricing_profiles").insert({ organization_id: organization.id, shop_id: shop.id, configuration: DEFAULT_PRICING_PROFILE }),
       admin.from("subscription_accounts").insert({ organization_id: organization.id, provider: "manual", plan_code: planCode, status: "trialing", current_period_end: end })
     ]);
+
     const setupError = results.find((result: any) => result.error)?.error;
     if (setupError) throw setupError;
 
-    await admin.from("platform_admin_actions").insert({ organization_id: organization.id, admin_email: user.email || "platform-admin", action: "account_invited", details: { email, ownerName, businessName, planCode, trialDays } });
-    return NextResponse.json({ ok: true, organizationId: organization.id, shopId: shop.id, shopSlug: shop.slug, invitedEmail: email });
+    await admin.from("platform_admin_actions").insert({
+      organization_id: organization.id,
+      admin_email: user.email || "platform-admin",
+      action: directPasswordMode ? "account_created_with_password" : "account_invited",
+      details: { email, ownerName, businessName, planCode, trialDays }
+    });
+
+    return NextResponse.json({
+      ok: true,
+      organizationId: organization.id,
+      shopId: shop.id,
+      shopSlug: shop.slug,
+      ...(directPasswordMode ? { createdEmail: email } : { invitedEmail: email })
+    });
   } catch (caught) {
-    await admin.auth.admin.deleteUser(invitedUser.id).catch(() => undefined);
+    await admin.auth.admin.deleteUser(accountUser.id).catch(() => undefined);
     return NextResponse.json({ error: caught instanceof Error ? caught.message : "The account could not be created." }, { status: 400 });
   }
 }
