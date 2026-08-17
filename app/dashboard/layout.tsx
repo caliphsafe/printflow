@@ -6,39 +6,58 @@ import DashboardNav from "@/components/DashboardNav";
 import DashboardHelp from "@/components/DashboardHelp";
 import { getAdminContext } from "@/lib/admin-data";
 import { isPlatformAdmin } from "@/lib/platform-admin";
+import { shopAccountMode } from "@/lib/shop-mode";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
   const { organization, shop } = await getAdminContext();
   const platformAdmin = await isPlatformAdmin(user.email);
   if (!organization || !shop) redirect("/onboarding");
+
+  const accountMode = shopAccountMode(shop.settings);
+  const previewLabel = accountMode === "brand" ? "Store preview" : "Preview";
 
   return (
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <div className="sidebar-top">
-          <Link href="/dashboard" className="admin-brand"><span>PF</span><div><strong>PRINTFLOW</strong><small>Shop OS</small></div></Link>
-          <div className="shop-switcher"><span className="shop-avatar">{shop?.name?.slice(0,1).toUpperCase() || "P"}</span><div><strong>{shop?.name || "PrintFlow shop"}</strong><small>{organization?.name || "Pilot workspace"}</small></div></div>
-          <DashboardNav />
+          <Link href="/dashboard" className="admin-brand">
+            <span>PF</span>
+            <div><strong>PRINTFLOW</strong><small>{accountMode === "brand" ? "Brand OS" : accountMode === "hybrid" ? "Commerce OS" : "Shop OS"}</small></div>
+          </Link>
+          <div className="shop-switcher">
+            <span className="shop-avatar">{shop?.name?.slice(0,1).toUpperCase() || "P"}</span>
+            <div><strong>{shop?.name || "PrintFlow shop"}</strong><small>{organization?.name || "Pilot workspace"}</small></div>
+          </div>
+          <DashboardNav accountMode={accountMode}/>
         </div>
+
         <div className="sidebar-footer">
-          <div className="account-chip"><span>{user.email?.slice(0,1).toUpperCase()}</span><div><strong>{user.email?.split("@")[0]}</strong><small>{user.email}</small></div></div>
+          <div className="account-chip">
+            <span>{user.email?.slice(0,1).toUpperCase()}</span>
+            <div><strong>{user.email?.split("@")[0]}</strong><small>{user.email}</small></div>
+          </div>
           {platformAdmin && <Link className="platform-admin-link" href="/platform-admin">Platform admin</Link>}
           <SignOutButton />
         </div>
       </aside>
+
       <div className="admin-mobile-bar">
         <Link href="/dashboard" className="mobile-brand">PRINTFLOW</Link>
         <div className="admin-mobile-actions">
-          <a href="/preview/storefront" target="_blank" rel="noreferrer">Preview</a>
+          <a href="/preview/storefront" target="_blank" rel="noreferrer">{previewLabel}</a>
           <details className="admin-mobile-menu">
             <summary>Menu</summary>
             <div>
-              <DashboardNav />
+              <DashboardNav accountMode={accountMode}/>
               <div className="mobile-account-panel">
-                <div className="account-chip"><span>{user.email?.slice(0,1).toUpperCase()}</span><div><strong>{user.email?.split("@")[0]}</strong><small>{user.email}</small></div></div>
+                <div className="account-chip">
+                  <span>{user.email?.slice(0,1).toUpperCase()}</span>
+                  <div><strong>{user.email?.split("@")[0]}</strong><small>{user.email}</small></div>
+                </div>
                 {platformAdmin && <Link className="platform-admin-link" href="/platform-admin">Platform admin</Link>}
                 <SignOutButton />
               </div>
@@ -46,6 +65,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </details>
         </div>
       </div>
+
       <main className="admin-main">{children}</main>
       <DashboardHelp />
     </div>
