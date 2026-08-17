@@ -108,62 +108,69 @@ export async function POST(request: Request) {
   }
 
   await supabase.from("brand_design_product_rules").delete().eq("brand_design_id", designId);
-  const productIds = Array.from(new Set((Array.isArray(input.productIds) ? input.productIds : []).map(String)));
 
-  if (productIds.length) {
-    const ruleResult = await supabase.from("brand_design_product_rules").insert(
-      productIds.map((catalog_product_id) => ({
+  const productRules = Array.isArray(input.productRules) ? input.productRules : [];
+  if (productRules.length) {
+    const rows = productRules
+      .filter((rule: any) => rule?.productId)
+      .map((rule: any) => ({
         organization_id: membership.organization_id,
         shop_id: shop.id,
         brand_design_id: designId,
-        catalog_product_id,
+        catalog_product_id: String(rule.productId),
         active: true,
-        configuration: {}
-      }))
-    );
-    if (ruleResult.error) return NextResponse.json({ error: ruleResult.error.message }, { status: 400 });
+        configuration: {
+          placements: rule.placements && typeof rule.placements === "object" ? rule.placements : {}
+        }
+      }));
+
+    if (rows.length) {
+      const ruleResult = await supabase.from("brand_design_product_rules").insert(rows);
+      if (ruleResult.error) {
+        return NextResponse.json({ error: ruleResult.error.message }, { status: 400 });
+      }
+    }
   }
 
   const contrastUpdates = Array.isArray(input.contrastUpdates) ? input.contrastUpdates : [];
-  if (contrastUpdates.length) {
-    const currentSettings = shop.settings && typeof shop.settings === "object"
-      ? shop.settings as Record<string, any>
+  for (const update of contrastUpdates) {
+    const productId = String(update.productId || "");
+    if (!productId) continue;
+
+    const { data: garment } = await supabase
+      .from("brand_garments")
+      .select("id,configuration")
+      .eq("shop_id", shop.id)
+      .eq("source_catalog_product_id", productId)
+      .maybeSingle();
+
+    if (!garment) continue;
+
+    const configuration = garment.configuration && typeof garment.configuration === "object"
+      ? garment.configuration as Record<string, any>
       : {};
+    const nextContrast = { ...(configuration.colorContrast || {}) };
 
-    const nextMap: Record<string, Record<string, "light" | "dark">> = {
-      ...(currentSettings.brandColorContrast || {})
-    };
+    for (const color of Array.isArray(update.colors) ? update.colors : []) {
+      const colorId = String(color.id || "");
+      if (!colorId) continue;
 
-    for (const update of contrastUpdates) {
-      const productId = String(update.productId || "");
-      if (!productId) continue;
-
-      const currentProduct = { ...(nextMap[productId] || {}) };
-
-      for (const color of Array.isArray(update.colors) ? update.colors : []) {
-        const colorId = String(color.id || "");
-        if (!colorId) continue;
-
-        if (color.contrastMode === "light" || color.contrastMode === "dark") {
-          currentProduct[colorId] = color.contrastMode;
-        } else {
-          delete currentProduct[colorId];
-        }
+      if (color.contrastMode === "light" || color.contrastMode === "dark") {
+        nextContrast[colorId] = color.contrastMode;
+      } else {
+        delete nextContrast[colorId];
       }
-
-      nextMap[productId] = currentProduct;
     }
 
-    const updatedShop = await supabase
-      .from("shops")
+    const updated = await supabase
+      .from("brand_garments")
       .update({
-        settings: { ...currentSettings, brandColorContrast: nextMap },
-        updated_at: new Date().toISOString()
+        configuration: { ...configuration, colorContrast: nextContrast }
       })
-      .eq("id", shop.id);
+      .eq("id", garment.id);
 
-    if (updatedShop.error) {
-      return NextResponse.json({ error: updatedShop.error.message }, { status: 400 });
+    if (updated.error) {
+      return NextResponse.json({ error: updated.error.message }, { status: 400 });
     }
   }
 

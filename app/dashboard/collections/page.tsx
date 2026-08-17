@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import BrandCollectionsManager from "@/components/BrandCollectionsManager";
 import { getAdminContext } from "@/lib/admin-data";
 import { isBrandMode, shopAccountMode } from "@/lib/shop-mode";
+import { normalizeConfiguration } from "@/lib/catalog";
+import { applyBrandGarmentConfiguration } from "@/lib/brand-commerce";
 
 export default async function CollectionsPage() {
   const { supabase, shop } = await getAdminContext();
@@ -13,13 +15,15 @@ export default async function CollectionsPage() {
     { data: designLinks },
     { data: productLinks },
     { data: designs },
-    { data: products }
+    { data: products },
+    { data: brandGarments }
   ] = await Promise.all([
     supabase.from("brand_collections").select("id,name,slug,description,active,featured,sort_order").eq("shop_id", shop.id).order("sort_order").order("created_at"),
     supabase.from("brand_collection_designs").select("collection_id,brand_design_id"),
     supabase.from("brand_collection_products").select("collection_id,catalog_product_id"),
     supabase.from("brand_designs").select("id,name").eq("shop_id", shop.id).order("name"),
-    supabase.from("catalog_products").select("id,name").eq("shop_id", shop.id).eq("active", true).order("name")
+    supabase.from("catalog_products").select("id,name,slug,description,active,configuration").eq("shop_id", shop.id).order("name"),
+    supabase.from("brand_garments").select("source_catalog_product_id,configuration").eq("shop_id", shop.id).eq("active", true)
   ]);
 
   const rows = (collections || []).map((item: any) => ({
@@ -37,7 +41,18 @@ export default async function CollectionsPage() {
           <p>Build customer-facing drops from the same approved garments and designs already in PrintFlow.</p>
         </div>
       </header>
-      <BrandCollectionsManager initial={rows as any} designs={(designs || []) as any} products={(products || []) as any} />
+      <BrandCollectionsManager
+        initial={rows as any}
+        designs={(designs || []) as any}
+        products={(products || [])
+          .map((item: any) => ({ ...item, configuration: normalizeConfiguration(item.configuration) }))
+          .map((item: any) => {
+            const setup = (brandGarments || []).find((row: any) => row.source_catalog_product_id === item.id);
+            return setup ? applyBrandGarmentConfiguration(item, setup.configuration) : null;
+          })
+          .filter(Boolean)
+          .map((item: any) => ({ id: item.id, name: item.name })) as any}
+      />
     </>
   );
 }

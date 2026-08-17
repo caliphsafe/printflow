@@ -3,7 +3,8 @@ import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { makeDesignDisplayId } from "@/lib/design-id";
 import { normalizeConfiguration } from "@/lib/catalog";
 import { calculateResolvedOrderPricing, DEFAULT_PRICING_PROFILE, normalizePricingProfile } from "@/lib/pricing-settings";
-import { applyBrandContrast, chooseBrandVariant, compatiblePlacements, resolveLockedPlacement } from "@/lib/brand-designs";
+import { chooseBrandVariant } from "@/lib/brand-designs";
+import { applyBrandGarmentConfiguration } from "@/lib/brand-commerce";
 import { platformShopAccess } from "@/lib/shop-mode";
 import type { CatalogProduct, SizeQuantity } from "@/lib/types";
 
@@ -64,28 +65,46 @@ export async function POST(request: Request) {
 
     const [
       { data: productRow },
+      { data: brandGarmentRow },
+      { data: brandPricingRow },
       { data: designRow },
       { data: variants },
-      { data: placementRow },
-      { data: rule },
-      { data: pricingRow }
+      { data: rule }
     ] = await Promise.all([
-      admin.from("catalog_products").select("id,slug,name,description,active,configuration").eq("id", body.productId).eq("shop_id", shop.id).eq("active", true).maybeSingle(),
+      admin.from("catalog_products").select("id,slug,name,description,active,configuration").eq("id", body.productId).eq("shop_id", shop.id).maybeSingle(),
+      admin.from("brand_garments").select("id,active,configuration").eq("shop_id", shop.id).eq("source_catalog_product_id", body.productId).eq("active", true).maybeSingle(),
+      admin.from("brand_pricing_profiles").select("configuration").eq("shop_id", shop.id).maybeSingle(),
       admin.from("brand_designs").select("*").eq("id", body.designId).eq("shop_id", shop.id).eq("active", true).maybeSingle(),
       admin.from("brand_design_variants").select("*").eq("brand_design_id", body.designId).eq("shop_id", shop.id).eq("active", true),
-      admin.from("brand_design_placements").select("*").eq("id", body.placementId).eq("brand_design_id", body.designId).eq("shop_id", shop.id).eq("active", true).maybeSingle(),
-      admin.from("brand_design_product_rules").select("id").eq("brand_design_id", body.designId).eq("catalog_product_id", body.productId).eq("active", true).maybeSingle(),
-      admin.from("shop_pricing_profiles").select("configuration").eq("shop_id", shop.id).maybeSingle()
+      admin.from("brand_design_product_rules").select("id,configuration").eq("brand_design_id", body.designId).eq("catalog_product_id", body.productId).eq("active", true).maybeSingle()
     ]);
 
-    if (!productRow || !designRow || !placementRow || !rule) {
+    if (!productRow || !brandGarmentRow || !designRow || !rule) {
       return fail("That Brand combination is unavailable.");
     }
 
-    const product: CatalogProduct = applyBrandContrast({
+    const baseProduct: CatalogProduct = {
       ...productRow,
       configuration: normalizeConfiguration(productRow.configuration)
-    } as CatalogProduct, shop.settings);
+    } as CatalogProduct;
+
+    const product = applyBrandGarmentConfiguration(baseProduct, brandGarmentRow.configuration);
+    if (!product) return fail("That garment is not available in Brand / Merch.");
+
+    const placementKey = String(body.placementKey || "");
+    const lockedPlacement = rule.configuration?.placements?.[placementKey];
+    if (!lockedPlacement?.placement) return fail("That Brand placement is unavailable.");
+
+    const placementRow = {
+      id: placementKey,
+      side: lockedPlacement.side,
+      placement_type: lockedPlacement.printSize,
+      decoration_method: lockedPlacement.decorationMethod,
+      width_inches: lockedPlacement.widthInches,
+      height_inches: lockedPlacement.heightInches,
+      surcharge: lockedPlacement.surcharge || 0,
+      placement: lockedPlacement.placement
+    };
 
     const color = product.configuration.colors.find((item) => item.id === body.colorId && item.active !== false);
     if (!color) return fail("Selected garment color is unavailable.");
@@ -95,9 +114,6 @@ export async function POST(request: Request) {
       return fail("The selected artwork variant does not match this garment color.");
     }
 
-    if (!compatiblePlacements(product, [placementRow] as any).length) {
-      return fail("That placement is not supported by this garment.");
-    }
 
     const sizes: SizeQuantity[] = Array.isArray(body.sizes)
       ? body.sizes.map((item: any) => ({
@@ -107,14 +123,11 @@ export async function POST(request: Request) {
       : [];
 
     const total = sizes.reduce((sum, item) => sum + item.quantity, 0);
-    const minimum = Math.max(1, Number((designRow.metadata || {}).minimumQuantity || 1));
-
-    if (total < minimum) return fail(`Order at least ${minimum} item${minimum === 1 ? "" : "s"}.`);
     if (!body.customer?.name?.trim() || !body.customer?.email?.trim()) {
       return fail("Customer name and email are required.");
     }
 
-    const resolved = resolveLockedPlacement(product, placementRow as any);
+    const resolved = { placement: placementRow.placement };
     const method =
       placementRow.decoration_method ||
       product.configuration.customization.decorationMethods[0] ||
@@ -124,9 +137,25 @@ export async function POST(request: Request) {
       return fail("That production method is unavailable.");
     }
 
-    const profile = normalizePricingProfile(pricingRow?.configuration || DEFAULT_PRICING_PROFILE);
+    const brandPricing = normalizePricingProfile(brandPricingRow?.configuration || DEFAULT_PRICING_PROFILE);
+    const methodKey = method.toLowerCase();
+    const methodEnabled = methodKey.includes("embroider")
+      ? brandPricing.embroidery.active
+      : methodKey.includes("dtf")
+        ? brandPricing.dtf.active
+        : brandPricing.screenPrinting.active;
+    if (!methodEnabled) return fail("That production method is disabled in Brand Pricing.");
+
+    const methodMinimum = methodKey.includes("embroider")
+      ? brandPricing.embroidery.minimumQuantity
+      : methodKey.includes("dtf")
+        ? brandPricing.dtf.minimumQuantity
+        : brandPricing.screenPrinting.minimumQuantity;
+    const minimum = Math.max(1, Number((designRow.metadata || {}).minimumQuantity || 1), Number(methodMinimum || 1));
+    if (total < minimum) return fail(`Order at least ${minimum} item${minimum === 1 ? "" : "s"}.`);
+
     const pricing = calculateResolvedOrderPricing({
-      profile,
+      profile: brandPricing,
       product,
       sizes,
       color,
@@ -234,7 +263,7 @@ export async function POST(request: Request) {
         placement: resolved.placement,
         surcharge: placementRow.surcharge
       },
-      product: { id: product.id, name: product.name },
+      product: { id: product.id, brandGarmentId: brandGarmentRow.id, name: product.name },
       color: { id: color.id, name: color.name }
     };
 
@@ -295,6 +324,7 @@ export async function POST(request: Request) {
           addOnTotal: 0,
           totalPrice,
           productId: product.id,
+          brandGarmentId: brandGarmentRow.id,
           colorId: color.id,
           lockedPlacement: true
         }
