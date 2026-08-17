@@ -9,7 +9,7 @@ export default async function StoreModePage() {
   return (
     <StoreModeManager
       shopName={shop.name}
-      initialAccountMode={shopAccountMode(shop.settings)}
+      accountMode={shopAccountMode(shop.settings)}
       initialStorefrontMode={brandStorefrontMode(shop.settings)}
       platformAccess={platformShopAccess(shop.settings)}
     />

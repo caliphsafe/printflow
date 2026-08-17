@@ -16,42 +16,42 @@ const workspace: NavGroup = {
   ]
 };
 
-const printerGroups: NavGroup[] = [
+const printGroups: NavGroup[] = [
   {
-    label: "Catalog & sourcing",
+    label: "Custom Print",
     items: [
       { href: "/dashboard/products", label: "Products", icon: "products" },
-      { href: "/dashboard/suppliers", label: "Suppliers", icon: "suppliers" },
-      { href: "/dashboard/suppliers/cart", label: "Supplier cart", icon: "cart" }
+      { href: "/dashboard/settings", label: "Print storefront", icon: "settings" }
     ]
   },
   {
-    label: "Business tools",
+    label: "Sourcing & pricing",
     items: [
+      { href: "/dashboard/suppliers", label: "Suppliers", icon: "suppliers" },
+      { href: "/dashboard/suppliers/cart", label: "Supplier cart", icon: "cart" },
       { href: "/dashboard/pricing", label: "Pricing", icon: "pricing" },
-      { href: "/dashboard/integrations", label: "Integrations", icon: "integrations" },
-      { href: "/dashboard/settings", label: "Shop setup", icon: "settings" }
+      { href: "/dashboard/integrations", label: "Integrations", icon: "integrations" }
     ]
   }
 ];
 
 const brandGroups: NavGroup[] = [
   {
-    label: "Merch",
+    label: "Brand / Merch",
     items: [
       { href: "/dashboard/products", label: "Garments", icon: "products" },
       { href: "/dashboard/designs", label: "Designs", icon: "products" },
       { href: "/dashboard/collections", label: "Collections", icon: "cart" },
-      { href: "/dashboard/suppliers", label: "Suppliers", icon: "suppliers" },
-      { href: "/dashboard/suppliers/cart", label: "Supplier cart", icon: "cart" }
+      { href: "/dashboard/brand-storefront", label: "Brand storefront", icon: "settings" }
     ]
   },
   {
-    label: "Commerce",
+    label: "Sourcing & pricing",
     items: [
+      { href: "/dashboard/suppliers", label: "Suppliers", icon: "suppliers" },
+      { href: "/dashboard/suppliers/cart", label: "Supplier cart", icon: "cart" },
       { href: "/dashboard/pricing", label: "Pricing", icon: "pricing" },
-      { href: "/dashboard/integrations", label: "Integrations", icon: "integrations" },
-      { href: "/dashboard/settings", label: "Storefront", icon: "settings" }
+      { href: "/dashboard/integrations", label: "Integrations", icon: "integrations" }
     ]
   }
 ];
@@ -59,7 +59,7 @@ const brandGroups: NavGroup[] = [
 const accountGroup: NavGroup = {
   label: "Account",
   items: [
-    { href: "/dashboard/mode", label: "Store mode", icon: "settings" },
+    { href: "/dashboard/mode", label: "Store access", icon: "settings" },
     { href: "/dashboard/account", label: "Account & billing", icon: "account" }
   ]
 };
@@ -70,10 +70,18 @@ function isActive(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
-export default function DashboardNav({ accountMode = "custom" }: { accountMode?: ShopAccountMode }) {
+export default function DashboardNav({
+  accountMode = "custom",
+  activeWorkspace = "print"
+}: {
+  accountMode?: ShopAccountMode;
+  activeWorkspace?: "print" | "brand";
+}) {
   const pathname = usePathname();
-  const middle = accountMode === "brand" || accountMode === "hybrid" ? brandGroups : printerGroups;
-  const groups = [workspace, ...middle, accountGroup];
+  const brandOnly = accountMode === "brand";
+  const hybrid = accountMode === "hybrid";
+  const useBrand = brandOnly || (hybrid && activeWorkspace === "brand");
+  const groups = [workspace, ...(useBrand ? brandGroups : printGroups), accountGroup];
 
   return (
     <nav className="admin-nav" aria-label="Dashboard navigation">
@@ -81,14 +89,11 @@ export default function DashboardNav({ accountMode = "custom" }: { accountMode?:
         <section className="admin-nav-group" key={group.label}>
           <p>{group.label}</p>
           <div>
-            {group.items.map((item) => {
-              const active = isActive(pathname, item.href);
-              return (
-                <Link key={item.href} href={item.href} className={active ? "admin-nav-link active" : "admin-nav-link"}>
-                  <AdminIcon name={item.icon}/><span>{item.label}</span>
-                </Link>
-              );
-            })}
+            {group.items.map((item) => (
+              <Link key={item.href} href={item.href} className={isActive(pathname, item.href) ? "admin-nav-link active" : "admin-nav-link"}>
+                <AdminIcon name={item.icon}/><span>{item.label}</span>
+              </Link>
+            ))}
           </div>
         </section>
       ))}
