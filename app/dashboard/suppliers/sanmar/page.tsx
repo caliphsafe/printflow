@@ -1,0 +1,4 @@
+import {getAdminContext} from "@/lib/admin-data";
+import SanMarCatalogImporter from "@/components/SanMarCatalogImporter";
+export const dynamic="force-dynamic";
+export default async function SanMarCatalogPage(){const {supabase,shop}=await getAdminContext();if(!shop)return <p>No shop configured.</p>;const {data:connection}=await supabase.from("supplier_connections").select("status").eq("shop_id",shop.id).eq("provider","sanmar").maybeSingle();return <><header className="admin-header"><div><p className="eyebrow">SANMAR</p><h1>Curated catalog</h1><p>Import only the styles this shop actually sells. Product colors, size variants, account pricing, inventory, and supplier media are normalized for the existing PrintFlow designer.</p></div></header>{connection?.status==="connected"?<SanMarCatalogImporter/>:<section className="admin-card"><h2>Connect SanMar first</h2><p>Return to Suppliers and connect the shop's SanMar account before importing products.</p></section>}</>}

@@ -1,0 +1,4 @@
+import { NextResponse } from "next/server";
+import { getAdminContext } from "@/lib/admin-data";
+import { sanmarNormalizedStyle } from "@/lib/sanmar";
+export async function GET(request:Request){const {supabase,shop}=await getAdminContext();if(!shop)return NextResponse.json({error:"No shop configured."},{status:403});const style=new URL(request.url).searchParams.get("style")||"";const {data:connection}=await supabase.from("supplier_connections").select("encrypted_account_number,encrypted_api_key,settings,status").eq("shop_id",shop.id).eq("provider","sanmar").maybeSingle();if(!connection||connection.status!=="connected")return NextResponse.json({error:"Connect SanMar first."},{status:409});try{return NextResponse.json({style:await sanmarNormalizedStyle(connection as any,style)})}catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Unable to load SanMar style."},{status:502})}}

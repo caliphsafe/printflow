@@ -1,26 +1,7 @@
-import { NextResponse } from "next/server";
-import { createSupabaseAdmin } from "@/lib/supabase-admin";
-import { decryptSecret } from "@/lib/crypto";
-import { markDesignPaid, verifySquareSignature } from "@/lib/payments";
-
-export async function POST(request: Request) {
-  const rawBody = await request.text();
-  const signature = request.headers.get("x-square-hmacsha256-signature") || "";
-  let event: any;
-  try { event = JSON.parse(rawBody); } catch { return NextResponse.json({ error: "Invalid payload." }, { status: 400 }); }
-  const payment = event?.data?.object?.payment;
-  const orderId = payment?.order_id;
-  if (!orderId) return NextResponse.json({ received: true });
-  const supabase = createSupabaseAdmin();
-  const { data: design } = await supabase.from("designs").select("id,shop_id").eq("payment_provider", "square").eq("payment_reference", orderId).maybeSingle();
-  if (!design) return NextResponse.json({ received: true });
-  const { data: connection } = await supabase.from("integration_connections").select("encrypted_credentials,configuration").eq("shop_id", design.shop_id).eq("provider", "square").eq("status", "connected").maybeSingle();
-  if (!connection) return NextResponse.json({ error: "Square connection not found." }, { status: 404 });
-  let values: Record<string, string>;
-  try { values = JSON.parse(decryptSecret(connection.encrypted_credentials)); } catch { return NextResponse.json({ error: "Stored webhook credentials are invalid." }, { status: 500 }); }
-  const notificationUrl = connection.configuration?.notificationUrl || `${process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "")}/api/webhooks/square`;
-  if (!values.signatureKey || !verifySquareSignature(rawBody, signature, notificationUrl, values.signatureKey)) return NextResponse.json({ error: "Invalid signature." }, { status: 400 });
-  if (payment.status === "COMPLETED") await markDesignPaid(design.id, "square", orderId, Number(payment.amount_money?.amount || 0) / 100);
-  if (["FAILED", "CANCELED"].includes(payment.status)) await supabase.from("designs").update({ payment_status: "failed", sync_error: `Square payment ${payment.status.toLowerCase()}.`, updated_at: new Date().toISOString() }).eq("id", design.id);
-  return NextResponse.json({ received: true });
-}
+import {NextResponse} from "next/server";
+import {createSupabaseAdmin} from "@/lib/supabase-admin";
+import {decryptSecret} from "@/lib/crypto";
+import {markDesignPaid,verifySquareSignature} from "@/lib/payments";
+export async function POST(request:Request){const rawBody=await request.text();const signature=request.headers.get("x-square-hmacsha256-signature")||"";let event:any;try{event=JSON.parse(rawBody)}catch{return NextResponse.json({error:"Invalid payload."},{status:400})}const payment=event?.data?.object?.payment;const squareOrderId=payment?.order_id;if(!squareOrderId)return NextResponse.json({received:true});const db=createSupabaseAdmin();const {data:commercePayment}=await db.from("payments").select("id,order_id,shop_id,organization_id,status,orders(id,status,total)").eq("provider","square").eq("provider_order_id",squareOrderId).maybeSingle();const {data:legacyDesign}=commercePayment?{data:null}:await db.from("designs").select("id,shop_id,organization_id").eq("payment_provider","square").eq("payment_reference",squareOrderId).maybeSingle();const shopId=commercePayment?.shop_id||legacyDesign?.shop_id;if(!shopId)return NextResponse.json({received:true});const {data:connection}=await db.from("integration_connections").select("encrypted_credentials,configuration").eq("shop_id",shopId).eq("provider","square").eq("status","connected").maybeSingle();if(!connection)return NextResponse.json({error:"Square connection not found."},{status:404});let values:Record<string,string>;try{values=JSON.parse(decryptSecret(connection.encrypted_credentials))}catch{return NextResponse.json({error:"Stored webhook credentials are invalid."},{status:500})}const notificationUrl=connection.configuration?.notificationUrl||`${process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/,"")}/api/webhooks/square`;if(!values.signatureKey||!verifySquareSignature(rawBody,signature,notificationUrl,values.signatureKey))return NextResponse.json({error:"Invalid signature."},{status:400});const eventId=String(event?.event_id||event?.id||"");if(eventId){const {error:syncError}=await db.from("sync_events").insert({organization_id:commercePayment?.organization_id||legacyDesign?.organization_id,shop_id:shopId,external_event_id:eventId,event_type:String(event?.type||"square.payment")});if(syncError&&String(syncError.code)==="23505")return NextResponse.json({received:true,duplicate:true})}
+if(commercePayment){const order:any=Array.isArray(commercePayment.orders)?commercePayment.orders[0]:commercePayment.orders;const now=new Date().toISOString();if(payment.status==="COMPLETED"){const amount=Number(payment.amount_money?.amount||0)/100;await db.from("payments").update({status:"paid",provider_payment_id:String(payment.id||"" )||null,amount,paid_at:now,updated_at:now}).eq("id",commercePayment.id);await db.from("orders").update({status:"paid",payment_status:"paid",paid_at:now,updated_at:now}).eq("id",commercePayment.order_id);if(order?.status!=="paid")await db.from("order_status_history").insert({organization_id:commercePayment.organization_id,shop_id:shopId,order_id:commercePayment.order_id,from_status:order?.status||"awaiting_payment",to_status:"paid",note:"Square payment confirmed by webhook.",metadata:{squarePaymentId:payment.id,squareOrderId}})}else if(["FAILED","CANCELED"].includes(payment.status)){await db.from("payments").update({status:payment.status==="FAILED"?"failed":"cancelled",updated_at:now}).eq("id",commercePayment.id);await db.from("orders").update({payment_status:payment.status==="FAILED"?"failed":"cancelled",updated_at:now}).eq("id",commercePayment.order_id)}return NextResponse.json({received:true,commerce:true})}
+if(legacyDesign){if(payment.status==="COMPLETED")await markDesignPaid(legacyDesign.id,"square",squareOrderId,Number(payment.amount_money?.amount||0)/100);if(["FAILED","CANCELED"].includes(payment.status))await db.from("designs").update({payment_status:"failed",sync_error:`Square payment ${payment.status.toLowerCase()}.`,updated_at:new Date().toISOString()}).eq("id",legacyDesign.id)}return NextResponse.json({received:true,legacy:true})}
