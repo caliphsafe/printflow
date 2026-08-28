@@ -10,6 +10,22 @@ import { platformShopAccess } from "@/lib/shop-mode";
 type Props = { params: Promise<{ shop: string }> };
 export const dynamic = "force-dynamic";
 
+const ADVANCED_SHOP_SLUG = "advanced-embroidery-screen-printing";
+
+function isLiveCustomProduct(product: CatalogProduct, shopSlug: string) {
+  const supplier = product.configuration.supplier;
+
+  // Advanced's public custom-order catalog is intentionally SanMar-only.
+  // Espirito Santo uniforms live in storefront_products and have their own
+  // dedicated /espirito-santo/ ordering experience.
+  if (shopSlug === ADVANCED_SHOP_SLUG) {
+    return supplier?.provider === "sanmar" && supplier?.sourceMode !== "demo";
+  }
+
+  // Preserve existing PrintFlow behavior for every other tenant/shop.
+  return supplier?.sourceMode !== "demo";
+}
+
 export default async function ShopDesignerPage({ params }: Props) {
   const { shop: slug } = await params;
   const supabase = createSupabaseAdmin();
@@ -69,7 +85,7 @@ export default async function ShopDesignerPage({ params }: Props) {
 
   const products: CatalogProduct[] = (rows || [])
     .map((row) => ({ ...row, configuration: normalizeConfiguration(row.configuration) }))
-    .filter((item) => item.configuration.supplier?.sourceMode !== "demo");
+    .filter((item) => isLiveCustomProduct(item, slug));
 
   const shop: PublicShop = {
     ...data,
