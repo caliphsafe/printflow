@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
-import { sanmarBrowseCategory } from "@/lib/sanmar";
+import { sanmarBrowseCategory, sanmarNormalizedStyle } from "@/lib/sanmar";
 import { field, safeImageUrl, ssRequest } from "@/lib/ss-activewear";
 
 type SupplierKey = "ss" | "sanmar";
@@ -113,8 +113,10 @@ export async function GET(request: Request) {
     const brands = Array.from(new Set(index.map((style) => style.brandName).filter(Boolean)))
       .sort((a: string, b: string) => a.localeCompare(b));
 
-    const categories = Array.from(new Set(index.map((style) => style.category).filter(Boolean)))
-      .sort((a: string, b: string) => a.localeCompare(b));
+    const categories = supplier === "sanmar"
+      ? ["T-Shirts", "Polos/Knits", "Caps"]
+      : Array.from(new Set(index.map((style) => style.category).filter(Boolean)))
+          .sort((a: string, b: string) => a.localeCompare(b));
 
     const filtered = index.filter((style) => {
       const haystack = `${style.brandName} ${style.styleName || ""} ${style.styleId} ${style.title} ${style.description} ${style.partNumber || ""} ${style.category || ""}`.toLowerCase();
@@ -138,14 +140,75 @@ export async function GET(request: Request) {
       supplier
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : `Unable to load the ${supplier === "ss" ? "S&S Activewear" : "SanMar"} catalog.`
-      },
-      { status: 502 }
-    );
+    const message =
+      error instanceof Error
+        ? error.message
+        : `Unable to load the ${supplier === "ss" ? "S&S Activewear" : "SanMar"} catalog.`;
+
+    if (supplier === "sanmar" && /ftp|csv|large category/i.test(message)) {
+      const exactStyle = q.trim().toUpperCase();
+
+      if (exactStyle && !/\s/.test(exactStyle) && /^[A-Z0-9._-]{2,24}$/.test(exactStyle)) {
+        try {
+          const live = await sanmarNormalizedStyle(connection as any, exactStyle);
+          return NextResponse.json({
+            styles: [
+              {
+                styleId: live.styleId,
+                brandName: live.brandName,
+                styleName: live.name || live.styleId,
+                title: live.name || `${live.brandName} ${live.styleId}`,
+                description: live.description,
+                partNumber: live.styleId,
+                category: category || "Apparel",
+                imageUrl:
+                  Object.values(live.media).find((media) => media.frontImageUrl)?.frontImageUrl ||
+                  Object.values(live.media).find((media) => media.swatchImageUrl)?.swatchImageUrl ||
+                  "",
+                colorCount: new Set(live.variants.map((variant) => variant.colorName)).size,
+                sizeCount: new Set(live.variants.map((variant) => variant.sizeName)).size,
+                priceMin: Math.min(
+                  ...live.variants.map((variant) => Number(variant.customerPrice || 0)).filter((value) => value > 0),
+                  0
+                ),
+                priceMax: Math.max(
+                  ...live.variants.map((variant) => Number(variant.customerPrice || 0)).filter((value) => value > 0),
+                  0
+                ),
+                supplier: "sanmar"
+              }
+            ],
+            total: 1,
+            offset: 0,
+            limit,
+            hasMore: false,
+            brands: [live.brandName].filter(Boolean),
+            categories: ["T-Shirts", "Polos/Knits", "Caps"],
+            accountHint: connection.account_hint || null,
+            supplier,
+            browseMode: "exact-style"
+          });
+        } catch {
+          // Fall through to the friendly browse response below.
+        }
+      }
+
+      return NextResponse.json({
+        styles: [],
+        total: 0,
+        offset: 0,
+        limit,
+        hasMore: false,
+        brands: [],
+        categories: ["T-Shirts", "Polos/Knits", "Caps"],
+        accountHint: connection.account_hint || null,
+        supplier,
+        browseMode: "exact-style",
+        warning:
+          "This SanMar account is returning large category catalogs as an export instead of an immediate web response. Search by an exact SanMar style number to load the live product directly."
+      });
+    }
+
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

@@ -148,6 +148,11 @@ export default function SupplierCatalogBrowser({
       setTotal(Number(data.total || 0));
       setHasMore(data.hasMore === true);
 
+      if (data.warning) {
+        setMessageType("info");
+        setMessage(String(data.warning));
+      }
+
       if (!append) {
         setSelected(null);
         setProducts([]);
@@ -395,7 +400,11 @@ export default function SupplierCatalogBrowser({
                 onKeyDown={(event) =>
                   event.key === "Enter" && void load()
                 }
-                placeholder="Brand, style number, title, or part number"
+                placeholder={
+                  supplier === "sanmar"
+                    ? "SanMar style number (example: PC61)"
+                    : "Brand, style number, title, or part number"
+                }
               />
               <button className="primary-button" onClick={() => load()}>
                 Search
@@ -436,20 +445,27 @@ export default function SupplierCatalogBrowser({
           </div>
         </div>
 
-        <div className="supplier-quick-searches">
-          <span>Popular searches</span>
-          {QUICK.map((value) => (
-            <button
-              key={value}
-              onClick={() => {
-                setQ(value);
-                void load({ search: value });
-              }}
-            >
-              {value}
-            </button>
-          ))}
-        </div>
+        {supplier === "ss" ? (
+          <div className="supplier-quick-searches">
+            <span>Popular searches</span>
+            {QUICK.map((value) => (
+              <button
+                key={value}
+                onClick={() => {
+                  setQ(value);
+                  void load({ search: value });
+                }}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="supplier-quick-searches sanmar-search-hint">
+            <span>SanMar live lookup</span>
+            <small>Use an exact SanMar style number for the most reliable live result.</small>
+          </div>
+        )}
 
         <div className="supplier-results-heading">
           <div>
@@ -854,34 +870,55 @@ function SupplierPicker({
         <strong>Choose catalog</strong>
       </div>
 
-      {(["sanmar", "ss"] as SupplierKey[]).map((key) => (
-        <button
-          key={key}
-          type="button"
-          className={
-            supplier === key
-              ? "supplier-picker-button active"
-              : "supplier-picker-button"
-          }
-          onClick={() => setSupplier(key)}
-        >
-          <span
+      <div className="supplier-picker-options">
+        {(["sanmar", "ss"] as SupplierKey[]).map((key) => (
+          <button
+            key={key}
+            type="button"
             className={
-              suppliers[key].connected
-                ? "supplier-status connected"
-                : "supplier-status offline"
+              supplier === key
+                ? "supplier-picker-button active"
+                : "supplier-picker-button"
             }
+            onClick={() => setSupplier(key)}
           >
-            {suppliers[key].connected ? "● Connected" : "○ Not connected"}
-          </span>
-          <strong>{supplierLabel(key)}</strong>
-          <small>
-            {suppliers[key].connected
-              ? suppliers[key].accountHint || "Live account"
-              : "Connect to browse"}
-          </small>
-        </button>
-      ))}
+            <span className="supplier-picker-row">
+              <strong>{supplierLabel(key)}</strong>
+              <span
+                className={
+                  suppliers[key].connected
+                    ? "supplier-status connected"
+                    : "supplier-status offline"
+                }
+              >
+                {suppliers[key].connected ? "Connected" : "Not connected"}
+              </span>
+            </span>
+            <small>
+              {suppliers[key].connected
+                ? suppliers[key].accountHint || "Live account"
+                : "Connect to browse"}
+            </small>
+          </button>
+        ))}
+      </div>
+
+      <style jsx global>{`
+        .supplier-picker-options{display:grid;gap:10px}
+        .supplier-picker-button{appearance:none;width:100%;border:1px solid rgba(20,20,20,.12);background:rgba(255,255,255,.86);border-radius:16px;padding:14px 15px;text-align:left;cursor:pointer;display:grid;gap:7px;transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+        .supplier-picker-button:hover{transform:translateY(-1px);border-color:rgba(20,20,20,.28)}
+        .supplier-picker-button.active{background:#111;color:#fff;border-color:#111;box-shadow:0 10px 28px rgba(0,0,0,.12)}
+        .supplier-picker-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+        .supplier-picker-button strong{font-size:14px;line-height:1.15}
+        .supplier-picker-button small{font-size:11px;line-height:1.35;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .supplier-picker-button.active small{color:rgba(255,255,255,.7)}
+        .supplier-status{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;border-radius:999px;padding:5px 7px;background:#f1f1f1;color:#777;white-space:nowrap}
+        .supplier-status.connected{background:#e6f5ea;color:#18794e}
+        .supplier-picker-button.active .supplier-status.connected{background:#dff4e5;color:#146c43}
+        .supplier-picker-button.active .supplier-status.offline{background:rgba(255,255,255,.12);color:rgba(255,255,255,.68)}
+        .sanmar-search-hint{align-items:flex-start!important;gap:5px!important}
+        .sanmar-search-hint small{color:#777;line-height:1.4}
+      `}</style>
     </aside>
   );
 }
