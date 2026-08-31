@@ -54,8 +54,10 @@ export async function POST(request: Request) {
       ? (body.style as Record<string, unknown>)
       : {};
 
-  const selectedColorNames = Array.isArray(body.selectedColors)
-    ? body.selectedColors.map(String).filter(Boolean)
+  const selectedColorNames: string[] = Array.isArray(body.selectedColors)
+    ? body.selectedColors
+        .map((value: unknown) => String(value))
+        .filter((value: string) => value.length > 0)
     : [];
 
   if (!selectedColorNames.length) {
@@ -161,12 +163,12 @@ export async function POST(request: Request) {
     grouped.set(color, [...(grouped.get(color) || []), row]);
   }
 
-  const uniqueSelectedColors = selectedColorNames.filter(
-  (name: string, index: number, all: string[]) =>
-    all.indexOf(name) === index && grouped.has(name)
-);
+  const uniqueSelectedColors: string[] = selectedColorNames.filter(
+    (name, index, all) =>
+      all.indexOf(name) === index && grouped.has(name)
+  );
 
-  const colors: ShirtColor[] = uniqueSelectedColors.map((colorName) => {
+  const colors: ShirtColor[] = uniqueSelectedColors.map((colorName: string) => {
     const rows = grouped.get(colorName) || [];
     const mediaRow =
       rows.find(
