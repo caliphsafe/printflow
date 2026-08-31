@@ -162,9 +162,9 @@ export async function POST(request: Request) {
   }
 
   const uniqueSelectedColors = selectedColorNames.filter(
-    (name, index, all) =>
-      all.indexOf(name) === index && grouped.has(name)
-  );
+  (name: string, index: number, all: string[]) =>
+    all.indexOf(name) === index && grouped.has(name)
+);
 
   const colors: ShirtColor[] = uniqueSelectedColors.map((colorName) => {
     const rows = grouped.get(colorName) || [];
