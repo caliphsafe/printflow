@@ -14,10 +14,14 @@ export default async function SupplierCartPage() {
   const { supabase, shop } = await getAdminContext();
   if (!shop) return null;
 
-  const [{ data: drafts }, { data: ssConnection }] = await Promise.all([
+  const [{ data: drafts }, { data: connections }] = await Promise.all([
     supabase.from("supplier_order_drafts").select("id,design_id,provider,status,items,estimated_total,created_at,updated_at").eq("shop_id", shop.id).in("status", ["cart", "ready", "submitted"]).order("updated_at", { ascending: false }),
-    supabase.from("supplier_connections").select("provider,status,settings").eq("shop_id", shop.id).eq("provider", "ss-activewear").maybeSingle()
+    supabase.from("supplier_connections").select("provider,status,settings").eq("shop_id", shop.id).in("provider", ["ss-activewear", "sanmar"])
   ]);
+
+  const connectionMap = new Map((connections || []).map((row: any) => [row.provider, row]));
+  const ssConnection: any = connectionMap.get("ss-activewear");
+  const sanmarConnection: any = connectionMap.get("sanmar");
 
   const designIds = Array.from(new Set((drafts || []).map((draft: any) => draft.design_id)));
   const [{ data: designs }, { data: orders }] = designIds.length ? await Promise.all([
@@ -68,7 +72,8 @@ export default async function SupplierCartPage() {
       <SupplierCartManager
         initialJobs={jobs}
         providerStates={{
-          "ss-activewear": { connected: ssConnection?.status === "connected", testMode: ssConnection?.settings?.testMode !== false }
+          "ss-activewear": { connected: ssConnection?.status === "connected", testMode: ssConnection?.settings?.testMode !== false, orderingEnabled: true },
+          sanmar: { connected: sanmarConnection?.status === "connected", testMode: false, orderingEnabled: sanmarConnection?.settings?.poEnabled === true }
         }}
       />
     </>

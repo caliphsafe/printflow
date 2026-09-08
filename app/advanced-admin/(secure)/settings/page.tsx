@@ -5,6 +5,23 @@ import { getAdvancedAdminContext } from "@/lib/advanced-admin";
 
 export const dynamic = "force-dynamic";
 
+function publicSanMarSettings(settings:any){
+  const value=settings||{};
+  return {
+    customerNumber:value.customerNumber||"",
+    environment:value.environment||"production",
+    sftpHost:value.sftpHost||"ftp.sanmar.com",
+    sftpPort:Number(value.sftpPort||2200),
+    sftpUsername:value.sftpUsername||value.customerNumber||"",
+    catalogFilePath:value.catalogFilePath||"SanMarPDD/SanMar_EPDD.csv",
+    sftpConfigured:Boolean(value.sftpPasswordEncrypted),
+    shippingAddress:value.shippingAddress||{},
+    shippingMethod:value.shippingMethod||"UPS",
+    emailConfirmation:value.emailConfirmation||"",
+    poEnabled:value.poEnabled===true
+  };
+}
+
 export default async function AdvancedSettings() {
   const { db, shop } = await getAdvancedAdminContext();
   const [{ data: square }, { data: sanmar }] = await Promise.all([
@@ -20,7 +37,7 @@ export default async function AdvancedSettings() {
     <section className="ae-connection-grid">
       <AdvancedAdminSquareConnection connected={square?.status==="connected"} accountLabel={square?.account_label || undefined} environment={square?.configuration?.environment || undefined}/>
       <div className="ae-connection">
-        <SanMarIntegration connected={sanmar?.status==="connected"} accountHint={sanmar?.account_hint || undefined}/>
+        <SanMarIntegration connected={sanmar?.status==="connected"} accountHint={sanmar?.account_hint || undefined} initialSettings={publicSanMarSettings(sanmar?.settings)}/>
         {sanmar?.status==="connected" && <Link className="ae-button primary" href="/advanced-admin/sanmar">Choose Advanced products →</Link>}
       </div>
     </section>

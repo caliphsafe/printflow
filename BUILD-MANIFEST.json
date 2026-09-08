@@ -1,0 +1,29 @@
+{
+  "name": "PrintFlow SanMar FTP Catalog + One-Click Order 43 Build",
+  "scope": "affected-files-only",
+  "repository": "caliphsafe/printflow",
+  "files": [
+    "README-43-BUILD.md",
+    "app/advanced-admin/(secure)/settings/page.tsx",
+    "app/api/admin/orders/[id]/order-blanks/route.ts",
+    "app/api/admin/suppliers/catalog/detail/route.ts",
+    "app/api/admin/suppliers/catalog/import/route.ts",
+    "app/api/admin/suppliers/catalog/route.ts",
+    "app/api/admin/suppliers/sanmar/catalog-sync/route.ts",
+    "app/api/admin/suppliers/sanmar/connection/route.ts",
+    "app/api/admin/suppliers/sanmar/import/route.ts",
+    "app/api/admin/suppliers/sanmar/style/route.ts",
+    "app/api/admin/suppliers/sanmar/styles/route.ts",
+    "app/dashboard/suppliers/cart/page.tsx",
+    "components/SanMarIntegration.tsx",
+    "components/SupplierCartManager.tsx",
+    "components/SupplierHub.tsx",
+    "lib/sanmar-catalog.ts",
+    "lib/sanmar-orders.ts",
+    "package.json",
+    "supabase/migrations/20260908_sanmar_catalog_cache.sql"
+  ],
+  "sql_migration_required": "supabase/migrations/20260908_sanmar_catalog_cache.sql",
+  "package_lock_included": false,
+  "notes": "Only SanMar catalog/product import and supplier-cart ordering integration files are changed. S&S branch preserved."
+}
