@@ -331,7 +331,13 @@ export async function listSanMarCatalogStyles({ supabase, shopId, category, q, b
   let brandQuery = supabase.from("sanmar_catalog_styles").select("brand_name").eq("shop_id", shopId);
   if (category) brandQuery = brandQuery.eq("category", category);
   const { data: brandRows } = await brandQuery.limit(3000);
-  const brands = Array.from(new Set((brandRows || []).map((row: any) => String(row.brand_name || "")).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const brands: string[] = Array.from(
+    new Set<string>(
+      (brandRows || [])
+        .map((row: any) => String(row.brand_name || ""))
+        .filter((name: string) => name.length > 0)
+    )
+  ).sort((a: string, b: string) => a.localeCompare(b));
 
   return {
     styles: (data || []).map((row: any) => ({
