@@ -59,12 +59,12 @@ export default function SanMarIntegration({ connected: initialConnected, account
     setBusy(true);setMessage("");
     const response=await fetch("/api/admin/suppliers/sanmar/connection",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({...settings,sftpPassword})});
     const data=await response.json();setBusy(false);
-    if(!response.ok){setMessage(data.error||"Unable to save SanMar settings.");return false;}
-    const next={...settings,sftpConfigured:data.sftpConfigured===true};setSettings(next);setSaved(JSON.stringify(next));setSftpPassword("");setMessage("SanMar catalog and order settings saved.");return true;
+    if(!response.ok){setMessage(data.error||"Unable to save SanMar settings.");return;}
+    const next={...settings,sftpConfigured:data.sftpConfigured===true};setSettings(next);setSaved(JSON.stringify(next));setSftpPassword("");setMessage("SanMar catalog and order settings saved.");
   }
 
   async function syncCatalog(){
-    if(dirty){const savedOk=await save();if(!savedOk)return;}
+    if(dirty){await save();}
     setSyncBusy(true);setMessage("");
     const response=await fetch("/api/admin/suppliers/sanmar/catalog-sync",{method:"POST"});
     const data=await response.json();setSyncBusy(false);
