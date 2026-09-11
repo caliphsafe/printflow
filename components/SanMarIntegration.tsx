@@ -42,7 +42,7 @@ export default function SanMarIntegration({connected:initialConnected,accountHin
     finally{setBusy(false);}
   }
 
-  async function save(){
+  async function persistSettings():Promise<boolean>{
     setBusy(true);setMessage("");
     try{
       const response=await fetch("/api/admin/suppliers/sanmar/connection",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({...settings,sftpPassword})});
@@ -53,8 +53,12 @@ export default function SanMarIntegration({connected:initialConnected,accountHin
     finally{setBusy(false);}
   }
 
+  async function save():Promise<void>{
+    await persistSettings();
+  }
+
   async function syncCatalog(){
-    if(dirty){const savedOk=await save();if(!savedOk)return;}
+    if(dirty){const savedOk=await persistSettings();if(!savedOk)return;}
     setSyncBusy(true);setMessage("");
     try{
       const response=await fetch("/api/admin/suppliers/sanmar/catalog-sync",{method:"POST"});
