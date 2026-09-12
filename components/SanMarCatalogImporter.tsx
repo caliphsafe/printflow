@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { readApiResponse } from "@/lib/client-api-response";
 
 type BrowseStyle = {
   styleId: string;
@@ -117,7 +118,7 @@ export default function SanMarCatalogImporter({
         `/api/admin/suppliers/sanmar/styles?${params.toString()}`,
         { cache: "no-store" }
       );
-      const data = await response.json();
+      const data = await readApiResponse(response);
 
       if (!response.ok) {
         throw new Error(
@@ -175,7 +176,7 @@ export default function SanMarCatalogImporter({
         )}`,
         { cache: "no-store" }
       );
-      const data = await response.json();
+      const data = await readApiResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Unable to load this SanMar style.");
@@ -273,7 +274,7 @@ export default function SanMarCatalogImporter({
         })
       });
 
-      const data = await response.json();
+      const data = await readApiResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Unable to add this SanMar product.");

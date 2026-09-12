@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { readApiResponse } from "@/lib/client-api-response";
 
 type SupplierKey = "ss" | "sanmar";
 
@@ -134,7 +135,7 @@ export default function SupplierCatalogBrowser({
         `/api/admin/suppliers/catalog?${params.toString()}`,
         { cache: "no-store" }
       );
-      const data = await response.json();
+      const data = await readApiResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || `Unable to load the ${supplierLabel(supplier)} catalog.`);
@@ -189,7 +190,7 @@ export default function SupplierCatalogBrowser({
         `/api/admin/suppliers/catalog/detail?${params.toString()}`,
         { cache: "no-store" }
       );
-      const data = await response.json();
+      const data = await readApiResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Unable to load this supplier style.");
@@ -274,7 +275,7 @@ export default function SupplierCatalogBrowser({
         })
       });
 
-      const data = await response.json();
+      const data = await readApiResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Unable to import this product.");
