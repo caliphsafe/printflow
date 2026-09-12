@@ -27,6 +27,14 @@ type CachedVariant = {
   backFlatUrl?: string;
 };
 
+type ParseDiagnostics = {
+  rawRows: number;
+  acceptedRows: number;
+  skippedNoStyle: number;
+  skippedDiscontinued: number;
+  firstHeaders: string[];
+};
+
 function cleanKey(value: string) {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -77,17 +85,15 @@ function preferredCategory(current: string, next: string) {
 function buildCandidates(settings: Record<string, any>) {
   const configured = String(settings.catalogFilePath || "").trim();
 
-  // Prefer SDL_N for the catalog index. It contains the style, color, size,
-  // price, category and image data needed to browse products, but is smaller
-  // than the inventory-heavy EPDD file. Exact style selection still refreshes
-  // real-time inventory through SanMar Web Services.
+  // Respect the file the account was explicitly configured to use first.
+  // SanMar documents SDL_N as the lighter no-inventory browse file.
   return Array.from(
     new Set(
       [
+        configured,
         "SanMarPDD/SanMar_SDL_N.csv",
         "/SanMarPDD/SanMar_SDL_N.csv",
         "SanMar_SDL_N.csv",
-        configured,
         "SanMarPDD/SanMar_EPDD.csv",
         "/SanMarPDD/SanMar_EPDD.csv",
         "SanMar_EPDD.csv"
@@ -96,13 +102,45 @@ function buildCandidates(settings: Record<string, any>) {
   ) as string[];
 }
 
-function addRawRow(grouped: Map<string, any>, raw: Record<string, unknown>) {
-  const row = indexRow(raw);
-  const styleId = get(row, "STYLE#", "STYLE", "CATALOG_NO", "CATALOGNO").toUpperCase();
-  if (!styleId) return;
+function addRawRow(
+  grouped: Map<string, any>,
+  raw: Record<string, unknown>,
+  diagnostics: ParseDiagnostics
+) {
+  diagnostics.rawRows += 1;
 
-  const status = get(row, "PRODUCT_STATUS", "PRODUCTSTATUS");
-  if (/discontinued/i.test(status)) return;
+  if (!diagnostics.firstHeaders.length) {
+    diagnostics.firstHeaders = Object.keys(raw || {}).slice(0, 60);
+  }
+
+  const row = indexRow(raw);
+
+  // Official SanMar SDL_N/EPDD uses STYLE#, but these aliases make the
+  // parser tolerant of account/export variations without weakening identity.
+  const styleId = get(
+    row,
+    "STYLE#",
+    "STYLE",
+    "STYLE_ID",
+    "STYLEID",
+    "STYLE_NUMBER",
+    "STYLENUMBER",
+    "CATALOG_NO",
+    "CATALOGNO"
+  ).toUpperCase();
+
+  if (!styleId) {
+    diagnostics.skippedNoStyle += 1;
+    return;
+  }
+
+  const status = get(row, "PRODUCT_STATUS", "PRODUCTSTATUS", "STATUS");
+  if (/discontinued/i.test(status)) {
+    diagnostics.skippedDiscontinued += 1;
+    return;
+  }
+
+  diagnostics.acceptedRows += 1;
 
   const title = get(row, "PRODUCT_TITLE", "PRODUCTTITLE", "DESCRIPTION") || styleId;
   const description = get(
@@ -273,6 +311,14 @@ async function openCatalogSource(connection: Connection) {
 async function parseRemoteCatalog(connection: Connection) {
   const opened = await openCatalogSource(connection);
   const grouped = new Map<string, any>();
+  const diagnostics: ParseDiagnostics = {
+    rawRows: 0,
+    acceptedRows: 0,
+    skippedNoStyle: 0,
+    skippedDiscontinued: 0,
+    firstHeaders: []
+  };
+
   const parser = parse({
     columns: true,
     bom: true,
@@ -282,13 +328,9 @@ async function parseRemoteCatalog(connection: Connection) {
     trim: true
   });
 
-  // ssh2-sftp-client supports get(remotePath, writableStream). Using that
-  // public API lets the CSV flow straight from SanMar into csv-parse without
-  // creating a large /tmp file and without relying on an undocumented
-  // client.createReadStream() method.
   const consume = (async () => {
     for await (const raw of parser) {
-      addRawRow(grouped, raw as Record<string, unknown>);
+      addRawRow(grouped, raw as Record<string, unknown>, diagnostics);
     }
   })();
 
@@ -298,10 +340,26 @@ async function parseRemoteCatalog(connection: Connection) {
       consume
     ]);
 
+    if (diagnostics.rawRows === 0) {
+      throw new Error(
+        `SanMar catalog file ${opened.remotePath} was downloaded (${opened.remoteSize.toLocaleString()} bytes) but CSV parsing produced 0 rows.`
+      );
+    }
+
+    if (grouped.size === 0) {
+      const headerText = diagnostics.firstHeaders.length
+        ? diagnostics.firstHeaders.join(", ")
+        : "(no headers detected)";
+      throw new Error(
+        `SanMar catalog file ${opened.remotePath} produced ${diagnostics.rawRows.toLocaleString()} CSV rows but 0 styles. Detected headers: ${headerText}`
+      );
+    }
+
     return {
       grouped,
       remotePath: opened.remotePath,
-      remoteSize: opened.remoteSize
+      remoteSize: opened.remoteSize,
+      diagnostics
     };
   } finally {
     await opened.client.end().catch(() => undefined);
@@ -351,6 +409,10 @@ export async function syncSanMarCatalogFast({
     synced_at: startedAt
   }));
 
+  if (!rows.length) {
+    throw new Error("SanMar sync stopped because no catalog styles were parsed. Existing cache was left untouched.");
+  }
+
   const dbStart = Date.now();
 
   const batches: any[][] = [];
@@ -370,7 +432,11 @@ export async function syncSanMarCatalogFast({
         .from("sanmar_catalog_styles")
         .upsert(batches[index], { onConflict: "shop_id,style_id" });
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(
+          `SanMar cache upsert failed on batch ${index + 1}/${batches.length}: ${error.message || String(error)}`
+        );
+      }
     }
   }
 
@@ -381,21 +447,48 @@ export async function syncSanMarCatalogFast({
     )
   );
 
+  // Verify the rows actually persisted before cleanup or reporting success.
+  const { count: persistedCount, error: countError } = await supabase
+    .from("sanmar_catalog_styles")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId);
+
+  if (countError) {
+    throw new Error(
+      `SanMar cache verification failed after upsert: ${countError.message || String(countError)}`
+    );
+  }
+
+  const verifiedCount = Number(persistedCount || 0);
+
+  if (verifiedCount === 0) {
+    throw new Error(
+      `SanMar parsed ${rows.length.toLocaleString()} styles and completed the upsert, but Supabase still reports 0 cached styles for this shop. Verify that migration 20260908_sanmar_catalog_cache.sql has been applied to the production Supabase project and that the active shop ID matches the supplier connection.`
+    );
+  }
+
+  // Only remove stale rows after we have positively verified a non-empty cache.
   const { error: cleanupError } = await supabase
     .from("sanmar_catalog_styles")
     .delete()
     .eq("shop_id", shopId)
     .lt("synced_at", startedAt);
 
-  if (cleanupError) throw cleanupError;
+  if (cleanupError) {
+    throw new Error(
+      `SanMar cache cleanup failed after a successful import: ${cleanupError.message || String(cleanupError)}`
+    );
+  }
 
   const dbMs = Date.now() - dbStart;
 
   return {
     styleCount: rows.length,
+    persistedStyleCount: verifiedCount,
     sourceFile: parsed.remotePath,
     sourceBytes: parsed.remoteSize,
     syncedAt: startedAt,
+    diagnostics: parsed.diagnostics,
     timings: {
       streamParseMs,
       dbMs,
