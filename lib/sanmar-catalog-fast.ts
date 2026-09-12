@@ -208,7 +208,7 @@ function addRawRow(grouped: Map<string, any>, raw: Record<string, unknown>) {
   }
 }
 
-async function openCatalogStream(connection: Connection) {
+async function openCatalogSource(connection: Connection) {
   const settings = connection.settings || {};
 
   if (!settings.sftpPasswordEncrypted) {
@@ -248,11 +248,8 @@ async function openCatalogStream(connection: Connection) {
         const size = Number(stat?.size || 0);
 
         if (size > 100) {
-          const stream = client.createReadStream(candidate);
-
           return {
             client,
-            stream,
             remotePath: candidate,
             remoteSize: size
           };
@@ -274,24 +271,32 @@ async function openCatalogStream(connection: Connection) {
 }
 
 async function parseRemoteCatalog(connection: Connection) {
-  const opened = await openCatalogStream(connection);
+  const opened = await openCatalogSource(connection);
   const grouped = new Map<string, any>();
+  const parser = parse({
+    columns: true,
+    bom: true,
+    skip_empty_lines: true,
+    relax_column_count: true,
+    relax_quotes: true,
+    trim: true
+  });
 
-  try {
-    const parser = opened.stream.pipe(
-      parse({
-        columns: true,
-        bom: true,
-        skip_empty_lines: true,
-        relax_column_count: true,
-        relax_quotes: true,
-        trim: true
-      })
-    );
-
+  // ssh2-sftp-client supports get(remotePath, writableStream). Using that
+  // public API lets the CSV flow straight from SanMar into csv-parse without
+  // creating a large /tmp file and without relying on an undocumented
+  // client.createReadStream() method.
+  const consume = (async () => {
     for await (const raw of parser) {
       addRawRow(grouped, raw as Record<string, unknown>);
     }
+  })();
+
+  try {
+    await Promise.all([
+      opened.client.get(opened.remotePath, parser),
+      consume
+    ]);
 
     return {
       grouped,

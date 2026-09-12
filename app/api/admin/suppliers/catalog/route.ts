@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import { listSanMarCatalogStyles, sanmarSftpConfigured } from "@/lib/sanmar-catalog";
-import { syncSanMarCatalogFast } from "@/lib/sanmar-catalog-fast";
 import { field, safeImageUrl, ssRequest } from "@/lib/ss-activewear";
 
 type SupplierKey = "ss" | "sanmar";
@@ -58,9 +57,9 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
-  const { supabase, membership, shop } = await getAdminContext();
+  const { supabase, shop } = await getAdminContext();
 
-  if (!shop || !membership) {
+  if (!shop) {
     return NextResponse.json({ error: "No shop configured." }, { status: 403 });
   }
 
@@ -120,33 +119,16 @@ export async function GET(request: Request) {
         ? category
         : "T-Shirts";
 
-      let { count } = await supabase
+      const { count } = await supabase
         .from("sanmar_catalog_styles")
         .select("id", { count: "exact", head: true })
         .eq("shop_id", shop.id);
 
-      let syncResult: any = null;
-
-      // IMPORTANT:
-      // The catalog page used to call the original slow full-file sync here.
-      // That path can exceed Vercel's 300 second limit. Use the new streaming
-      // fast sync instead so the browser and the Suppliers screen share the
-      // same catalog population path.
-      if ((refresh || !count) && sanmarSftpConfigured(connection as any)) {
-        syncResult = await syncSanMarCatalogFast({
-          supabase,
-          organizationId: membership.organization_id,
-          shopId: shop.id,
-          connection: connection as any
-        });
-
-        const recounted = await supabase
-          .from("sanmar_catalog_styles")
-          .select("id", { count: "exact", head: true })
-          .eq("shop_id", shop.id);
-
-        count = recounted.count;
-      }
+      // Browsing must stay a fast database read. Never start a full SanMar
+      // SFTP import from a GET request: doing that caused page loads to inherit
+      // Vercel function timeouts and return non-JSON platform errors.
+      // Full supplier synchronization is handled only by the explicit
+      // POST /api/admin/suppliers/sanmar/catalog-sync action.
 
       const result = await listSanMarCatalogStyles({
         supabase,
@@ -169,16 +151,6 @@ export async function GET(request: Request) {
         supplier,
         browseMode: "ftp-catalog",
         catalogRowCount: Number(count || 0),
-        ...(syncResult
-          ? {
-              sync: {
-                styleCount: Number(syncResult.styleCount || 0),
-                sourceFile: syncResult.sourceFile || null,
-                sourceBytes: Number(syncResult.sourceBytes || 0),
-                timings: syncResult.timings || null
-              }
-            }
-          : {}),
         ...(!result.total && !hasSftp
           ? {
               warning:
