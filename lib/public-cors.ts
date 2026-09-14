@@ -1,19 +1,35 @@
 const DEFAULT_ALLOWED = [
   "https://www.advancedembroideryma.com",
-  "https://advancedembroideryma.com"
+  "https://advancedembroideryma.com",
+  "https://adv-emb-sp.vercel.app"
 ];
+
+function isAllowedAdvancedPreview(origin: string) {
+  // Allow only this project's Vercel preview deployments, not arbitrary
+  // *.vercel.app origins.
+  return /^https:\/\/adv-emb-sp(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(origin);
+}
 
 export function publicCors(request: Request) {
   const configured = String(process.env.ADVANCED_ALLOWED_ORIGINS || "")
-    .split(",").map((v) => v.trim()).filter(Boolean);
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
   const allowed = new Set([...DEFAULT_ALLOWED, ...configured]);
   const origin = request.headers.get("origin") || "";
   const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
-  const accepted = !origin || allowed.has(origin) || local;
+  const accepted =
+    !origin ||
+    allowed.has(origin) ||
+    local ||
+    isAllowedAdvancedPreview(origin);
+
   return {
     accepted,
     headers: {
-      "Access-Control-Allow-Origin": origin && accepted ? origin : DEFAULT_ALLOWED[0],
+      "Access-Control-Allow-Origin":
+        origin && accepted ? origin : DEFAULT_ALLOWED[0],
       "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
       "Vary": "Origin"
