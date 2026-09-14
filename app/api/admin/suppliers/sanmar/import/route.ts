@@ -29,8 +29,8 @@ export async function POST(request: Request) {
     ? String(body.category)
     : "T-Shirts";
 
-  const requestedColors = Array.isArray(body.selectedColors)
-    ? body.selectedColors.map(String).filter(Boolean)
+  const requestedColors: string[] = Array.isArray(body.selectedColors)
+    ? body.selectedColors.map((value: unknown) => String(value)).filter(Boolean)
     : [];
 
   const { data: connection } = await supabase
