@@ -1,7 +1,9 @@
 import {
-  getSanMarCachedStyle,
-  sanmarStyleWithCatalog
+  getSanMarCachedStyle
 } from "@/lib/sanmar-catalog";
+import {
+  sanmarNormalizedStyleCorrected
+} from "@/lib/sanmar-normalized-fixed";
 
 type Connection = {
   encrypted_account_number: string;
@@ -103,9 +105,7 @@ export async function sanmarCompleteStyle(
   connection: Connection,
   styleId: string
 ) {
-  const live = await sanmarStyleWithCatalog(
-    supabase,
-    shopId,
+  const live = await sanmarNormalizedStyleCorrected(
     connection,
     styleId
   );
