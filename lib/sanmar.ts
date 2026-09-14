@@ -1,10 +1,15 @@
 import { decryptSecret } from "@/lib/crypto";
+import {
+  fetchSanMarInventory,
+  fetchSanMarMedia,
+  fetchSanMarPricing,
+  fetchSanMarPromoProductData,
+  fetchSanMarStandardProductInfo,
+  sanmarNormalize,
+  type SanMarConnection
+} from "@/lib/sanmar-canonical";
 
-type Connection = {
-  encrypted_account_number: string;
-  encrypted_api_key: string;
-  settings?: Record<string, any> | null;
-};
+type Connection = SanMarConnection;
 
 export type SanMarNormalizedStyle = {
   styleId: string;
@@ -14,17 +19,26 @@ export type SanMarNormalizedStyle = {
   variants: Array<{
     sku: string;
     skuId: string;
+    gtin?: string;
     colorName: string;
     sizeName: string;
     customerPrice: number;
     quantity: number;
     active: boolean;
+    uniqueKey?: string;
+    inventoryKey?: string;
+    sizeIndex?: string;
+    catalogColor?: string;
+    mainframeColor?: string;
   }>;
-  media: Record<string, {
-    frontImageUrl?: string;
-    backImageUrl?: string;
-    swatchImageUrl?: string;
-  }>;
+  media: Record<
+    string,
+    {
+      frontImageUrl?: string;
+      backImageUrl?: string;
+      swatchImageUrl?: string;
+    }
+  >;
 };
 
 export type SanMarCatalogStyle = {
@@ -40,69 +54,66 @@ export type SanMarCatalogStyle = {
   priceMax: number;
 };
 
-const escapeXml = (v: unknown) =>
-  String(v ?? "")
+const escapeXml = (value: unknown) =>
+  String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
 
-const decode = (v: string) =>
-  v
+function decode(value: string) {
+  return String(value || "")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, "&")
     .trim();
+}
 
 function tag(xml: string, name: string) {
-  const m = xml.match(
+  const match = String(xml || "").match(
     new RegExp(
       `<(?:(?:[A-Za-z0-9_-]+):)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:(?:[A-Za-z0-9_-]+):)?${name}>`,
       "i"
     )
   );
-  return m ? decode(m[1].replace(/<[^>]+>/g, "")) : "";
+  return match ? decode(match[1].replace(/<[^>]+>/g, "")) : "";
 }
 
 function blocks(xml: string, name: string) {
   return [
-    ...xml.matchAll(
+    ...String(xml || "").matchAll(
       new RegExp(
         `<(?:(?:[A-Za-z0-9_-]+):)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:(?:[A-Za-z0-9_-]+):)?${name}>`,
         "gi"
       )
     )
-  ].map((m) => m[1]);
+  ].map((match) => match[1]);
 }
 
 function creds(row: Connection) {
   return {
     username: decryptSecret(row.encrypted_account_number),
     password: decryptSecret(row.encrypted_api_key),
-    customerNumber: String(row.settings?.customerNumber || "")
+    customerNumber: String(row.settings?.customerNumber || "").trim()
   };
 }
 
 function host(row: Connection) {
-  return row.settings?.environment === "test"
-    ? "https://test-ws.sanmar.com:8080"
+  const environment = String(row.settings?.environment || "production").toLowerCase();
+  return environment === "test" || environment === "edev"
+    ? "https://edev-ws.sanmar.com:8080"
     : "https://ws.sanmar.com:8080";
 }
 
-function secureImage(value: string) {
-  const trimmed = String(value || "").replace(/\s+/g, "").trim();
-  if (!trimmed) return "";
-  if (trimmed.startsWith("http://cdn.sanmar.com/")) {
-    return trimmed.replace("http://", "https://");
-  }
-  return /^https:\/\//i.test(trimmed) ? trimmed : "";
+function envelope(body: string) {
+  return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header/><soapenv:Body>${body}</soapenv:Body></soapenv:Envelope>`;
 }
 
-async function soap(url: string, body: string, timeoutMs = 30000) {
-  const r = await fetch(url, {
+async function soap(url: string, body: string, timeoutMs = 45000) {
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
@@ -113,122 +124,163 @@ async function soap(url: string, body: string, timeoutMs = 30000) {
     signal: AbortSignal.timeout(timeoutMs)
   });
 
-  const text = await r.text();
+  const text = await response.text();
+  const fault = /<(?:[A-Za-z0-9_-]+:)?Fault\b/i.test(text);
 
-  if (!r.ok || /<(?:\w+:)?Fault\b/i.test(text)) {
+  if (!response.ok || fault) {
     throw new Error(
       tag(text, "faultstring") ||
-      tag(text, "message") ||
-      `SanMar request failed (${r.status}).`
+        tag(text, "message") ||
+        `SanMar SOAP request failed (${response.status}).`
     );
+  }
+
+  const errorFlag = tag(text, "errorOccurred") || tag(text, "errorOccured");
+  if (/^true$/i.test(errorFlag)) {
+    throw new Error(tag(text, "message") || "SanMar returned an error.");
   }
 
   return text;
 }
 
-const envelope = (body: string) =>
-  `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header/><soapenv:Body>${body}</soapenv:Body></soapenv:Envelope>`;
-
+/**
+ * Raw PromoStandards Product Data V2 request.
+ * Production endpoint matches SanMar Web Services Guide v24.6.
+ */
 export async function sanmarGetProduct(row: Connection, style: string) {
   const c = creds(row);
-  const url = String(
-    row.settings?.productDataEndpoint ||
-      `${host(row)}/promostandards/ProductDataServiceBindingV2`
-  );
+  const url = `${host(row)}/promostandards/ProductDataServiceBindingV2`;
 
-  const xml = envelope(
-    `<ns:GetProductRequest xmlns:ns="http://www.promostandards.org/WSDL/ProductDataService/2.0.0/" xmlns:shar="http://www.promostandards.org/WSDL/ProductDataService/2.0.0/SharedObjects/"><shar:wsVersion>2.0.0</shar:wsVersion><shar:id>${escapeXml(c.username)}</shar:id><shar:password>${escapeXml(c.password)}</shar:password><shar:localizationCountry>us</shar:localizationCountry><shar:localizationLanguage>en</shar:localizationLanguage><shar:productId>${escapeXml(style)}</shar:productId></ns:GetProductRequest>`
+  return soap(
+    url,
+    envelope(
+      `<ns:GetProductRequest xmlns:ns="http://www.promostandards.org/WSDL/ProductDataService/2.0.0/" ` +
+        `xmlns:shar="http://www.promostandards.org/WSDL/ProductDataService/2.0.0/SharedObjects/">` +
+        `<shar:wsVersion>2.0.0</shar:wsVersion>` +
+        `<shar:id>${escapeXml(c.username)}</shar:id>` +
+        `<shar:password>${escapeXml(c.password)}</shar:password>` +
+        `<shar:localizationCountry>us</shar:localizationCountry>` +
+        `<shar:localizationLanguage>en</shar:localizationLanguage>` +
+        `<shar:productId>${escapeXml(style.trim().toUpperCase())}</shar:productId>` +
+        `</ns:GetProductRequest>`
+    )
   );
-
-  return soap(url, xml);
 }
 
+/**
+ * Raw SanMar Standard Pricing request. A style-only request returns all SKUs.
+ */
 export async function sanmarGetPricing(row: Connection, style: string) {
   const c = creds(row);
   if (!c.customerNumber) return "";
 
-  const url = String(
-    row.settings?.pricingEndpoint ||
-      `${host(row)}/SanMarWebService/SanMarPricingServicePort`
-  );
+  const url = `${host(row)}/SanMarWebService/SanMarPricingServicePort`;
 
-  const xml = envelope(
-    `<impl:getPricing xmlns:impl="http://impl.webservice.integration.sanmar.com/"><arg0><style>${escapeXml(style)}</style></arg0><arg1><sanMarCustomerNumber>${escapeXml(c.customerNumber)}</sanMarCustomerNumber><sanMarUserName>${escapeXml(c.username)}</sanMarUserName><sanMarUserPassword>${escapeXml(c.password)}</sanMarUserPassword></arg1></impl:getPricing>`
+  return soap(
+    url,
+    envelope(
+      `<impl:getPricing xmlns:impl="http://impl.webservice.integration.sanmar.com/">` +
+        `<arg0><style>${escapeXml(style.trim().toUpperCase())}</style></arg0>` +
+        `<arg1>` +
+        `<sanMarCustomerNumber>${escapeXml(c.customerNumber)}</sanMarCustomerNumber>` +
+        `<sanMarUserName>${escapeXml(c.username)}</sanMarUserName>` +
+        `<sanMarUserPassword>${escapeXml(c.password)}</sanMarUserPassword>` +
+        `</arg1>` +
+        `</impl:getPricing>`
+    )
   );
-
-  return soap(url, xml);
 }
 
+/**
+ * Raw PromoStandards Inventory V2 request.
+ *
+ * IMPORTANT: v24.6 endpoint is InventoryServiceBindingV2final.
+ * partIds are SanMar Unique_Key values and are limited to 200 per request.
+ */
 export async function sanmarGetInventory(
   row: Connection,
   style: string,
   partIds: string[]
 ) {
   const c = creds(row);
-  const url = String(
-    row.settings?.inventoryEndpoint ||
-      `${host(row)}/promostandards/InventoryServiceBindingV2`
-  );
-  const parts = partIds
+  const ids = Array.from(
+    new Set(partIds.map((value) => String(value || "").trim()).filter(Boolean))
+  ).slice(0, 200);
+
+  const url = `${host(row)}/promostandards/InventoryServiceBindingV2final`;
+  const parts = ids
     .map((id) => `<shar:partId>${escapeXml(id)}</shar:partId>`)
     .join("");
 
-  const xml = envelope(
-    `<ns:GetInventoryLevelsRequest xmlns:ns="http://www.promostandards.org/WSDL/Inventory/2.0.0/" xmlns:shar="http://www.promostandards.org/WSDL/Inventory/2.0.0/SharedObjects/"><shar:wsVersion>2.0.0</shar:wsVersion><shar:id>${escapeXml(c.username)}</shar:id><shar:password>${escapeXml(c.password)}</shar:password><shar:productId>${escapeXml(style)}</shar:productId><shar:Filter><shar:partIdArray>${parts}</shar:partIdArray></shar:Filter></ns:GetInventoryLevelsRequest>`
+  return soap(
+    url,
+    envelope(
+      `<ns:GetInventoryLevelsRequest xmlns:ns="http://www.promostandards.org/WSDL/Inventory/2.0.0/" ` +
+        `xmlns:shar="http://www.promostandards.org/WSDL/Inventory/2.0.0/SharedObjects/">` +
+        `<shar:wsVersion>2.0.0</shar:wsVersion>` +
+        `<shar:id>${escapeXml(c.username)}</shar:id>` +
+        `<shar:password>${escapeXml(c.password)}</shar:password>` +
+        `<shar:productId>${escapeXml(style.trim().toUpperCase())}</shar:productId>` +
+        `<shar:Filter><shar:partIdArray>${parts}</shar:partIdArray></shar:Filter>` +
+        `</ns:GetInventoryLevelsRequest>`
+    )
   );
-
-  return soap(url, xml);
-}
-
-export async function sanmarGetMedia(row: Connection, style: string) {
-  const c = creds(row);
-  const url = String(
-    row.settings?.mediaEndpoint ||
-      `${host(row)}/promostandards/MediaServiceBinding`
-  );
-
-  const xml = envelope(
-    `<ns:GetMediaContentRequest xmlns:ns="http://www.promostandards.org/WSDL/MediaService/1.0.0/" xmlns:shar="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/"><shar:wsVersion>1.1.0</shar:wsVersion><shar:id>${escapeXml(c.username)}</shar:id><shar:password>${escapeXml(c.password)}</shar:password><shar:cultureName>en-us</shar:cultureName><shar:mediaType>Image</shar:mediaType><shar:productId>${escapeXml(style)}</shar:productId></ns:GetMediaContentRequest>`
-  );
-
-  try {
-    return await soap(url, xml);
-  } catch {
-    return "";
-  }
 }
 
 /**
- * SanMar Standard Product Information Services:
- * getProductInfoByCategory.
- *
- * This is intentionally used as a browse/index call only. When a user opens a
- * style, sanmarNormalizedStyle() still performs the exact PromoStandards
- * ProductData + account pricing + live inventory + media calls.
+ * Raw PromoStandards Media Content request.
+ * v24.6 endpoint is MediaContentServiceBinding.
+ */
+export async function sanmarGetMedia(row: Connection, style: string) {
+  const c = creds(row);
+  const url = `${host(row)}/promostandards/MediaContentServiceBinding`;
+
+  return soap(
+    url,
+    envelope(
+      `<ns:GetMediaContentRequest xmlns:ns="http://www.promostandards.org/WSDL/MediaService/1.0.0/" ` +
+        `xmlns:shar="http://www.promostandards.org/WSDL/MediaService/1.0.0/SharedObjects/">` +
+        `<shar:wsVersion>1.1.0</shar:wsVersion>` +
+        `<shar:id>${escapeXml(c.username)}</shar:id>` +
+        `<shar:password>${escapeXml(c.password)}</shar:password>` +
+        `<shar:cultureName>en-us</shar:cultureName>` +
+        `<shar:mediaType>Image</shar:mediaType>` +
+        `<shar:productId>${escapeXml(style.trim().toUpperCase())}</shar:productId>` +
+        `</ns:GetMediaContentRequest>`
+    )
+  );
+}
+
+/**
+ * Standard Product Information by-category is ASYNCHRONOUS in SanMar v24.6.
+ * The response is an acknowledgement and the generated CSV is written to FTP.
+ * It must never be treated as an immediate product browser response.
  */
 export async function sanmarGetProductInfoByCategory(
   row: Connection,
   category: string
 ) {
   const c = creds(row);
-
   if (!c.customerNumber) {
-    throw new Error(
-      "Your SanMar connection needs the customer number before the visual catalog can be browsed. Update the SanMar connection under Settings."
-    );
+    throw new Error("SanMar customer number is required.");
   }
 
-  const url = String(
-    row.settings?.productInfoEndpoint ||
-      `${host(row)}/SanMarWebService/SanMarProductInfoServicePort`
-  );
+  const url = `${host(row)}/SanMarWebService/SanMarProductInfoServicePort`;
 
-  const xml = envelope(
-    `<impl:getProductInfoByCategory xmlns:impl="http://impl.webservice.integration.sanmar.com/"><arg0><category>${escapeXml(category)}</category></arg0><arg1><sanMarCustomerNumber>${escapeXml(c.customerNumber)}</sanMarCustomerNumber><sanMarUserName>${escapeXml(c.username)}</sanMarUserName><sanMarUserPassword>${escapeXml(c.password)}</sanMarUserPassword></arg1></impl:getProductInfoByCategory>`
+  return soap(
+    url,
+    envelope(
+      `<impl:getProductInfoByCategory xmlns:impl="http://impl.webservice.integration.sanmar.com/">` +
+        `<arg0><category>${escapeXml(category)}</category></arg0>` +
+        `<arg1>` +
+        `<sanMarCustomerNumber>${escapeXml(c.customerNumber)}</sanMarCustomerNumber>` +
+        `<sanMarUserName>${escapeXml(c.username)}</sanMarUserName>` +
+        `<sanMarUserPassword>${escapeXml(c.password)}</sanMarUserPassword>` +
+        `</arg1>` +
+        `</impl:getProductInfoByCategory>`
+    ),
+    55000
   );
-
-  // Category payloads are much larger than exact-style requests.
-  return soap(url, xml, 55000);
 }
 
 export async function sanmarBrowseCategory(
@@ -236,209 +288,224 @@ export async function sanmarBrowseCategory(
   category: string
 ): Promise<SanMarCatalogStyle[]> {
   const xml = await sanmarGetProductInfoByCategory(row, category);
-  const rows = blocks(xml, "listResponse");
+  const immediateRows = blocks(xml, "listResponse");
 
-  if (!rows.length) {
-    const message = tag(xml, "message");
-    if (/ftp|csv|file/i.test(message)) {
-      throw new Error(
-        "SanMar moved this large category response to its FTP export instead of returning products immediately. Try the category again, use an exact style search, or contact SanMar integration support to enable reliable product-data browsing for this account."
-      );
-    }
+  // Keep backwards compatibility if SanMar ever returns rows directly, but
+  // current v24.6 behavior is an async FTP export.
+  if (!immediateRows.length) {
     throw new Error(
-      message || `SanMar returned no browseable products for ${category}.`
+      tag(xml, "message") ||
+        "SanMar category Product Information is asynchronous. Use the SFTP SDL_N/EPDD catalog cache for browsing."
     );
   }
 
-  type Group = SanMarCatalogStyle & {
-    colors: Set<string>;
-    sizes: Set<string>;
-    prices: number[];
-  };
+  const grouped = new Map<string, SanMarCatalogStyle & { colors: Set<string>; sizes: Set<string>; prices: number[] }>();
 
-  const grouped = new Map<string, Group>();
-
-  for (const rowXml of rows) {
+  for (const rowXml of immediateRows) {
     const basic = blocks(rowXml, "productBasicInfo")[0] || rowXml;
-    const images = blocks(rowXml, "productImageInfo")[0] || "";
+    const image = blocks(rowXml, "productImageInfo")[0] || "";
     const priceInfo = blocks(rowXml, "productPriceInfo")[0] || "";
-
     const styleId = tag(basic, "style").trim().toUpperCase();
     if (!styleId) continue;
 
-    const status = tag(basic, "productStatus");
-    if (status && !/active/i.test(status)) continue;
+    const colorName = tag(basic, "color").trim();
+    const sizeName = tag(basic, "size").trim();
+    const price = Number(tag(priceInfo, "piecePrice") || 0);
 
-    const brandName = tag(basic, "brandName") || "SanMar";
-    const title =
-      tag(basic, "productTitle") ||
-      `${brandName} ${styleId}`;
-    const description = tag(basic, "productDescription")
-      .replace(/\s*\|\s*/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    let item = grouped.get(styleId);
+    if (!item) {
+      item = {
+        styleId,
+        brandName: tag(basic, "brandName") || "SanMar",
+        title: tag(basic, "productTitle") || styleId,
+        description: tag(basic, "productDescription") || "",
+        category,
+        imageUrl:
+          tag(image, "frontFlat") ||
+          tag(image, "frontModel") ||
+          tag(image, "colorProductImage") ||
+          tag(image, "productImage") ||
+          "",
+        colorCount: 0,
+        sizeCount: 0,
+        priceMin: 0,
+        priceMax: 0,
+        colors: new Set<string>(),
+        sizes: new Set<string>(),
+        prices: []
+      };
+      grouped.set(styleId, item);
+    }
 
-    const imageUrl = secureImage(
-      tag(images, "frontFlat") ||
-      tag(images, "frontModel") ||
-      tag(images, "colorProductImage") ||
-      tag(images, "productImage") ||
-      tag(images, "thumbnailImage")
-    );
-
-    const price = Number(
-      tag(priceInfo, "piecePrice") ||
-      tag(priceInfo, "casePrice") ||
-      0
-    );
-
-    const current = grouped.get(styleId) || {
-      styleId,
-      brandName,
-      title,
-      description,
-      category,
-      imageUrl,
-      colorCount: 0,
-      sizeCount: 0,
-      priceMin: 0,
-      priceMax: 0,
-      colors: new Set<string>(),
-      sizes: new Set<string>(),
-      prices: []
-    };
-
-    if (!current.imageUrl && imageUrl) current.imageUrl = imageUrl;
-    if (!current.description && description) current.description = description;
-
-    const color = tag(basic, "color") || tag(basic, "catalogColor");
-    const size = tag(basic, "size");
-    if (color) current.colors.add(color);
-    if (size) current.sizes.add(size);
-    if (price > 0) current.prices.push(price);
-
-    grouped.set(styleId, current);
+    if (colorName) item.colors.add(colorName);
+    if (sizeName) item.sizes.add(sizeName);
+    if (Number.isFinite(price) && price > 0) item.prices.push(price);
   }
 
-  return [...grouped.values()]
-    .map((item) => ({
-      styleId: item.styleId,
-      brandName: item.brandName,
-      title: item.title,
-      description: item.description,
-      category: item.category,
-      imageUrl: item.imageUrl,
-      colorCount: item.colors.size,
-      sizeCount: item.sizes.size,
-      priceMin: item.prices.length ? Math.min(...item.prices) : 0,
-      priceMax: item.prices.length ? Math.max(...item.prices) : 0
-    }))
-    .sort((a, b) =>
-      `${a.brandName} ${a.styleId}`.localeCompare(
-        `${b.brandName} ${b.styleId}`
-      )
-    );
+  return Array.from(grouped.values()).map((item) => ({
+    styleId: item.styleId,
+    brandName: item.brandName,
+    title: item.title,
+    description: item.description,
+    category: item.category,
+    imageUrl: item.imageUrl,
+    colorCount: item.colors.size,
+    sizeCount: item.sizes.size,
+    priceMin: item.prices.length ? Math.min(...item.prices) : 0,
+    priceMax: item.prices.length ? Math.max(...item.prices) : 0
+  }));
 }
 
+/**
+ * Legacy compatibility entry point.
+ *
+ * This no longer guesses colors from the first colorName inside ProductPart.
+ * It unions Standard Product Information + PromoStandards Product Data by
+ * SanMar Unique_Key and enriches the complete set with pricing/inventory/media.
+ */
 export async function sanmarNormalizedStyle(
   row: Connection,
   styleInput: string
 ): Promise<SanMarNormalizedStyle> {
-  const style = styleInput.trim().toUpperCase();
-  if (!style) throw new Error("Enter a SanMar style number.");
+  const styleId = styleInput.trim().toUpperCase();
+  if (!styleId) throw new Error("Enter a SanMar style number.");
 
-  const productXml = await sanmarGetProduct(row, style);
-  const productBlocks = blocks(productXml, "ProductPart");
-
-  if (!productBlocks.length) {
-    throw new Error(`SanMar did not return variants for ${style}.`);
-  }
-
-  const parts = productBlocks
-    .map((b) => ({
-      partId: tag(b, "partId"),
-      color: tag(b, "colorName"),
-      size: tag(b, "labelSize")
-    }))
-    .filter((p) => p.partId && p.color && p.size);
-
-  const [pricingXml, inventoryXml, mediaXml] = await Promise.all([
-    sanmarGetPricing(row, style).catch(() => ""),
-    sanmarGetInventory(
-      row,
-      style,
-      parts.map((p) => p.partId)
-    ).catch(() => ""),
-    sanmarGetMedia(row, style)
+  const [standardResult, promoResult] = await Promise.allSettled([
+    fetchSanMarStandardProductInfo(row, styleId),
+    fetchSanMarPromoProductData(row, styleId)
   ]);
 
-  const pricing = new Map<string, number>();
-  for (const b of blocks(pricingXml, "listResponse")) {
-    const k = `${tag(b, "color").toLowerCase()}|${tag(
-      b,
-      "size"
-    ).toLowerCase()}`;
-    pricing.set(
-      k,
-      Number(tag(b, "myPrice") || tag(b, "piecePrice") || 0)
+  const standard =
+    standardResult.status === "fulfilled" ? standardResult.value : null;
+  const promo =
+    promoResult.status === "fulfilled" ? promoResult.value : null;
+
+  if (!standard && !promo) {
+    const standardError =
+      standardResult.status === "rejected"
+        ? standardResult.reason
+        : undefined;
+    const promoError =
+      promoResult.status === "rejected"
+        ? promoResult.reason
+        : undefined;
+
+    throw new Error(
+      `Unable to load SanMar ${styleId}. Standard Product Information: ${
+        standardError instanceof Error ? standardError.message : String(standardError || "failed")
+      }. PromoStandards Product Data: ${
+        promoError instanceof Error ? promoError.message : String(promoError || "failed")
+      }.`
     );
   }
 
-  const inventory = new Map<string, number>();
-  for (const b of blocks(inventoryXml, "PartInventory")) {
-    const q = blocks(b, "quantityAvailable")[0] || b;
-    inventory.set(tag(b, "partId"), Number(tag(q, "value") || 0));
-  }
+  const variants = new Map<string, any>();
 
-  const media: Record<
-    string,
-    {
-      frontImageUrl?: string;
-      backImageUrl?: string;
-      swatchImageUrl?: string;
-    }
-  > = {};
+  for (const source of [standard, promo]) {
+    for (const variant of source?.variants || []) {
+      const key =
+        String(variant.uniqueKey || variant.sku || "").trim() ||
+        `${sanmarNormalize(variant.colorName)}|${sanmarNormalize(variant.sizeName)}`;
+      const current = variants.get(key);
 
-  for (const b of blocks(mediaXml, "MediaContent")) {
-    const color = tag(b, "color");
-    const u = secureImage(tag(b, "url"));
-    if (!color || !u) continue;
-
-    const cls = tag(b, "classTypeId");
-    media[color] = media[color] || {};
-
-    if (cls === "1007" || /front/i.test(u)) {
-      media[color].frontImageUrl = u;
-    } else if (cls === "1008" || /back|rear/i.test(u)) {
-      media[color].backImageUrl = u;
-    } else if (cls === "1004" || /swatch/i.test(u)) {
-      media[color].swatchImageUrl = u;
+      variants.set(key, {
+        ...(current || {}),
+        ...variant,
+        colorName: current?.colorName || variant.colorName,
+        sizeName: current?.sizeName || variant.sizeName,
+        inventoryKey: current?.inventoryKey || variant.inventoryKey || "",
+        sizeIndex: current?.sizeIndex || variant.sizeIndex || "",
+        catalogColor: current?.catalogColor || variant.catalogColor || variant.colorName,
+        mainframeColor: current?.mainframeColor || variant.mainframeColor || variant.catalogColor || variant.colorName,
+        uniqueKey: current?.uniqueKey || variant.uniqueKey || variant.sku
+      });
     }
   }
 
-  const description =
-    tag(productXml, "description") || `SanMar style ${style}`;
-  const name = tag(productXml, "productName") || style;
-  const brandName =
-    tag(productXml, "brandName") || tag(productXml, "brand") || "SanMar";
+  let rows = Array.from(variants.values());
+  const partIds = Array.from(
+    new Set(rows.map((variant) => variant.uniqueKey || variant.sku).filter(Boolean))
+  );
+  const displayColorByPartId = new Map(
+    rows.map((variant) => [variant.uniqueKey || variant.sku, variant.colorName])
+  );
 
-  const variants = parts.map((p) => ({
-    sku: p.partId,
-    skuId: p.partId,
-    colorName: p.color,
-    sizeName: p.size,
-    customerPrice:
-      pricing.get(`${p.color.toLowerCase()}|${p.size.toLowerCase()}`) || 0,
-    quantity: inventory.get(p.partId) || 0,
-    active: true
-  }));
+  const [pricingResult, inventoryResult, mediaResult] = await Promise.allSettled([
+    fetchSanMarPricing(row, styleId),
+    partIds.length
+      ? fetchSanMarInventory(row, styleId, partIds)
+      : Promise.resolve(new Map<string, number>()),
+    fetchSanMarMedia(row, styleId, displayColorByPartId)
+  ]);
+
+  const pricing =
+    pricingResult.status === "fulfilled" ? pricingResult.value : null;
+  const inventory =
+    inventoryResult.status === "fulfilled"
+      ? inventoryResult.value
+      : new Map<string, number>();
+  const media =
+    mediaResult.status === "fulfilled" ? mediaResult.value : {};
+
+  rows = rows.map((variant) => {
+    const customerPrice =
+      (variant.inventoryKey && variant.sizeIndex
+        ? pricing?.byInventoryAndSize.get(
+            `${variant.inventoryKey}|${variant.sizeIndex}`
+          )
+        : undefined) ||
+      pricing?.byCatalogColorAndSize.get(
+        `${sanmarNormalize(
+          variant.catalogColor || variant.mainframeColor || variant.colorName
+        )}|${sanmarNormalize(variant.sizeName)}`
+      ) ||
+      variant.customerPrice ||
+      0;
+
+    const quantity = inventory.has(variant.uniqueKey || variant.sku)
+      ? inventory.get(variant.uniqueKey || variant.sku) || 0
+      : variant.quantity || 0;
+
+    return {
+      ...variant,
+      customerPrice,
+      quantity
+    };
+  });
+
+  for (const variant of rows) {
+    media[variant.colorName] ||= {};
+    if (variant.frontImageUrl) {
+      media[variant.colorName].frontImageUrl ||= variant.frontImageUrl;
+    }
+    if (variant.backImageUrl) {
+      media[variant.colorName].backImageUrl ||= variant.backImageUrl;
+    }
+    if (variant.swatchImageUrl) {
+      media[variant.colorName].swatchImageUrl ||= variant.swatchImageUrl;
+    }
+  }
 
   return {
-    styleId: style,
-    name,
-    description,
-    brandName,
-    variants,
+    styleId,
+    name: standard?.name || promo?.name || styleId,
+    description: standard?.description || promo?.description || "",
+    brandName: standard?.brandName || promo?.brandName || "SanMar",
+    variants: rows.map((variant) => ({
+      sku: variant.uniqueKey || variant.sku,
+      skuId: variant.uniqueKey || variant.skuId || variant.sku,
+      gtin: variant.gtin || undefined,
+      colorName: variant.colorName,
+      sizeName: variant.sizeName,
+      customerPrice: Math.max(0, Number(variant.customerPrice || 0)),
+      quantity: Math.max(0, Number(variant.quantity || 0)),
+      active: variant.active !== false,
+      uniqueKey: variant.uniqueKey || variant.sku,
+      inventoryKey: variant.inventoryKey || "",
+      sizeIndex: variant.sizeIndex || "",
+      catalogColor: variant.catalogColor || variant.mainframeColor || variant.colorName,
+      mainframeColor: variant.mainframeColor || variant.catalogColor || variant.colorName
+    })),
     media
   };
 }

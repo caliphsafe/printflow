@@ -1,0 +1,27 @@
+VALIDATION — SANMAR INTEGRATION REBUILD
+
+TypeScript:
+- strict noEmit compile: PASS
+- checked with PrintFlow-like target ES2017 + lib ESNext/DOM: PASS
+- no new npm dependencies
+
+SanMar XML fixture:
+- Standard Product Info parsed 2 distinct colors: PASS
+- PromoStandards ProductData parsed 2 distinct ProductPart colors: PASS
+- primaryColor deliberately incorrect; ColorArray won: PASS
+- uniqueKey / partId preserved: PASS
+- inventoryKey + sizeIndex preserved: PASS
+- customer pricing matched by inventoryKey + sizeIndex: PASS
+- Inventory mapped by uniqueKey / partId: PASS
+- Inventory endpoint ends in InventoryServiceBindingV2final: PASS
+- Media endpoint uses MediaContentServiceBinding: PASS
+- Media classType 1007 maps front image: PASS
+
+Fixture output:
+White | uniqueKey 118032 | inventoryKey 11803 | sizeIndex 2
+Red   | uniqueKey 220012 | inventoryKey 22001 | sizeIndex 2
+
+No SQL files.
+No package.json changes.
+No package-lock.json.
+No credential changes.

@@ -8,6 +8,7 @@ import {
 import { sanmarCompleteStyle } from "@/lib/sanmar-complete-style";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const { supabase, membership, shop } = await getAdminContext();
@@ -30,14 +31,14 @@ export async function POST(request: Request) {
     : "T-Shirts";
 
   const requestedColors: string[] = Array.isArray(body.selectedColors)
-    ? body.selectedColors.map((value: unknown) => String(value)).filter(Boolean)
+    ? body.selectedColors
+        .map((value: unknown) => String(value).trim())
+        .filter(Boolean)
     : [];
 
   const { data: connection } = await supabase
     .from("supplier_connections")
-    .select(
-      "encrypted_account_number,encrypted_api_key,settings,status"
-    )
+    .select("encrypted_account_number,encrypted_api_key,settings,status")
     .eq("shop_id", shop.id)
     .eq("provider", "sanmar")
     .maybeSingle();
@@ -59,11 +60,9 @@ export async function POST(request: Request) {
 
     const allColorNames = Array.from(
       new Set<string>(
-        (style.variants || [])
-          .map((variant: any) =>
-            String(variant.colorName || "").trim()
-          )
-          .filter((name: string) => name.length > 0)
+        style.variants
+          .map((variant: any) => String(variant.colorName || "").trim())
+          .filter(Boolean)
       )
     ).sort((a, b) => a.localeCompare(b));
 
@@ -79,7 +78,11 @@ export async function POST(request: Request) {
 
     if (!selectedColors.length) {
       return NextResponse.json(
-        { error: "Choose at least one SanMar color to add." },
+        {
+          error:
+            "SanMar returned no selected colors for this style. Re-open the product and choose at least one color.",
+          diagnostics: style.diagnostics
+        },
         { status: 400 }
       );
     }
@@ -88,20 +91,17 @@ export async function POST(request: Request) {
       selectedColors.map((name) => name.toLowerCase())
     );
 
-    const variants = (style.variants || []).filter(
-      (variant: any) =>
-        selectedColorSet.has(
-          String(variant.colorName || "").trim().toLowerCase()
-        )
+    const variants = style.variants.filter((variant: any) =>
+      selectedColorSet.has(
+        String(variant.colorName || "").trim().toLowerCase()
+      )
     );
 
     const sizes = Array.from(
       new Set<string>(
         variants
-          .map((variant: any) =>
-            String(variant.sizeName || "").trim()
-          )
-          .filter((name: string) => name.length > 0)
+          .map((variant: any) => String(variant.sizeName || "").trim())
+          .filter(Boolean)
       )
     );
 
@@ -111,6 +111,38 @@ export async function POST(request: Request) {
       hex: "#d9dee6",
       active: true,
       ...(style.media?.[name] || {})
+    }));
+
+    const canonicalSupplierVariants = variants.map((variant: any) => ({
+      // SanMar Unique_Key / PromoStandards partId
+      sku: String(variant.uniqueKey || variant.sku || ""),
+      skuId: String(variant.uniqueKey || variant.skuId || variant.sku || ""),
+      gtin: variant.gtin || undefined,
+
+      // Customer-facing dimensions
+      colorName: variant.colorName,
+      sizeName: variant.sizeName,
+      customerPrice: Math.max(0, Number(variant.customerPrice || 0)),
+      quantity: Math.max(0, Number(variant.quantity || 0)),
+      active: true,
+
+      // Preserve SanMar's canonical order identifiers in the raw product JSON.
+      // Existing PrintFlow readers safely ignore unknown optional fields.
+      uniqueKey: String(variant.uniqueKey || variant.sku || ""),
+      inventoryKey: String(variant.inventoryKey || ""),
+      sizeIndex: String(variant.sizeIndex || ""),
+      catalogColor: String(
+        variant.catalogColor ||
+          variant.mainframeColor ||
+          variant.colorName ||
+          ""
+      ),
+      mainframeColor: String(
+        variant.mainframeColor ||
+          variant.catalogColor ||
+          variant.colorName ||
+          ""
+      )
     }));
 
     const config = normalizeConfiguration({
@@ -129,16 +161,7 @@ export async function POST(request: Request) {
         partNumber: style.styleId,
         importedAt: new Date().toISOString(),
         sourceMode: "live",
-        variants: variants.map((variant: any) => ({
-          sku: variant.sku,
-          skuId: variant.skuId,
-          gtin: variant.gtin || undefined,
-          colorName: variant.colorName,
-          sizeName: variant.sizeName,
-          customerPrice: variant.customerPrice,
-          quantity: variant.quantity,
-          active: true
-        }))
+        variants: canonicalSupplierVariants
       },
       customization: {
         ...DEFAULT_CONFIGURATION.customization,
@@ -148,18 +171,24 @@ export async function POST(request: Request) {
           category === "Hats"
             ? ["Embroidery"]
             : ["Screen Print", "DTF", "Embroidery"],
-        printSizes: category === "Hats" ? ["full"] : ["heart", "full"],
+        printSizes:
+          category === "Hats" ? ["full"] : ["heart", "full"],
         designModes:
           category === "Hats"
             ? ["front"]
             : ["front", "back", "front-back"],
         backEnabled: category !== "Hats"
       }
-    } as any);
+    } as any) as any;
 
-    // Find a previously imported copy of this SanMar style so re-importing
-    // repairs the existing product instead of accidentally creating a second
-    // product with a different slug.
+    // normalizeConfiguration intentionally sanitizes legacy supplier variants.
+    // Restore the canonical SanMar identifiers after normalization so the
+    // persisted product retains Unique_Key, inventoryKey, sizeIndex and
+    // catalog/mainframe color.
+    if (config.supplier) {
+      config.supplier.variants = canonicalSupplierVariants;
+    }
+
     const { data: existingProducts } = await supabase
       .from("catalog_products")
       .select("id,slug,name,configuration")
@@ -207,7 +236,8 @@ export async function POST(request: Request) {
       repairedExistingProduct: Boolean(existing),
       variantCount: variants.length,
       colorCount: colors.length,
-      availableColorCount: allColorNames.length
+      availableColorCount: allColorNames.length,
+      diagnostics: style.diagnostics
     });
   } catch (error) {
     return NextResponse.json(

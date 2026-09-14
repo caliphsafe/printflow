@@ -1,21 +1,23 @@
+import { getSanMarCachedStyle } from "@/lib/sanmar-catalog";
 import {
-  getSanMarCachedStyle
-} from "@/lib/sanmar-catalog";
-import {
-  sanmarNormalizedStyleCorrected
-} from "@/lib/sanmar-normalized-fixed";
-
-type Connection = {
-  encrypted_account_number: string;
-  encrypted_api_key: string;
-  settings?: Record<string, any> | null;
-};
+  fetchSanMarInventory,
+  fetchSanMarMedia,
+  fetchSanMarPricing,
+  fetchSanMarPromoProductData,
+  fetchSanMarStandardProductInfo,
+  sanmarNormalize,
+  type SanMarCanonicalVariant,
+  type SanMarConnection,
+  type SanMarMediaMap,
+  type SanMarStyleSource
+} from "@/lib/sanmar-canonical";
 
 type CachedVariant = {
   uniqueKey?: string;
   inventoryKey?: string;
   sizeIndex?: string;
   mainframeColor?: string;
+  catalogColor?: string;
   colorName?: string;
   sizeName?: string;
   quantity?: number;
@@ -29,191 +31,486 @@ type CachedVariant = {
   backFlatUrl?: string;
 };
 
-function key(colorName: unknown, sizeName: unknown) {
-  return `${String(colorName || "").trim().toLowerCase()}|${String(sizeName || "")
-    .trim()
-    .toLowerCase()}`;
+function sourceKey(variant: Partial<SanMarCanonicalVariant>) {
+  const uniqueKey = String(variant.uniqueKey || variant.sku || variant.skuId || "").trim();
+  if (uniqueKey) return `unique:${uniqueKey}`;
+
+  const inventoryKey = String(variant.inventoryKey || "").trim();
+  const sizeIndex = String(variant.sizeIndex || "").trim();
+  if (inventoryKey && sizeIndex) {
+    return `inventory:${inventoryKey}|${sizeIndex}`;
+  }
+
+  return `display:${sanmarNormalize(variant.colorName)}|${sanmarNormalize(
+    variant.sizeName
+  )}`;
 }
 
-function cachedSku(styleId: string, variant: CachedVariant) {
-  return (
-    String(variant.uniqueKey || "").trim() ||
-    String(variant.inventoryKey || "").trim() ||
-    `${styleId}-${String(variant.colorName || "color")
+function cacheVariant(styleId: string, raw: CachedVariant): SanMarCanonicalVariant | null {
+  const colorName = String(raw.colorName || "").trim();
+  const sizeName = String(raw.sizeName || "").trim();
+  if (!colorName || !sizeName) return null;
+
+  const uniqueKey = String(
+    raw.uniqueKey ||
+      (raw.inventoryKey && raw.sizeIndex
+        ? `${raw.inventoryKey}${raw.sizeIndex}`
+        : "")
+  ).trim();
+
+  const fallbackSku =
+    uniqueKey ||
+    `${styleId}-${colorName}-${sizeName}`
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")}-${String(variant.sizeName || "size")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")}`
-  );
-}
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
 
-function cachedMedia(cached: any, colorName: string) {
-  const variants: CachedVariant[] = Array.isArray(cached?.variants)
-    ? cached.variants
-    : [];
-
-  const rows = variants.filter(
-    (variant) =>
-      String(variant.colorName || "").trim().toLowerCase() ===
-      colorName.trim().toLowerCase()
-  );
-
-  const first = rows[0];
+  const catalogColor = String(
+    raw.mainframeColor || raw.catalogColor || colorName
+  ).trim();
 
   return {
+    sku: fallbackSku,
+    skuId: fallbackSku,
+    uniqueKey,
+    inventoryKey: String(raw.inventoryKey || ""),
+    sizeIndex: String(raw.sizeIndex || ""),
+    catalogColor,
+    mainframeColor: catalogColor,
+    colorName,
+    sizeName,
+    gtin: raw.gtin ? String(raw.gtin) : undefined,
+    customerPrice: Math.max(0, Number(raw.piecePrice || 0)),
+    quantity: Math.max(0, Number(raw.quantity || 0)),
+    active: true,
     frontImageUrl:
-      rows.find((row) => row.frontFlatUrl)?.frontFlatUrl ||
-      rows.find((row) => row.frontModelUrl)?.frontModelUrl ||
-      rows.find((row) => row.colorProductImageUrl)?.colorProductImageUrl ||
-      first?.frontFlatUrl ||
-      first?.frontModelUrl ||
-      first?.colorProductImageUrl ||
-      cached?.front_flat_url ||
-      cached?.front_model_url ||
-      cached?.image_url ||
+      raw.frontFlatUrl ||
+      raw.frontModelUrl ||
+      raw.colorProductImageUrl ||
       "",
     backImageUrl:
-      rows.find((row) => row.backFlatUrl)?.backFlatUrl ||
-      rows.find((row) => row.backModelUrl)?.backModelUrl ||
-      first?.backFlatUrl ||
-      first?.backModelUrl ||
-      cached?.back_flat_url ||
-      cached?.back_model_url ||
+      raw.backFlatUrl ||
+      raw.backModelUrl ||
       "",
-    swatchImageUrl:
-      rows.find((row) => row.swatchImageUrl)?.swatchImageUrl ||
-      first?.swatchImageUrl ||
-      ""
+    swatchImageUrl: raw.swatchImageUrl || "",
+    source: "cache"
+  };
+}
+
+function mergeVariant(
+  current: SanMarCanonicalVariant | undefined,
+  incoming: SanMarCanonicalVariant
+): SanMarCanonicalVariant {
+  if (!current) return { ...incoming };
+
+  // The cache / Standard Product Info contain SanMar's canonical order
+  // identifiers. Never replace a populated identifier with an empty live field.
+  return {
+    ...current,
+    sku: current.sku || incoming.sku,
+    skuId: current.skuId || incoming.skuId,
+    uniqueKey: current.uniqueKey || incoming.uniqueKey,
+    inventoryKey: current.inventoryKey || incoming.inventoryKey,
+    sizeIndex: current.sizeIndex || incoming.sizeIndex,
+    catalogColor: current.catalogColor || incoming.catalogColor,
+    mainframeColor: current.mainframeColor || incoming.mainframeColor,
+    colorName: current.colorName || incoming.colorName,
+    sizeName: current.sizeName || incoming.sizeName,
+    gtin: current.gtin || incoming.gtin,
+    customerPrice:
+      incoming.customerPrice > 0
+        ? incoming.customerPrice
+        : current.customerPrice,
+    quantity:
+      incoming.quantity > 0
+        ? incoming.quantity
+        : current.quantity,
+    active: current.active !== false && incoming.active !== false,
+    frontImageUrl: current.frontImageUrl || incoming.frontImageUrl,
+    backImageUrl: current.backImageUrl || incoming.backImageUrl,
+    swatchImageUrl: current.swatchImageUrl || incoming.swatchImageUrl
+  };
+}
+
+function colorCount(variants: SanMarCanonicalVariant[]) {
+  return new Set(
+    variants
+      .map((variant) => String(variant.colorName || "").trim().toLowerCase())
+      .filter(Boolean)
+  ).size;
+}
+
+function cacheMedia(cached: any, variants: SanMarCanonicalVariant[]): SanMarMediaMap {
+  const media: SanMarMediaMap = {};
+
+  for (const variant of variants) {
+    const color = variant.colorName;
+    if (!color) continue;
+
+    media[color] ||= {};
+
+    if (variant.frontImageUrl) media[color].frontImageUrl ||= variant.frontImageUrl;
+    if (variant.backImageUrl) media[color].backImageUrl ||= variant.backImageUrl;
+    if (variant.swatchImageUrl) media[color].swatchImageUrl ||= variant.swatchImageUrl;
+  }
+
+  if (cached?.image_url) {
+    const firstColor = variants[0]?.colorName;
+    if (firstColor) {
+      media[firstColor] ||= {};
+      media[firstColor].frontImageUrl ||= String(cached.image_url);
+    }
+  }
+
+  return media;
+}
+
+function mergeMedia(base: SanMarMediaMap, incoming: SanMarMediaMap) {
+  const result: SanMarMediaMap = { ...base };
+
+  for (const [color, value] of Object.entries(incoming || {})) {
+    result[color] ||= {};
+    result[color] = {
+      frontImageUrl:
+        value.frontImageUrl ||
+        result[color].frontImageUrl ||
+        "",
+      backImageUrl:
+        value.backImageUrl ||
+        result[color].backImageUrl ||
+        "",
+      swatchImageUrl:
+        value.swatchImageUrl ||
+        result[color].swatchImageUrl ||
+        ""
+    };
+  }
+
+  return result;
+}
+
+function sourceMetadata(
+  cached: any,
+  standard: SanMarStyleSource | null,
+  promo: SanMarStyleSource | null,
+  styleId: string
+) {
+  return {
+    name:
+      cached?.title ||
+      standard?.name ||
+      promo?.name ||
+      styleId,
+    description:
+      cached?.description ||
+      standard?.description ||
+      promo?.description ||
+      `SanMar style ${styleId}`,
+    brandName:
+      cached?.brand_name ||
+      standard?.brandName ||
+      promo?.brandName ||
+      "SanMar"
   };
 }
 
 /**
- * Returns the complete SanMar style used by the Advanced product importer.
+ * One canonical SanMar style pipeline.
  *
- * Why this wrapper exists:
- * - SanMar's exact ProductData response is useful for live style data.
- * - The SFTP SDL_N/EPDD cache contains the full breadth of color/size rows.
- * - Some exact-style responses do not expose every catalog color in the same
- *   shape that the current parser expects.
+ * COLOR BREADTH comes from the UNION of:
+ * 1. SFTP SDL_N / EPDD cache
+ * 2. Standard Product Information style-only response
+ * 3. PromoStandards Product Data ProductPartArray
  *
- * We therefore use the live response as enrichment, but never allow it to
- * shrink the complete color/size set already present in the SanMar cache.
+ * Live pricing, inventory and media only ENRICH that union. They are never
+ * allowed to replace the color set or shrink a multi-color style to one color.
  */
 export async function sanmarCompleteStyle(
   supabase: any,
   shopId: string,
-  connection: Connection,
-  styleId: string
+  connection: SanMarConnection,
+  styleInput: string
 ) {
-  const live = await sanmarNormalizedStyleCorrected(
-    connection,
-    styleId
+  const styleId = styleInput.trim().toUpperCase();
+  if (!styleId) throw new Error("Enter a SanMar style number.");
+
+  const warnings: string[] = [];
+  const cached = await getSanMarCachedStyle(supabase, shopId, styleId).catch(
+    (error) => {
+      warnings.push(
+        `Cache lookup: ${
+          error instanceof Error ? error.message : "unavailable"
+        }`
+      );
+      return null;
+    }
   );
 
-  const cached = await getSanMarCachedStyle(
-    supabase,
-    shopId,
-    styleId
-  ).catch(() => null);
+  const cachedVariants: SanMarCanonicalVariant[] = (
+    Array.isArray(cached?.variants) ? cached.variants : []
+  )
+    .map((raw: CachedVariant) => cacheVariant(styleId, raw))
+    .filter((value: SanMarCanonicalVariant | null): value is SanMarCanonicalVariant => Boolean(value));
 
-  if (!cached || !Array.isArray(cached.variants) || !cached.variants.length) {
-    return live;
-  }
+  const [standardResult, promoResult] = await Promise.allSettled([
+    fetchSanMarStandardProductInfo(connection, styleId),
+    fetchSanMarPromoProductData(connection, styleId)
+  ]);
 
-  const variants = new Map<string, any>();
+  const standard =
+    standardResult.status === "fulfilled" ? standardResult.value : null;
+  const promo = promoResult.status === "fulfilled" ? promoResult.value : null;
 
-  // Keep every live variant first.
-  for (const variant of live.variants || []) {
-    variants.set(
-      key(variant.colorName, variant.sizeName),
-      { ...variant }
+  if (standardResult.status === "rejected") {
+    warnings.push(
+      `Standard Product Information: ${
+        standardResult.reason instanceof Error
+          ? standardResult.reason.message
+          : String(standardResult.reason)
+      }`
     );
   }
 
-  // Add any color/size combinations that exist in the SFTP catalog but are
-  // missing from the exact-style response. If both exist, retain live pricing
-  // and inventory while filling supplier identifiers from the cache.
-  for (const raw of cached.variants as CachedVariant[]) {
-    const colorName = String(raw.colorName || "").trim();
-    const sizeName = String(raw.sizeName || "").trim();
-
-    if (!colorName || !sizeName) continue;
-
-    const variantKey = key(colorName, sizeName);
-    const current = variants.get(variantKey);
-    const fallbackSku = cachedSku(live.styleId, raw);
-
-    if (current) {
-      variants.set(variantKey, {
-        ...current,
-        sku: current.sku || fallbackSku,
-        skuId: current.skuId || fallbackSku,
-        gtin: current.gtin || raw.gtin || "",
-        inventoryKey: current.inventoryKey || raw.inventoryKey || "",
-        sizeIndex: current.sizeIndex || raw.sizeIndex || "",
-        mainframeColor:
-          current.mainframeColor || raw.mainframeColor || colorName,
-        uniqueKey: current.uniqueKey || raw.uniqueKey || ""
-      });
-      continue;
-    }
-
-    variants.set(variantKey, {
-      sku: fallbackSku,
-      skuId: fallbackSku,
-      gtin: raw.gtin || "",
-      colorName,
-      sizeName,
-      customerPrice: Math.max(0, Number(raw.piecePrice || 0)),
-      quantity: Math.max(0, Number(raw.quantity || 0)),
-      active: true,
-      inventoryKey: raw.inventoryKey || "",
-      sizeIndex: raw.sizeIndex || "",
-      mainframeColor: raw.mainframeColor || colorName,
-      uniqueKey: raw.uniqueKey || ""
-    });
+  if (promoResult.status === "rejected") {
+    warnings.push(
+      `PromoStandards Product Data: ${
+        promoResult.reason instanceof Error
+          ? promoResult.reason.message
+          : String(promoResult.reason)
+      }`
+    );
   }
 
-  const media: Record<string, any> = { ...(live.media || {}) };
+  const combined = new Map<string, SanMarCanonicalVariant>();
 
-  const allColors = Array.from(
+  for (const variant of cachedVariants) {
+    const key = sourceKey(variant);
+    combined.set(key, mergeVariant(combined.get(key), variant));
+  }
+
+  for (const variant of standard?.variants || []) {
+    const key = sourceKey(variant);
+    combined.set(key, mergeVariant(combined.get(key), variant));
+  }
+
+  for (const variant of promo?.variants || []) {
+    const key = sourceKey(variant);
+    combined.set(key, mergeVariant(combined.get(key), variant));
+  }
+
+  let variants = Array.from(combined.values()).filter(
+    (variant) => variant.colorName && variant.sizeName
+  );
+
+  if (!variants.length) {
+    throw new Error(
+      [
+        `SanMar returned no usable color/size variants for ${styleId}.`,
+        ...warnings
+      ].join(" ")
+    );
+  }
+
+  // Live enrichment happens AFTER the complete color list has been built.
+  const partIds = Array.from(
     new Set(
-      Array.from(variants.values())
-        .map((variant: any) => String(variant.colorName || "").trim())
+      variants
+        .map((variant) => variant.uniqueKey || variant.sku)
         .filter(Boolean)
     )
   );
+  const displayColorByPartId = new Map(
+    variants
+      .filter((variant) => variant.uniqueKey || variant.sku)
+      .map((variant) => [
+        variant.uniqueKey || variant.sku,
+        variant.colorName
+      ])
+  );
 
-  // Build media for every color, not only colors returned by ProductData.
-  for (const colorName of allColors) {
-    const fallback = cachedMedia(cached, colorName);
-    const current = media[colorName] || {};
+  const [pricingResult, inventoryResult, mediaResult] =
+    await Promise.allSettled([
+      fetchSanMarPricing(connection, styleId),
+      partIds.length
+        ? fetchSanMarInventory(connection, styleId, partIds)
+        : Promise.resolve(new Map<string, number>()),
+      fetchSanMarMedia(connection, styleId, displayColorByPartId)
+    ]);
 
-    media[colorName] = {
-      frontImageUrl:
-        current.frontImageUrl || fallback.frontImageUrl || "",
-      backImageUrl:
-        current.backImageUrl || fallback.backImageUrl || "",
-      swatchImageUrl:
-        current.swatchImageUrl || fallback.swatchImageUrl || ""
+  if (pricingResult.status === "rejected") {
+    warnings.push(
+      `Pricing: ${
+        pricingResult.reason instanceof Error
+          ? pricingResult.reason.message
+          : String(pricingResult.reason)
+      }`
+    );
+  }
+
+  if (inventoryResult.status === "rejected") {
+    warnings.push(
+      `Inventory: ${
+        inventoryResult.reason instanceof Error
+          ? inventoryResult.reason.message
+          : String(inventoryResult.reason)
+      }`
+    );
+  }
+
+  if (mediaResult.status === "rejected") {
+    warnings.push(
+      `Media: ${
+        mediaResult.reason instanceof Error
+          ? mediaResult.reason.message
+          : String(mediaResult.reason)
+      }`
+    );
+  }
+
+  const pricing =
+    pricingResult.status === "fulfilled" ? pricingResult.value : null;
+  const inventory =
+    inventoryResult.status === "fulfilled"
+      ? inventoryResult.value
+      : new Map<string, number>();
+  const liveMedia =
+    mediaResult.status === "fulfilled" ? mediaResult.value : {};
+
+  variants = variants.map((variant) => {
+    const canonicalPrice =
+      variant.inventoryKey && variant.sizeIndex
+        ? pricing?.byInventoryAndSize.get(
+            `${variant.inventoryKey}|${variant.sizeIndex}`
+          )
+        : undefined;
+
+    const colorSizePrice = pricing?.byCatalogColorAndSize.get(
+      `${sanmarNormalize(
+        variant.catalogColor || variant.mainframeColor || variant.colorName
+      )}|${sanmarNormalize(variant.sizeName)}`
+    );
+
+    const inventoryKey = variant.uniqueKey || variant.sku;
+    const liveQuantity = inventory.get(inventoryKey);
+
+    return {
+      ...variant,
+      customerPrice:
+        canonicalPrice ||
+        colorSizePrice ||
+        variant.customerPrice ||
+        0,
+      quantity:
+        liveQuantity !== undefined
+          ? Math.max(0, Number(liveQuantity || 0))
+          : variant.quantity
     };
+  });
+
+  variants.sort((a, b) => {
+    const color = a.colorName.localeCompare(b.colorName);
+    if (color !== 0) return color;
+    return a.sizeName.localeCompare(b.sizeName, undefined, { numeric: true });
+  });
+
+  let media = cacheMedia(cached, variants);
+
+  const standardMedia: SanMarMediaMap = {};
+  for (const variant of standard?.variants || []) {
+    standardMedia[variant.colorName] ||= {};
+    if (variant.frontImageUrl) {
+      standardMedia[variant.colorName].frontImageUrl ||= variant.frontImageUrl;
+    }
+    if (variant.backImageUrl) {
+      standardMedia[variant.colorName].backImageUrl ||= variant.backImageUrl;
+    }
+    if (variant.swatchImageUrl) {
+      standardMedia[variant.colorName].swatchImageUrl ||= variant.swatchImageUrl;
+    }
+  }
+
+  media = mergeMedia(media, standardMedia);
+  media = mergeMedia(media, liveMedia);
+
+  // Guarantee every displayed color has a media object so the importer never
+  // treats a missing image record as a missing color.
+  for (const variant of variants) {
+    media[variant.colorName] ||= {};
+  }
+
+  const meta = sourceMetadata(cached, standard, promo, styleId);
+  const diagnostics = {
+    cacheVariantCount: cachedVariants.length,
+    cacheColorCount: colorCount(cachedVariants),
+    standardVariantCount: standard?.variants.length || 0,
+    standardColorCount: colorCount(standard?.variants || []),
+    promoVariantCount: promo?.variants.length || 0,
+    promoColorCount: colorCount(promo?.variants || []),
+    finalVariantCount: variants.length,
+    finalColorCount: colorCount(variants),
+    pricingRows:
+      pricingResult.status === "fulfilled"
+        ? pricingResult.value.byInventoryAndSize.size
+        : 0,
+    inventoryRows:
+      inventoryResult.status === "fulfilled"
+        ? inventoryResult.value.size
+        : 0,
+    mediaColors: Object.keys(media).length,
+    warnings
+  };
+
+  // Self-heal an existing SFTP cache row if the live union discovers more
+  // complete color/size data. This does not create a new row or require SQL.
+  if (
+    cached &&
+    (diagnostics.finalVariantCount > diagnostics.cacheVariantCount ||
+      diagnostics.finalColorCount > diagnostics.cacheColorCount)
+  ) {
+    const repairedVariants = variants.map((variant) => ({
+      uniqueKey: variant.uniqueKey || variant.sku,
+      inventoryKey: variant.inventoryKey || "",
+      sizeIndex: variant.sizeIndex || "",
+      mainframeColor:
+        variant.mainframeColor || variant.catalogColor || variant.colorName,
+      colorName: variant.colorName,
+      sizeName: variant.sizeName,
+      quantity: variant.quantity,
+      piecePrice: variant.customerPrice,
+      gtin: variant.gtin || "",
+      swatchImageUrl: media[variant.colorName]?.swatchImageUrl || "",
+      colorProductImageUrl: media[variant.colorName]?.frontImageUrl || "",
+      frontModelUrl: media[variant.colorName]?.frontImageUrl || "",
+      backModelUrl: media[variant.colorName]?.backImageUrl || "",
+      frontFlatUrl: media[variant.colorName]?.frontImageUrl || "",
+      backFlatUrl: media[variant.colorName]?.backImageUrl || ""
+    }));
+
+    const positivePrices = variants
+      .map((variant) => Number(variant.customerPrice || 0))
+      .filter((value) => value > 0);
+
+    await supabase
+      .from("sanmar_catalog_styles")
+      .update({
+        variants: repairedVariants,
+        color_count: diagnostics.finalColorCount,
+        size_count: new Set(variants.map((variant) => variant.sizeName)).size,
+        price_min: positivePrices.length ? Math.min(...positivePrices) : 0,
+        price_max: positivePrices.length ? Math.max(...positivePrices) : 0,
+        synced_at: new Date().toISOString()
+      })
+      .eq("shop_id", shopId)
+      .eq("style_id", styleId);
   }
 
   return {
-    ...live,
-    name: cached.title || live.name,
-    description: cached.description || live.description,
-    brandName: cached.brand_name || live.brandName,
+    styleId,
+    name: meta.name,
+    description: meta.description,
+    brandName: meta.brandName,
+    variants,
     media,
-    cached,
-    variants: Array.from(variants.values()).sort((a: any, b: any) => {
-      const colorCompare = String(a.colorName).localeCompare(
-        String(b.colorName)
-      );
-      if (colorCompare !== 0) return colorCompare;
-      return String(a.sizeName).localeCompare(String(b.sizeName), undefined, {
-        numeric: true
-      });
-    })
+    diagnostics
   };
 }
