@@ -1,0 +1,218 @@
+/*
+  PrintFlow Storefront Runtime Boundary
+  -------------------------------------
+  This file is intentionally imported AFTER storefront.css and theme.css.
+
+  Why it exists:
+  - app/globals.css still contains legacy .modern-* storefront rules from older
+    PrintFlow releases.
+  - Some of those rules use !important and some use viewport-height sizing.
+  - /s/[shop] is a reusable tenant storefront and needs one final route-owned
+    layer that makes the saved shop theme authoritative and prevents an iframe
+    from changing its own content height.
+
+  This is NOT Advanced-specific. It protects every /s/[shop] storefront.
+*/
+
+/* =========================================================
+   1. EMBED / HEIGHT STABILITY
+   ========================================================= */
+
+/*
+  A nested element must never use the iframe viewport height as its minimum
+  content height. Otherwise:
+    iframe height -> 100vh child -> document height -> resize message ->
+    iframe height -> ...
+  The old global rule used min-height: calc(100vh - 76px) here.
+*/
+.modern-customer-shell .modern-designer-layout {
+  min-height: 0 !important;
+  align-items: start;
+}
+
+/*
+  Keep the mockup column useful on desktop without coupling its natural height
+  to 100vh / 100dvh. A fixed upper bound is stable inside both direct pages
+  and embedded storefronts.
+*/
+.modern-customer-shell .modern-stage-column {
+  max-height: 900px !important;
+  overflow: auto;
+}
+
+/*
+  Older global CSS caps the SVG with 72vh. That also changes when the parent
+  iframe changes height. Width now determines the 800x800 stage instead.
+*/
+.modern-customer-shell .design-stage.modern svg {
+  width: 100%;
+  height: auto;
+  max-height: none !important;
+}
+
+/* =========================================================
+   2. SAVED STOREFRONT THEME IS THE SOURCE OF TRUTH
+   ========================================================= */
+
+.modern-customer-shell {
+  --sf-primary: var(--brand, #111111);
+  --sf-on-primary: var(--brand-text, #ffffff);
+  --sf-accent: var(--brand-accent, #d8ff5f);
+  --sf-surface: var(--brand-surface, #f4f4ef);
+
+  background: var(--sf-surface) !important;
+}
+
+/*
+  Settings labels the primary color as the public designer header / action
+  color and brand.textColor as the text placed on that color. Keep that
+  contract exact rather than replacing the header with a derived surface.
+*/
+.modern-customer-shell .customer-header.modern {
+  color: var(--sf-on-primary) !important;
+  border-bottom-color: color-mix(in srgb, var(--sf-on-primary) 18%, transparent) !important;
+  background: var(--sf-primary) !important;
+  box-shadow: 0 9px 28px color-mix(in srgb, var(--sf-primary) 22%, transparent) !important;
+}
+
+.modern-customer-shell .customer-header.modern small,
+.modern-customer-shell .customer-header.modern b,
+.modern-customer-shell .customer-header.modern > strong {
+  color: var(--sf-on-primary) !important;
+}
+
+.modern-customer-shell .customer-header.modern small {
+  opacity: .72;
+}
+
+.modern-customer-shell .customer-header.modern button {
+  color: var(--sf-on-primary) !important;
+  border-color: color-mix(in srgb, var(--sf-on-primary) 32%, transparent) !important;
+  background: color-mix(in srgb, var(--sf-on-primary) 11%, transparent) !important;
+}
+
+.modern-customer-shell .customer-header.modern button:hover {
+  color: var(--sf-primary) !important;
+  border-color: var(--sf-on-primary) !important;
+  background: var(--sf-on-primary) !important;
+}
+
+/*
+  app/globals.css contains old !important translucent-white cards. These
+  route-scoped !important declarations are deliberate: they neutralize those
+  legacy globals so the shop's Surface / Primary settings actually win.
+*/
+.modern-customer-shell .radio-card,
+.modern-customer-shell .print-size-choice,
+.modern-customer-shell .modern-color-picker button,
+.modern-customer-shell .service-choice {
+  color: var(--sf-ink) !important;
+  border-color: var(--sf-line) !important;
+  background: var(--sf-panel-strong) !important;
+  backdrop-filter: none;
+}
+
+.modern-customer-shell .radio-card.selected,
+.modern-customer-shell .print-size-choice.selected,
+.modern-customer-shell .modern-color-picker button.selected,
+.modern-customer-shell .service-choice.selected {
+  border-color: var(--sf-primary) !important;
+  background: var(--sf-primary-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--sf-primary) !important;
+}
+
+.modern-customer-shell .included-fee-card,
+.modern-customer-shell .live-price-card {
+  color: var(--sf-ink) !important;
+  border-color: var(--sf-line) !important;
+  background: var(--sf-panel-soft) !important;
+  backdrop-filter: none;
+}
+
+.modern-customer-shell .modern-stage-column {
+  color: var(--sf-ink);
+  border-color: var(--sf-line);
+  background: var(--sf-panel-soft) !important;
+}
+
+.modern-customer-shell .designer-step-panel,
+.modern-customer-shell .modern-order-panel {
+  color: var(--sf-ink);
+  border-color: var(--sf-line);
+  background: var(--sf-panel) !important;
+}
+
+/* Primary controls use exactly the saved primary + button/text colors. */
+.modern-customer-shell .designer-primary,
+.modern-customer-shell .designer-primary.full,
+.modern-customer-shell .designer-primary.modern,
+.modern-customer-shell .stage-upload.modern label,
+.modern-customer-shell .wizard-section > header > span {
+  color: var(--sf-on-primary) !important;
+  border-color: var(--sf-primary) !important;
+  background: var(--sf-primary) !important;
+}
+
+/* Accent is reserved for accent/confirmation details rather than replacing primary. */
+.modern-customer-shell .eyebrow,
+.modern-customer-shell .designer-step-heading .eyebrow,
+.modern-customer-shell .modern-order-panel .eyebrow,
+.modern-customer-shell .print-size-choice em,
+.modern-customer-shell .service-choice em {
+  color: var(--sf-accent) !important;
+}
+
+/* =========================================================
+   3. REAL SUPPLIER SWATCHES
+   ========================================================= */
+
+.modern-customer-shell .modern-color-picker .garment-color-swatch {
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--sf-ink) 22%, transparent);
+  border-radius: 50%;
+  background-position: center;
+  background-size: cover;
+}
+
+.modern-customer-shell .modern-color-picker .garment-color-swatch img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+/* =========================================================
+   4. RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 1040px) {
+  .modern-customer-shell .modern-stage-column {
+    position: relative;
+    top: auto;
+    max-height: none !important;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 680px) {
+  .modern-customer-shell .customer-header.modern {
+    background: var(--sf-primary) !important;
+  }
+
+  .modern-customer-shell .modern-color-picker .garment-color-swatch {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modern-customer-shell {
+    scroll-behavior: auto;
+  }
+}

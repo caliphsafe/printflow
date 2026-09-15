@@ -1,0 +1,189 @@
+diff --git a/components/DesignerApp.tsx b/components/DesignerApp.tsx
+--- a/components/DesignerApp.tsx
++++ b/components/DesignerApp.tsx
+@@ -32,10 +32,20 @@
+ function assetUrl(url?: string) {
+   if (!url) return "";
+   try {
+     const parsed = new URL(url, window.location.origin);
+-    if (parsed.hostname.endsWith("ssactivewear.com")) return `/api/public/supplier-image?url=${encodeURIComponent(parsed.toString())}`;
++    const host = parsed.hostname.toLowerCase();
++    const supplierImage =
++      host === "ssactivewear.com" ||
++      host.endsWith(".ssactivewear.com") ||
++      host === "sanmar.com" ||
++      host.endsWith(".sanmar.com");
++
++    if (supplierImage) {
++      return `/api/public/supplier-image?url=${encodeURIComponent(parsed.toString())}`;
++    }
++
+     return url;
+   } catch {
+     return url;
+   }
+ }
+@@ -59,6 +69,51 @@
+ function garmentImageFor(product: CatalogProduct, color: ShirtColor | undefined, side: DesignSide) {
+   if (!color) return "";
+   // Never fall back to a generic product mockup from another color.
+   // The selected color owns the garment image shown in the storefront.
+   return side === "front" ? color.frontImageUrl || "" : color.backImageUrl || "";
+ }
++
++function garmentColorFallback(color?: ShirtColor) {
++  if (!color) return "#d8d8d8";
++
++  const stored = String(color.hex || "").trim();
++  const normalizedStored = stored.toLowerCase();
++
++  // Manual products can save an intentional hex. SanMar imports historically
++  // used the same neutral placeholder for every color, so only infer from the
++  // name when we encounter that placeholder.
++  if (
++    /^#[0-9a-f]{6}$/i.test(stored) &&
++    normalizedStored !== "#d9dee6" &&
++    normalizedStored !== "#d8d8d8"
++  ) {
++    return stored;
++  }
++
++  const name = color.name.toLowerCase();
++  const named: Array<[RegExp, string]> = [
++    [/\b(black|jet black)\b/, "#171717"],
++    [/\b(charcoal|graphite|anthracite)\b/, "#46494d"],
++    [/\b(white|natural white)\b/, "#f5f4ef"],
++    [/\b(navy|midnight)\b/, "#17263f"],
++    [/\b(royal|cobalt)\b/, "#214fa3"],
++    [/\b(maroon|burgundy|wine)\b/, "#6d2436"],
++    [/\b(red|scarlet|cardinal)\b/, "#b82b35"],
++    [/\b(forest|hunter green)\b/, "#234b38"],
++    [/\b(olive|military green)\b/, "#59613a"],
++    [/\b(green|kelly)\b/, "#2c7650"],
++    [/\b(gold|mustard)\b/, "#c79b37"],
++    [/\b(yellow)\b/, "#e3c84d"],
++    [/\b(orange)\b/, "#d96d2b"],
++    [/\b(purple|violet)\b/, "#68458c"],
++    [/\b(pink|rose)\b/, "#c97991"],
++    [/\b(brown|chocolate)\b/, "#6a4939"],
++    [/\b(khaki|tan|sand|stone)\b/, "#b8a98d"],
++    [/\b(light blue|sky blue|powder blue)\b/, "#7aa9ca"],
++    [/\b(blue)\b/, "#356f9f"],
++    [/\b(light gr[ae]y|ash)\b/, "#c6c8c9"],
++    [/\b(gr[ae]y|silver)\b/, "#858a8e"]
++  ];
++
++  return named.find(([pattern]) => pattern.test(name))?.[1] || stored || "#d8d8d8";
++}
+@@ -215,7 +270,49 @@
+   useEffect(() => {
+-    const send = () => window.parent.postMessage({ type: "printflow:resize", height: document.documentElement.scrollHeight }, "*");
+-    send();
+-    const observer = new ResizeObserver(send);
+-    observer.observe(document.body);
+-    return () => observer.disconnect();
++    if (window.parent === window) return;
++
++    let lastHeight = 0;
++    let raf = 0;
++
++    const send = () => {
++      if (raf) cancelAnimationFrame(raf);
++
++      raf = requestAnimationFrame(() => {
++        const shell = document.querySelector(
++          ".modern-customer-shell"
++        ) as HTMLElement | null;
++
++        const height = Math.ceil(
++          Math.max(
++            shell?.scrollHeight || 0,
++            shell?.getBoundingClientRect().height || 0,
++            document.body.scrollHeight || 0
++          )
++        );
++
++        if (!Number.isFinite(height) || height <= 0) return;
++        if (Math.abs(height - lastHeight) < 2) return;
++
++        lastHeight = height;
++        window.parent.postMessage(
++          { type: "printflow:resize", height },
++          "*"
++        );
++      });
++    };
++
++    send();
++
++    const observer = new ResizeObserver(send);
++    const target =
++      (document.querySelector(".modern-customer-shell") as HTMLElement | null) ||
++      document.body;
++
++    observer.observe(target);
++    window.addEventListener("load", send);
++
++    return () => {
++      observer.disconnect();
++      window.removeEventListener("load", send);
++      if (raf) cancelAnimationFrame(raf);
++    };
+   }, []);
+@@ -356,3 +453,3 @@
+   function drawFallbackGarment(ctx: CanvasRenderingContext2D) {
+     ctx.save();
+-    ctx.fillStyle = color.hex || "#d8d8d8";
++    ctx.fillStyle = garmentColorFallback(color);
+@@ -641,5 +738,5 @@
+                 {garmentUrl ? (
+                   <image href={garmentUrl} x="32" y="32" width="736" height="736" preserveAspectRatio="xMidYMid meet" />
+                 ) : (
+-                  <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={color?.hex || "#d8d8d8"} stroke="#bbb" strokeWidth="3" />
++                  <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={garmentColorFallback(color)} stroke="#bbb" strokeWidth="3" />
+                 )}
+@@ -764,12 +861,38 @@
+             <WizardSection number={hasPrintSizeChoice ? "3" : "2"} title="Garment color">
+               <div className="modern-color-picker">
+                 {product.configuration.colors
+                   .filter((item) => item.active !== false)
+-                  .map((item) => (
+-                    <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => setColor(item)} title={item.name}>
+-                      <i style={{ background: item.hex }} />
+-                      <span>{item.name}</span>
+-                    </button>
+-                  ))}
++                  .map((item) => {
++                    const swatchUrl = assetUrl(
++                      item.swatchImageUrl || item.frontImageUrl
++                    );
++
++                    return (
++                      <button
++                        key={item.id}
++                        className={color.id === item.id ? "selected" : ""}
++                        onClick={() => setColor(item)}
++                        title={item.name}
++                      >
++                        <i
++                          className="garment-color-swatch"
++                          style={
++                            swatchUrl
++                              ? undefined
++                              : { background: garmentColorFallback(item) }
++                          }
++                        >
++                          {swatchUrl ? (
++                            <img
++                              src={swatchUrl}
++                              alt=""
++                              aria-hidden="true"
++                            />
++                          ) : null}
++                        </i>
++                        <span>{item.name}</span>
++                      </button>
++                    );
++                  })}
+               </div>
+             </WizardSection>
