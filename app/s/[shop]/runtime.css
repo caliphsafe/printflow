@@ -20,10 +20,9 @@
 
 /*
   A nested element must never use the iframe viewport height as its minimum
-  content height. Otherwise:
+  content height while the iframe itself is content-height driven. Otherwise:
     iframe height -> 100vh child -> document height -> resize message ->
     iframe height -> ...
-  The old global rule used min-height: calc(100vh - 76px) here.
 */
 .modern-customer-shell .modern-designer-layout {
   min-height: 0 !important;
@@ -31,9 +30,9 @@
 }
 
 /*
-  Keep the mockup column useful on desktop without coupling its natural height
-  to 100vh / 100dvh. A fixed upper bound is stable inside both direct pages
-  and embedded storefronts.
+  Direct storefronts keep their existing sticky-stage behavior. This fixed
+  upper bound also prevents the old runaway-height behavior before the embed
+  bridge switches desktop customization into viewport mode.
 */
 .modern-customer-shell .modern-stage-column {
   max-height: 900px !important;
@@ -41,8 +40,8 @@
 }
 
 /*
-  Older global CSS caps the SVG with 72vh. That also changes when the parent
-  iframe changes height. Width now determines the 800x800 stage instead.
+  Older global CSS caps the SVG with 72vh. Width owns the normal direct-page
+  stage until the explicit embedded-customize rules later in this file apply.
 */
 .modern-customer-shell .design-stage.modern svg {
   width: 100%;
@@ -65,8 +64,7 @@
 
 /*
   Settings labels the primary color as the public designer header / action
-  color and brand.textColor as the text placed on that color. Keep that
-  contract exact rather than replacing the header with a derived surface.
+  color and brand.textColor as the text placed on that color.
 */
 .modern-customer-shell .customer-header.modern {
   color: var(--sf-on-primary) !important;
@@ -99,8 +97,7 @@
 
 /*
   app/globals.css contains old !important translucent-white cards. These
-  route-scoped !important declarations are deliberate: they neutralize those
-  legacy globals so the shop's Surface / Primary settings actually win.
+  route-scoped declarations make the shop theme authoritative.
 */
 .modern-customer-shell .radio-card,
 .modern-customer-shell .print-size-choice,
@@ -153,7 +150,7 @@
   background: var(--sf-primary) !important;
 }
 
-/* Accent is reserved for accent/confirmation details rather than replacing primary. */
+/* Accent is reserved for accent/confirmation details. */
 .modern-customer-shell .eyebrow,
 .modern-customer-shell .designer-step-heading .eyebrow,
 .modern-customer-shell .modern-order-panel .eyebrow,
@@ -187,7 +184,111 @@
 }
 
 /* =========================================================
-   4. RESPONSIVE
+   4. EMBEDDED DESKTOP CUSTOMIZER
+   ========================================================= */
+
+/*
+  The iframe is a separate viewport from the Advanced website. A normal sticky
+  column cannot stay pinned to the parent browser while the iframe is expanded
+  to its full document height.
+
+  When StorefrontEmbedBridge detects ?embed=1 + Customize, the parent freezes
+  the iframe to a real viewport height. Inside that viewport:
+  - the garment/mockup column remains stationary
+  - only .modern-config-column scrolls
+  - the iframe document itself does not scroll
+  - content-height resize messages are ignored until the customer returns to
+    Products
+
+  Direct /s/[shop] storefronts do not receive these classes and are unchanged.
+*/
+@media (min-width: 1041px) {
+  html.printflow-embedded-customize,
+  html.printflow-embedded-customize body {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  html.printflow-embedded-customize .modern-customer-shell {
+    display: flex;
+    height: 100dvh;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  html.printflow-embedded-customize .modern-customer-shell .customer-header.modern,
+  html.printflow-embedded-customize .modern-customer-shell .customer-progress-strip {
+    flex: 0 0 auto;
+  }
+
+  html.printflow-embedded-customize .modern-customer-shell .modern-designer-layout {
+    flex: 1 1 auto;
+    min-height: 0 !important;
+    height: auto;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+
+  html.printflow-embedded-customize .modern-customer-shell .modern-stage-column {
+    position: relative;
+    top: auto;
+    height: 100%;
+    max-height: none !important;
+    overflow: hidden;
+  }
+
+  html.printflow-embedded-customize .modern-customer-shell .modern-config-column {
+    display: grid;
+    height: 100%;
+    min-height: 0;
+    align-content: start;
+    gap: 15px;
+    padding-right: 5px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /*
+    Keep the square artwork stage inside the fixed embed viewport. The width
+    limit preserves its aspect ratio instead of squashing the 800x800 SVG.
+  */
+  html.printflow-embedded-customize .modern-customer-shell .design-stage.modern,
+  html.printflow-embedded-customize .modern-customer-shell .stage-topbar,
+  html.printflow-embedded-customize .modern-customer-shell .stage-guidance {
+    width: min(100%, 660px, calc(100dvh - 220px));
+  }
+
+  html.printflow-embedded-customize .modern-customer-shell .modern-config-column {
+    scrollbar-width: thin;
+    scrollbar-color:
+      color-mix(in srgb, var(--sf-primary) 45%, transparent)
+      transparent;
+  }
+
+  html.printflow-embedded-customize .modern-customer-shell .modern-config-column::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  html.printflow-embedded-customize .modern-customer-shell .modern-config-column::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  html.printflow-embedded-customize .modern-customer-shell .modern-config-column::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background:
+      color-mix(in srgb, var(--sf-primary) 45%, transparent);
+    background-clip: padding-box;
+  }
+}
+
+/* =========================================================
+   5. RESPONSIVE
    ========================================================= */
 
 @media (max-width: 1040px) {
