@@ -18,6 +18,9 @@ import type {
 
 const W = 800;
 const H = 800;
+const ADVANCED_SHOP_SLUG = "advanced-embroidery-screen-printing";
+const ADVANCED_SITE_URL = "https://www.advancedembroideryma.com/";
+
 const emptyPlacement: ArtworkPlacement = { x: 280, y: 260, width: 240, height: 240, rotation: 0 };
 const ARTWORK_MIME_BY_EXTENSION: Record<string, string> = {
   png: "image/png",
@@ -32,10 +35,25 @@ const freshSide = (): SideState => ({ file: null, mimeType: "", dataUrl: "", pla
 
 function assetUrl(url?: string) {
   if (!url) return "";
-  try {
-    const parsed = new URL(url, window.location.origin);
-    if (parsed.hostname.endsWith("ssactivewear.com")) return `/api/public/supplier-image?url=${encodeURIComponent(parsed.toString())}`;
+
+  if (url.startsWith("/") || url.startsWith("blob:") || url.startsWith("data:")) {
     return url;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    const supplierImage =
+      host === "ssactivewear.com" ||
+      host.endsWith(".ssactivewear.com") ||
+      host === "sanmar.com" ||
+      host.endsWith(".sanmar.com");
+
+    if (supplierImage) {
+      return `/api/public/supplier-image?url=${encodeURIComponent(parsed.toString())}`;
+    }
+
+    return parsed.toString();
   } catch {
     return url;
   }
@@ -58,9 +76,51 @@ function defaultColorFor(product?: CatalogProduct) {
 
 function garmentImageFor(product: CatalogProduct, color: ShirtColor | undefined, side: DesignSide) {
   if (!color) return "";
-  // Never fall back to a generic product mockup from another color.
-  // The selected color owns the garment image shown in the storefront.
   return side === "front" ? color.frontImageUrl || "" : color.backImageUrl || "";
+}
+
+function garmentColorFallback(color?: ShirtColor) {
+  if (!color) return "#d8d8d8";
+
+  const stored = String(color.hex || "").trim();
+  const normalizedStored = stored.toLowerCase();
+
+  // Preserve deliberate manual color values. Older SanMar imports use the
+  // same neutral placeholder for every color, so only infer when necessary.
+  if (
+    /^#[0-9a-f]{6}$/i.test(stored) &&
+    normalizedStored !== "#d9dee6" &&
+    normalizedStored !== "#d8d8d8"
+  ) {
+    return stored;
+  }
+
+  const name = color.name.toLowerCase();
+  const named: Array<[RegExp, string]> = [
+    [/\b(black|jet black)\b/, "#171717"],
+    [/\b(charcoal|graphite|anthracite)\b/, "#46494d"],
+    [/\b(white|natural white)\b/, "#f5f4ef"],
+    [/\b(navy|midnight)\b/, "#17263f"],
+    [/\b(royal|cobalt)\b/, "#214fa3"],
+    [/\b(maroon|burgundy|wine)\b/, "#6d2436"],
+    [/\b(red|scarlet|cardinal)\b/, "#b82b35"],
+    [/\b(forest|hunter green)\b/, "#234b38"],
+    [/\b(olive|military green)\b/, "#59613a"],
+    [/\b(green|kelly)\b/, "#2c7650"],
+    [/\b(gold|mustard)\b/, "#c79b37"],
+    [/\b(yellow)\b/, "#e3c84d"],
+    [/\b(orange)\b/, "#d96d2b"],
+    [/\b(purple|violet)\b/, "#68458c"],
+    [/\b(pink|rose)\b/, "#c97991"],
+    [/\b(brown|chocolate)\b/, "#6a4939"],
+    [/\b(khaki|tan|sand|stone)\b/, "#b8a98d"],
+    [/\b(light blue|sky blue|powder blue)\b/, "#7aa9ca"],
+    [/\b(blue)\b/, "#356f9f"],
+    [/\b(light gr[ae]y|ash)\b/, "#c6c8c9"],
+    [/\b(gr[ae]y|silver)\b/, "#858a8e"]
+  ];
+
+  return named.find(([pattern]) => pattern.test(name))?.[1] || stored || "#d8d8d8";
 }
 
 function extension(filename: string) {
@@ -108,9 +168,6 @@ function loadImage(src: string, crossOrigin = false) {
 }
 
 function printZoneBounds(area: PrintArea) {
-  // The catalog editor's green zone is the source of truth for the storefront.
-  // Use the saved zone geometry directly instead of the legacy artwork/default
-  // fields, which can be re-shaped during normalization for older product data.
   const width = Math.max(40, Math.min(Number(area.width || 40), W));
   const height = Math.max(40, Math.min(Number(area.height || 40), H));
   const x = Math.max(0, Math.min(W - width, Number(area.x || 0)));
@@ -134,6 +191,7 @@ function fitPlacementToArea(placement: ArtworkPlacement, area: PrintArea) {
 
 export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const previewMode = Boolean(shop.previewMode);
+  const shopHomeUrl = shop.slug === ADVANCED_SHOP_SLUG ? ADVANCED_SITE_URL : "";
   const products = shop.products.filter((item) => item.active);
   const firstProduct = products[0];
   const [step, setStep] = useState<"products" | "customize">("products");
@@ -215,7 +273,13 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   }, [shop.products, product?.id, color?.id]);
 
   useEffect(() => {
-    const send = () => window.parent.postMessage({ type: "printflow:resize", height: document.documentElement.scrollHeight }, "*");
+    if (window.parent === window) return;
+
+    const send = () => window.parent.postMessage(
+      { type: "printflow:resize", height: document.documentElement.scrollHeight },
+      "*"
+    );
+
     send();
     const observer = new ResizeObserver(send);
     observer.observe(document.body);
@@ -365,7 +429,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
 
   function drawFallbackGarment(ctx: CanvasRenderingContext2D) {
     ctx.save();
-    ctx.fillStyle = color.hex || "#d8d8d8";
+    ctx.fillStyle = garmentColorFallback(color);
     ctx.strokeStyle = "#b5b5b5";
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -397,17 +461,40 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     ctx.fillStyle = "#f5f5f2";
     ctx.fillRect(0, 0, W, H);
 
+    let garmentDrawn = false;
+
     if (url) {
-      const garment = await loadImage(url, true);
-      const scale = Math.min(W / garment.width, H / garment.height) * 0.92;
-      ctx.drawImage(garment, (W - garment.width * scale) / 2, (H - garment.height * scale) / 2, garment.width * scale, garment.height * scale);
-    } else {
+      try {
+        const garment = await loadImage(url, /^https?:\/\//i.test(url));
+        const scale = Math.min(W / garment.width, H / garment.height) * 0.92;
+        ctx.drawImage(
+          garment,
+          (W - garment.width * scale) / 2,
+          (H - garment.height * scale) / 2,
+          garment.width * scale,
+          garment.height * scale
+        );
+        garmentDrawn = true;
+      } catch (garmentError) {
+        // Supplier imagery is reference/mockup material. A temporary supplier
+        // image failure must not prevent a valid customer order from continuing.
+        console.warn("PrintFlow: garment image unavailable; using fallback mockup.", garmentError);
+      }
+    }
+
+    if (!garmentDrawn) {
       drawFallbackGarment(ctx);
     }
 
     if (state.dataUrl) {
-      const art = await loadImage(state.dataUrl);
-      ctx.drawImage(art, state.placement.x, state.placement.y, state.placement.width, state.placement.height);
+      try {
+        const art = await loadImage(state.dataUrl);
+        ctx.drawImage(art, state.placement.x, state.placement.y, state.placement.width, state.placement.height);
+      } catch {
+        throw new Error(
+          `Your ${target} artwork could not be rendered. Please remove it and upload the file again.`
+        );
+      }
     }
 
     return await new Promise<Blob>((resolve, reject) =>
@@ -443,7 +530,6 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     if (!customer.name.trim() || !customer.email.trim()) return setError("Enter your name and email.");
     if (totalAssigned < minimum) return setError(`Your order must include at least ${minimum} items. You currently have ${totalAssigned}.`);
     setSubmitting(true);
-    setSubmissionStatus("Preparing your order…");
 
     try {
       const sideUploads: Record<string, any> = {};
@@ -458,6 +544,16 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
         };
       }
 
+      // Render the previews first. If the customer's uploaded artwork cannot be
+      // rendered, stop before creating a draft design/order record.
+      setSubmissionStatus("Preparing your mockup…");
+      const previews: Partial<Record<DesignSide, Blob>> = {};
+
+      for (const target of neededSides) {
+        previews[target] = await renderSide(target);
+      }
+
+      setSubmissionStatus("Preparing your order…");
       const startResponse = await fetch("/api/designs/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -485,22 +581,36 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       const startData = await startResponse.json();
       if (!startResponse.ok) throw new Error(startData.error || "Unable to begin submission.");
 
-      const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false } });
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { persistSession: false } }
+      );
+
       let completedSides = 0;
+
       for (const target of neededSides) {
         const state = target === "front" ? front : back;
+        const preview = previews[target];
+        if (!preview) throw new Error(`Unable to prepare the ${target} mockup.`);
+
         setSubmissionStatus(`Uploading ${target} production artwork…`);
-        const preview = await renderSide(target);
         const upload = startData.uploads[target];
+
         const originalResult = await supabase.storage
           .from(upload.original.bucket)
           .uploadToSignedUrl(upload.original.path, upload.original.token, state.file!, { contentType: state.mimeType });
+
         if (originalResult.error) throw originalResult.error;
+
         setSubmissionStatus(`Saving ${target} mockup…`);
+
         const previewResult = await supabase.storage
           .from(upload.preview.bucket)
           .uploadToSignedUrl(upload.preview.path, upload.preview.token, preview, { contentType: "image/png" });
+
         if (previewResult.error) throw previewResult.error;
+
         completedSides += 1;
         setSubmissionStatus(`${completedSides} of ${neededSides.length} side${neededSides.length === 1 ? "" : "s"} saved…`);
       }
@@ -550,7 +660,21 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     >
       {previewMode && <div className="storefront-preview-banner"><div><strong>Storefront preview</strong><span>This is visible only to your shop account. Checkout is disabled until you open the live storefront.</span></div><a href="/dashboard/settings">Back to Shop setup</a></div>}
       <header className="customer-header modern">
-        {shop.settings.brand.logoUrl ? <img src={shop.settings.brand.logoUrl} alt={shop.name} /> : <strong>{shop.name}</strong>}
+        {shop.settings.brand.logoUrl ? (
+          shopHomeUrl ? (
+            <a href={shopHomeUrl} aria-label={`Back to ${shop.name}`}>
+              <img src={shop.settings.brand.logoUrl} alt={shop.name} />
+            </a>
+          ) : (
+            <img src={shop.settings.brand.logoUrl} alt={shop.name} />
+          )
+        ) : shopHomeUrl ? (
+          <a href={shopHomeUrl} aria-label={`Back to ${shop.name}`}>
+            <strong>{shop.name}</strong>
+          </a>
+        ) : (
+          <strong>{shop.name}</strong>
+        )}
         <div>
           <small>Custom order studio</small>
           <b>{step === "products" ? "Choose a product" : product.name}</b>
@@ -639,7 +763,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                 {garmentUrl ? (
                   <image href={garmentUrl} x="32" y="32" width="736" height="736" preserveAspectRatio="xMidYMid meet" />
                 ) : (
-                  <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={color?.hex || "#d8d8d8"} stroke="#bbb" strokeWidth="3" />
+                  <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={garmentColorFallback(color)} stroke="#bbb" strokeWidth="3" />
                 )}
                 {!sideState.dataUrl && (
                   <g pointerEvents="none">
@@ -777,12 +901,21 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
               <div className="modern-color-picker">
                 {product.configuration.colors
                   .filter((item) => item.active !== false)
-                  .map((item) => (
-                    <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => setColor(item)} title={item.name}>
-                      <i style={{ background: item.hex }} />
-                      <span>{item.name}</span>
-                    </button>
-                  ))}
+                  .map((item) => {
+                    const swatchUrl = assetUrl(item.swatchImageUrl || item.frontImageUrl);
+
+                    return (
+                      <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => setColor(item)} title={item.name}>
+                        <i
+                          className="garment-color-swatch"
+                          style={swatchUrl ? undefined : { background: garmentColorFallback(item) }}
+                        >
+                          {swatchUrl ? <img src={swatchUrl} alt="" aria-hidden="true" /> : null}
+                        </i>
+                        <span>{item.name}</span>
+                      </button>
+                    );
+                  })}
               </div>
             </WizardSection>
             <WizardSection number={hasPrintSizeChoice ? "4" : "3"} title="Decoration method">
