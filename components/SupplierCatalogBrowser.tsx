@@ -64,7 +64,14 @@ type ColorSummary = {
   priceMax: number;
 };
 
-const QUICK = ["Gildan 5000", "Bella + Canvas 3001", "Comfort Colors 1717", "polo", "hat"];
+const QUICK = [
+  "Gildan 5000",
+  "Bella + Canvas 3001",
+  "Comfort Colors 1717",
+  "polo",
+  "hat"
+];
+
 const money = (value: number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -96,7 +103,8 @@ export default function SupplierCatalogBrowser({
   const [detailBusy, setDetailBusy] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<"success" | "error" | "info">("info");
+  const [messageType, setMessageType] =
+    useState<"success" | "error" | "info">("info");
 
   const connected = suppliers[supplier].connected;
 
@@ -107,6 +115,24 @@ export default function SupplierCatalogBrowser({
       ),
     [suppliers]
   );
+
+  function switchSupplier(next: SupplierKey) {
+    if (next === supplier) return;
+
+    setSupplier(next);
+    setQ("");
+    setBrand("");
+    setCategory("");
+    setStyles([]);
+    setSelected(null);
+    setProducts([]);
+    setSelectedColors([]);
+    setBrands([]);
+    setCategories([]);
+    setTotal(0);
+    setHasMore(false);
+    setMessage("");
+  }
 
   async function load(options?: {
     append?: boolean;
@@ -138,7 +164,10 @@ export default function SupplierCatalogBrowser({
       const data = await readApiResponse(response);
 
       if (!response.ok) {
-        throw new Error(data.error || `Unable to load the ${supplierLabel(supplier)} catalog.`);
+        throw new Error(
+          data.error ||
+            `Unable to load the ${supplierLabel(supplier)} catalog.`
+        );
       }
 
       setStyles((current) =>
@@ -162,7 +191,9 @@ export default function SupplierCatalogBrowser({
     } catch (error) {
       setMessageType("error");
       setMessage(
-        error instanceof Error ? error.message : "Unable to load the supplier catalog."
+        error instanceof Error
+          ? error.message
+          : "Unable to load the supplier catalog."
       );
     } finally {
       setBusy(false);
@@ -198,11 +229,17 @@ export default function SupplierCatalogBrowser({
 
       const rows: Product[] = data.products || [];
       setProducts(rows);
-      setSelectedColors(Array.from(new Set(rows.map((item) => item.colorName))));
+      setSelectedColors(
+        Array.from(new Set(rows.map((item) => item.colorName)))
+      );
 
       if (!rows.length) {
         setMessageType("info");
-        setMessage(`No active ${supplierLabel(supplier)} SKUs were returned for this style.`);
+        setMessage(
+          `No active ${supplierLabel(
+            supplier
+          )} SKUs were returned for this style.`
+        );
       }
     } catch (error) {
       setMessageType("error");
@@ -283,14 +320,16 @@ export default function SupplierCatalogBrowser({
 
       setMessageType("success");
       setMessage(
-        `${selected.brandName} ${selected.styleName || selected.styleId} was imported from ${supplierLabel(
-          supplier
-        )}.`
+        `${selected.brandName} ${
+          selected.styleName || selected.styleId
+        } was imported from ${supplierLabel(supplier)}.`
       );
     } catch (error) {
       setMessageType("error");
       setMessage(
-        error instanceof Error ? error.message : "Unable to import this product."
+        error instanceof Error
+          ? error.message
+          : "Unable to import this product."
       );
     } finally {
       setImportBusy(false);
@@ -317,12 +356,13 @@ export default function SupplierCatalogBrowser({
     const other = supplier === "sanmar" ? "ss" : "sanmar";
 
     return (
-      <section className="supplier-dual-workspace">
+      <section className="supplier-dual-workspace supplier-catalog-layout">
         <SupplierPicker
           supplier={supplier}
-          setSupplier={setSupplier}
+          setSupplier={switchSupplier}
           suppliers={suppliers}
         />
+
         <section className="admin-card supplier-catalog-connect-state">
           <span>{supplierLabel(supplier)}</span>
           <h2>{supplierLabel(supplier)} is not connected.</h2>
@@ -334,7 +374,7 @@ export default function SupplierCatalogBrowser({
             {suppliers[other].connected && (
               <button
                 className="primary-button"
-                onClick={() => setSupplier(other)}
+                onClick={() => switchSupplier(other)}
               >
                 Use {supplierLabel(other)}
               </button>
@@ -344,15 +384,17 @@ export default function SupplierCatalogBrowser({
             </Link>
           </div>
         </section>
+
+        <CatalogLayoutStyles />
       </section>
     );
   }
 
   return (
-    <div className="supplier-dual-workspace">
+    <div className="supplier-dual-workspace supplier-catalog-layout">
       <SupplierPicker
         supplier={supplier}
-        setSupplier={setSupplier}
+        setSupplier={switchSupplier}
         suppliers={suppliers}
       />
 
@@ -403,7 +445,7 @@ export default function SupplierCatalogBrowser({
                 }
                 placeholder={
                   supplier === "sanmar"
-                    ? "SanMar style number (example: PC61)"
+                    ? "Style, brand, product name, or description"
                     : "Brand, style number, title, or part number"
                 }
               />
@@ -463,8 +505,11 @@ export default function SupplierCatalogBrowser({
           </div>
         ) : (
           <div className="supplier-quick-searches sanmar-search-hint">
-            <span>SanMar live lookup</span>
-            <small>Use an exact SanMar style number for the most reliable live result.</small>
+            <span>Full SanMar catalog</span>
+            <small>
+              Browse everything in your cached SanMar feed, or narrow it by
+              brand, category, product name, or style number.
+            </small>
           </div>
         )}
 
@@ -479,7 +524,7 @@ export default function SupplierCatalogBrowser({
         </div>
 
         {styles.length ? (
-          <div className="supplier-live-grid">
+          <div className="supplier-live-grid supplier-expanded-product-grid">
             {styles.map((style) => (
               <button
                 key={`${style.supplier}-${style.styleId}`}
@@ -523,7 +568,7 @@ export default function SupplierCatalogBrowser({
             <div className="supplier-catalog-empty">
               <h3>No live styles match this search.</h3>
               <p>
-                Try a brand, style number, garment type, or clear the filters.
+                Try a brand, style number, product type, or clear the filters.
               </p>
             </div>
           )
@@ -745,112 +790,7 @@ export default function SupplierCatalogBrowser({
         )}
       </aside>
 
-      <style jsx>{`
-        .supplier-dual-workspace {
-          display: grid;
-          grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(340px, 440px);
-          gap: 18px;
-          align-items: start;
-        }
-
-        .supplier-picker {
-          position: sticky;
-          top: 18px;
-          display: grid;
-          gap: 10px;
-        }
-
-        .supplier-picker-title {
-          padding: 4px 4px 2px;
-        }
-
-        .supplier-picker-title p {
-          margin: 0 0 5px;
-          font-size: 11px;
-          letter-spacing: .12em;
-          font-weight: 800;
-          color: var(--muted, #777);
-        }
-
-        .supplier-picker-title strong {
-          font-size: 16px;
-        }
-
-        .supplier-picker-button {
-          appearance: none;
-          border: 1px solid rgba(20, 20, 20, .12);
-          background: #fff;
-          border-radius: 14px;
-          padding: 14px;
-          text-align: left;
-          cursor: pointer;
-          display: grid;
-          gap: 6px;
-        }
-
-        .supplier-picker-button.active {
-          border-color: #111;
-          box-shadow: 0 8px 25px rgba(0,0,0,.08);
-        }
-
-        .supplier-picker-button strong {
-          font-size: 14px;
-        }
-
-        .supplier-picker-button small {
-          color: #777;
-          line-height: 1.4;
-        }
-
-        .supplier-status {
-          font-size: 10px;
-          font-weight: 800;
-          letter-spacing: .08em;
-          text-transform: uppercase;
-        }
-
-        .supplier-status.connected {
-          color: #18794e;
-        }
-
-        .supplier-status.offline {
-          color: #999;
-        }
-
-        .supplier-action-row {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          justify-content: center;
-        }
-
-        @media (max-width: 1200px) {
-          .supplier-dual-workspace {
-            grid-template-columns: 180px minmax(0, 1fr);
-          }
-
-          .supplier-live-inspector {
-            grid-column: 1 / -1;
-          }
-        }
-
-        @media (max-width: 760px) {
-          .supplier-dual-workspace {
-            display: block;
-          }
-
-          .supplier-picker {
-            position: static;
-            margin-bottom: 14px;
-          }
-
-          .supplier-picker-button {
-            display: inline-grid;
-            width: calc(50% - 6px);
-            margin-right: 8px;
-          }
-        }
-      `}</style>
+      <CatalogLayoutStyles />
     </div>
   );
 }
@@ -865,7 +805,7 @@ function SupplierPicker({
   suppliers: Record<SupplierKey, SupplierState>;
 }) {
   return (
-    <aside className="supplier-picker">
+    <nav className="supplier-picker supplier-picker-tabs" aria-label="Supplier catalog">
       <div className="supplier-picker-title">
         <p>SUPPLIER SOURCE</p>
         <strong>Choose catalog</strong>
@@ -903,23 +843,289 @@ function SupplierPicker({
           </button>
         ))}
       </div>
+    </nav>
+  );
+}
 
-      <style jsx global>{`
-        .supplier-picker-options{display:grid;gap:10px}
-        .supplier-picker-button{appearance:none;width:100%;border:1px solid rgba(20,20,20,.12);background:rgba(255,255,255,.86);border-radius:16px;padding:14px 15px;text-align:left;cursor:pointer;display:grid;gap:7px;transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease}
-        .supplier-picker-button:hover{transform:translateY(-1px);border-color:rgba(20,20,20,.28)}
-        .supplier-picker-button.active{background:#111;color:#fff;border-color:#111;box-shadow:0 10px 28px rgba(0,0,0,.12)}
-        .supplier-picker-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-        .supplier-picker-button strong{font-size:14px;line-height:1.15}
-        .supplier-picker-button small{font-size:11px;line-height:1.35;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .supplier-picker-button.active small{color:rgba(255,255,255,.7)}
-        .supplier-status{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;border-radius:999px;padding:5px 7px;background:#f1f1f1;color:#777;white-space:nowrap}
-        .supplier-status.connected{background:#e6f5ea;color:#18794e}
-        .supplier-picker-button.active .supplier-status.connected{background:#dff4e5;color:#146c43}
-        .supplier-picker-button.active .supplier-status.offline{background:rgba(255,255,255,.12);color:rgba(255,255,255,.68)}
-        .sanmar-search-hint{align-items:flex-start!important;gap:5px!important}
-        .sanmar-search-hint small{color:#777;line-height:1.4}
-      `}</style>
-    </aside>
+function CatalogLayoutStyles() {
+  return (
+    <style jsx global>{`
+      /*
+        Supplier source is now a top tab bar instead of a permanent left rail.
+        This restores that horizontal space to the product browser.
+      */
+      .supplier-catalog-layout {
+        display: grid !important;
+        grid-template-columns:
+          minmax(0, 1fr)
+          minmax(360px, 420px) !important;
+        gap: 20px !important;
+        align-items: start;
+      }
+
+      .supplier-catalog-layout > .supplier-picker-tabs {
+        position: static !important;
+        top: auto !important;
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: end;
+        gap: 18px;
+        margin: 0 0 2px;
+        padding: 0;
+      }
+
+      .supplier-picker-tabs .supplier-picker-title {
+        min-width: 150px;
+        padding: 0 0 4px;
+      }
+
+      .supplier-picker-tabs .supplier-picker-title p {
+        margin: 0 0 4px;
+        color: var(--muted, #777);
+        font-size: 10px;
+        font-weight: 850;
+        letter-spacing: .12em;
+      }
+
+      .supplier-picker-tabs .supplier-picker-title strong {
+        font-size: 15px;
+      }
+
+      .supplier-picker-tabs .supplier-picker-options {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .supplier-picker-tabs .supplier-picker-button {
+        appearance: none;
+        width: 100%;
+        min-height: 66px;
+        padding: 12px 16px;
+        border: 1px solid rgba(20,20,20,.12);
+        border-radius: 14px 14px 4px 4px;
+        background: rgba(255,255,255,.82);
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        display: grid;
+        gap: 6px;
+        box-shadow: none;
+        transform: none;
+        transition:
+          border-color .18s ease,
+          background .18s ease,
+          box-shadow .18s ease;
+      }
+
+      .supplier-picker-tabs .supplier-picker-button:hover {
+        border-color: rgba(20,20,20,.32);
+        transform: none;
+      }
+
+      .supplier-picker-tabs .supplier-picker-button.active {
+        border-color: #111;
+        border-bottom-width: 4px;
+        background: #111;
+        color: #fff;
+        box-shadow: 0 8px 24px rgba(0,0,0,.08);
+      }
+
+      .supplier-picker-tabs .supplier-picker-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .supplier-picker-tabs .supplier-picker-button strong {
+        font-size: 15px;
+        line-height: 1.15;
+      }
+
+      .supplier-picker-tabs .supplier-picker-button small {
+        min-width: 0;
+        overflow: hidden;
+        color: #777;
+        font-size: 11px;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .supplier-picker-tabs .supplier-picker-button.active small {
+        color: rgba(255,255,255,.72);
+      }
+
+      .supplier-picker-tabs .supplier-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 7px;
+        border-radius: 999px;
+        background: #f1f1f1;
+        color: #777;
+        font-size: 9px;
+        font-weight: 850;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .supplier-picker-tabs .supplier-status.connected {
+        background: #e6f5ea;
+        color: #18794e;
+      }
+
+      .supplier-picker-tabs
+        .supplier-picker-button.active
+        .supplier-status.connected {
+        background: #dff4e5;
+        color: #146c43;
+      }
+
+      .supplier-picker-tabs
+        .supplier-picker-button.active
+        .supplier-status.offline {
+        background: rgba(255,255,255,.12);
+        color: rgba(255,255,255,.68);
+      }
+
+      /*
+        Larger product cards. auto-fit keeps cards from being squeezed into
+        narrow fixed columns when the inspector is visible.
+      */
+      .supplier-catalog-layout .supplier-expanded-product-grid {
+        grid-template-columns:
+          repeat(auto-fit, minmax(min(100%, 240px), 1fr)) !important;
+        gap: 16px !important;
+      }
+
+      .supplier-catalog-layout .supplier-live-card {
+        border-radius: 19px;
+      }
+
+      .supplier-catalog-layout .supplier-live-card-image {
+        aspect-ratio: 1 / 1;
+        min-height: 220px;
+      }
+
+      .supplier-catalog-layout .supplier-live-card-image img {
+        padding: 10px;
+      }
+
+      .supplier-catalog-layout .supplier-live-card-copy {
+        gap: 6px;
+        padding: 16px 17px 17px;
+      }
+
+      .supplier-catalog-layout .supplier-live-card-copy h3 {
+        font-size: 17px;
+        line-height: 1.2;
+      }
+
+      .supplier-catalog-layout .supplier-live-card-copy p {
+        min-height: 40px;
+        font-size: 12.5px;
+      }
+
+      .supplier-catalog-layout .sanmar-search-hint {
+        align-items: flex-start !important;
+        gap: 5px !important;
+      }
+
+      .supplier-catalog-layout .sanmar-search-hint small {
+        color: #777;
+        line-height: 1.4;
+      }
+
+      .supplier-catalog-layout > .supplier-catalog-connect-state {
+        grid-column: 1 / -1;
+      }
+
+      @media (max-width: 1180px) {
+        .supplier-catalog-layout {
+          grid-template-columns: 1fr !important;
+        }
+
+        .supplier-catalog-layout .supplier-live-inspector {
+          position: static;
+          top: auto;
+          max-height: none;
+          overflow: visible;
+        }
+
+        .supplier-catalog-layout .supplier-expanded-product-grid {
+          grid-template-columns:
+            repeat(auto-fit, minmax(min(100%, 250px), 1fr)) !important;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .supplier-catalog-layout {
+          display: block !important;
+        }
+
+        .supplier-catalog-layout > .supplier-picker-tabs {
+          display: block;
+          margin-bottom: 14px;
+        }
+
+        .supplier-picker-tabs .supplier-picker-title {
+          margin-bottom: 9px;
+        }
+
+        .supplier-picker-tabs .supplier-picker-options {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .supplier-picker-tabs .supplier-picker-button {
+          min-height: 62px;
+          padding: 11px 12px;
+        }
+
+        .supplier-picker-tabs .supplier-picker-row {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 5px;
+        }
+
+        .supplier-catalog-layout .supplier-expanded-product-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          gap: 12px !important;
+        }
+
+        .supplier-catalog-layout .supplier-live-card-image {
+          min-height: 0;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .supplier-picker-tabs .supplier-picker-options {
+          grid-template-columns: 1fr;
+        }
+
+        .supplier-picker-tabs .supplier-picker-row {
+          flex-direction: row;
+          align-items: center;
+        }
+
+        .supplier-catalog-layout .supplier-expanded-product-grid {
+          grid-template-columns: 1fr !important;
+        }
+
+        .supplier-catalog-layout .supplier-live-card {
+          display: grid;
+          grid-template-columns: 132px minmax(0, 1fr);
+        }
+
+        .supplier-catalog-layout .supplier-live-card-image {
+          height: 100%;
+          min-height: 150px;
+          aspect-ratio: auto;
+        }
+      }
+    `}</style>
   );
 }

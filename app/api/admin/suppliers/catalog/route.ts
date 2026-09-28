@@ -53,6 +53,37 @@ async function ssIndex(shopId: string, connection: any, refresh: boolean) {
   return styles;
 }
 
+async function sanmarFilterOptions(supabase: any, shopId: string) {
+  const brands = new Set<string>();
+  const categories = new Set<string>();
+  const pageSize = 1000;
+
+  for (let offset = 0; offset < 20000; offset += pageSize) {
+    const { data, error } = await supabase
+      .from("sanmar_catalog_styles")
+      .select("style_id,brand_name,category")
+      .eq("shop_id", shopId)
+      .order("style_id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+
+    for (const row of data || []) {
+      const brand = String(row.brand_name || "").trim();
+      const category = String(row.category || "").trim();
+      if (brand) brands.add(brand);
+      if (category) categories.add(category);
+    }
+
+    if ((data || []).length < pageSize) break;
+  }
+
+  return {
+    brands: Array.from(brands).sort((a, b) => a.localeCompare(b)),
+    categories: Array.from(categories).sort((a, b) => a.localeCompare(b))
+  };
+}
+
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
@@ -111,39 +142,36 @@ export async function GET(request: Request) {
 
   try {
     if (supplier === "sanmar") {
-      const selectedCategory = new Set([
-        "T-Shirts",
-        "Polos/Knits",
-        "Caps"
-      ]).has(category)
-        ? category
-        : "T-Shirts";
-
       const { count } = await supabase
         .from("sanmar_catalog_styles")
         .select("id", { count: "exact", head: true })
         .eq("shop_id", shop.id);
 
-      // Browsing must stay a fast database read. Never start a full SanMar
-      // SFTP import from a GET request: doing that caused page loads to inherit
-      // Vercel function timeouts and return non-JSON platform errors.
-      // Full supplier synchronization is handled only by the explicit
-      // POST /api/admin/suppliers/sanmar/catalog-sync action.
-
-      const result = await listSanMarCatalogStyles({
-        supabase,
-        shopId: shop.id,
-        category: selectedCategory,
-        q,
-        brand,
-        offset,
-        limit
-      });
+      /*
+        IMPORTANT:
+        Do not default SanMar to T-Shirts and do not whitelist only
+        T-Shirts / Polos / Caps. The SFTP cache already contains SanMar's
+        complete catalog. An empty category now means ALL cached products.
+      */
+      const [result, filters] = await Promise.all([
+        listSanMarCatalogStyles({
+          supabase,
+          shopId: shop.id,
+          category: category || undefined,
+          q,
+          brand,
+          offset,
+          limit
+        }),
+        sanmarFilterOptions(supabase, shop.id)
+      ]);
 
       const hasSftp = sanmarSftpConfigured(connection as any);
 
       return NextResponse.json({
         ...result,
+        brands: filters.brands,
+        categories: filters.categories,
         offset,
         limit,
         hasMore: offset + limit < result.total,
@@ -166,7 +194,7 @@ export async function GET(request: Request) {
         ...(!result.total && Number(count || 0) > 0
           ? {
               warning:
-                `SanMar has ${Number(count || 0).toLocaleString()} cached styles, but none matched the ${selectedCategory} filter. Try another category or search by style number.`
+                "SanMar has cached products, but none matched the current search and filters. Clear the filters or search by style number."
             }
           : {})
       });

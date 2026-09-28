@@ -14,7 +14,7 @@ export default async function SupplierCatalogPage() {
     .eq("shop_id", shop.id)
     .in("provider", ["ss-activewear", "sanmar"]);
 
-  const byProvider = new Map(
+  const byProvider = new Map<string, any>(
     (connections || []).map((connection) => [connection.provider, connection])
   );
 
@@ -36,10 +36,11 @@ export default async function SupplierCatalogPage() {
       <header className="admin-header">
         <div>
           <p className="eyebrow">SUPPLIERS / CATALOG</p>
-          <h1>Source blank garments</h1>
+          <h1>Source supplier products</h1>
           <p>
-            Search and import live products from every supplier connected to
-            this PrintFlow shop. Choose S&amp;S Activewear, SanMar, or both.
+            Browse and import products from every connected supplier. SanMar
+            now exposes the full cached catalog, including apparel, outerwear,
+            bags, accessories and every other product category in the feed.
           </p>
         </div>
       </header>
