@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import { sanmarCompleteStyle } from "@/lib/sanmar-complete-style";
+import { withPreferredSanMarFlatMedia } from "@/lib/sanmar-flat-media";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,7 +31,9 @@ export async function GET(request: Request) {
 
   const { data: connection } = await supabase
     .from("supplier_connections")
-    .select("encrypted_account_number,encrypted_api_key,settings,status")
+    .select(
+      "encrypted_account_number,encrypted_api_key,settings,status"
+    )
     .eq("shop_id", shop.id)
     .eq("provider", "sanmar")
     .maybeSingle();
@@ -43,18 +46,26 @@ export async function GET(request: Request) {
   }
 
   try {
-    const style = await sanmarCompleteStyle(
+    const canonical = await sanmarCompleteStyle(
       supabase,
       shop.id,
       connection as any,
       styleId
     );
 
+    const style = await withPreferredSanMarFlatMedia(
+      supabase,
+      shop.id,
+      canonical
+    );
+
     return NextResponse.json(
       {
         style,
-        colorCount: style.diagnostics.finalColorCount,
-        variantCount: style.diagnostics.finalVariantCount,
+        colorCount:
+          style.diagnostics.finalColorCount,
+        variantCount:
+          style.diagnostics.finalVariantCount,
         diagnostics: style.diagnostics
       },
       {
