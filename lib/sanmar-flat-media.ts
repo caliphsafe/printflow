@@ -1,4 +1,4 @@
-import type { CatalogProduct } from "@/lib/types";
+import { decryptSecret } from "@/lib/crypto";
 
 type Side = "front" | "back";
 
@@ -18,6 +18,31 @@ type CachedStyleRow = {
   variants?: CachedVariant[] | null;
 };
 
+type SanMarConnection = {
+  encrypted_account_number: string;
+  encrypted_api_key: string;
+  settings?: Record<string, any> | null;
+  status?: string | null;
+};
+
+type FlatMedia = {
+  frontImageUrl?: string;
+  backImageUrl?: string;
+  swatchImageUrl?: string;
+};
+
+type FlatMediaMap = Record<string, FlatMedia>;
+
+const LIVE_FLAT_CACHE_MS = 30 * 60 * 1000;
+
+const liveFlatCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    media: FlatMediaMap;
+  }
+>();
+
 function clean(value: unknown) {
   return String(value || "").trim();
 }
@@ -26,9 +51,21 @@ function colorKey(value: unknown) {
   return clean(value).toLowerCase();
 }
 
-function decodedUrl(value: unknown) {
+function validUrl(value: unknown) {
   const raw = clean(value);
+
+  if (/^http:\/\//i.test(raw)) {
+    return raw.replace(/^http:\/\//i, "https://");
+  }
+
+  return /^https:\/\//i.test(raw) ? raw : "";
+}
+
+function decodedUrl(value: unknown) {
+  const raw = validUrl(value) || clean(value);
+
   if (!raw) return "";
+
   try {
     return decodeURIComponent(raw).toLowerCase();
   } catch {
@@ -36,20 +73,55 @@ function decodedUrl(value: unknown) {
   }
 }
 
+function sameUrl(a: unknown, b: unknown) {
+  const left = validUrl(a);
+  const right = validUrl(b);
+
+  if (!left || !right) return false;
+
+  return left === right;
+}
+
+function isSanMarUrl(value: unknown) {
+  const raw = validUrl(value);
+
+  if (!raw) return false;
+
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+
+    return (
+      host === "sanmar.com" ||
+      host.endsWith(".sanmar.com")
+    );
+  } catch {
+    return /sanmar\.com/i.test(raw);
+  }
+}
+
 export function isSanMarModelImage(value: unknown) {
   const url = decodedUrl(value);
+
   if (!url) return false;
 
+  const compact = url.replace(/[^a-z0-9]/g, "");
+
   return (
-    /model[\s_\-/]?(front|back)?/.test(url) ||
-    /(front|back)[\s_\-/]?model/.test(url) ||
-    /on[\s_\-/]?model/.test(url) ||
-    /lifestyle/.test(url)
+    compact.includes("modelfront") ||
+    compact.includes("modelback") ||
+    compact.includes("frontmodel") ||
+    compact.includes("backmodel") ||
+    compact.includes("onmodel") ||
+    compact.includes("lifestyle")
   );
 }
 
-export function isSanMarFlatImage(value: unknown, side?: Side) {
+export function isSanMarFlatImage(
+  value: unknown,
+  side?: Side
+) {
   const url = decodedUrl(value);
+
   if (!url) return false;
 
   const compact = url.replace(/[^a-z0-9]/g, "");
@@ -68,136 +140,583 @@ export function isSanMarFlatImage(value: unknown, side?: Side) {
     );
   }
 
-  return compact.includes("flatfront") || compact.includes("flatback");
+  return (
+    compact.includes("flatfront") ||
+    compact.includes("frontflat") ||
+    compact.includes("flatback") ||
+    compact.includes("backflat")
+  );
 }
 
-function isWrongSide(value: unknown, side: Side) {
-  const url = decodedUrl(value);
-  if (!url) return false;
+function isWrongSide(
+  value: unknown,
+  side: Side
+) {
+  const compact = decodedUrl(value).replace(
+    /[^a-z0-9]/g,
+    ""
+  );
 
-  const compact = url.replace(/[^a-z0-9]/g, "");
+  if (!compact) return false;
 
   if (side === "front") {
     return (
-      (compact.includes("flatback") || compact.includes("modelback")) &&
+      (
+        compact.includes("flatback") ||
+        compact.includes("modelback") ||
+        compact.includes("backflat") ||
+        compact.includes("backmodel")
+      ) &&
       !compact.includes("front")
     );
   }
 
   return (
-    (compact.includes("flatfront") || compact.includes("modelfront")) &&
+    (
+      compact.includes("flatfront") ||
+      compact.includes("modelfront") ||
+      compact.includes("frontflat") ||
+      compact.includes("frontmodel")
+    ) &&
     !compact.includes("back")
   );
 }
 
-function validUrl(value: unknown) {
-  const raw = clean(value);
-  return /^https:\/\//i.test(raw) ? raw : "";
+function safeCustomOrNamedFlat(
+  value: unknown,
+  side: Side
+) {
+  const url = validUrl(value);
+
+  if (!url) return "";
+
+  if (isWrongSide(url, side)) return "";
+  if (isSanMarModelImage(url)) return "";
+
+  /*
+    Non-SanMar images can be deliberate shop uploads / manual overrides.
+    Keep those.
+
+    SanMar-hosted images are accepted as a generic fallback ONLY if their
+    filename explicitly identifies them as a flat. Opaque SanMar URLs such as
+    "624Wx724H-null?context=..." are accepted only when they came from an
+    official frontFlat/backFlat API field, never by guessing from the URL.
+  */
+  if (!isSanMarUrl(url)) return url;
+
+  return isSanMarFlatImage(url, side)
+    ? url
+    : "";
 }
 
-function unique(values: unknown[]) {
-  return Array.from(
-    new Set(
-      values
-        .map(validUrl)
-        .filter(Boolean)
+function decodeXml(value: string) {
+  return String(value || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
+
+function xmlTag(
+  xml: string,
+  name: string
+) {
+  const match = String(xml || "").match(
+    new RegExp(
+      `<(?:(?:[A-Za-z0-9_-]+):)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:(?:[A-Za-z0-9_-]+):)?${name}>`,
+      "i"
     )
   );
+
+  return match
+    ? decodeXml(
+        match[1].replace(/<[^>]+>/g, "")
+      )
+    : "";
+}
+
+function xmlBlocks(
+  xml: string,
+  name: string
+) {
+  return [
+    ...String(xml || "").matchAll(
+      new RegExp(
+        `<(?:(?:[A-Za-z0-9_-]+):)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:(?:[A-Za-z0-9_-]+):)?${name}>`,
+        "gi"
+      )
+    )
+  ].map((match) => match[1]);
+}
+
+function escapeXml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function apiHost(
+  connection: SanMarConnection
+) {
+  const environment = String(
+    connection.settings?.environment ||
+      "production"
+  ).toLowerCase();
+
+  return (
+    environment === "test" ||
+    environment === "edev"
+  )
+    ? "https://edev-ws.sanmar.com:8080"
+    : "https://ws.sanmar.com:8080";
+}
+
+async function sanmarConnection(
+  supabase: any,
+  shopId: string
+): Promise<SanMarConnection | null> {
+  const { data, error } = await supabase
+    .from("supplier_connections")
+    .select(
+      "encrypted_account_number,encrypted_api_key,settings,status"
+    )
+    .eq("shop_id", shopId)
+    .eq("provider", "sanmar")
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (
+    !data ||
+    data.status !== "connected"
+  ) {
+    return null;
+  }
+
+  return data as SanMarConnection;
 }
 
 /**
- * SanMar gives us two independent ways to know an image is a flat:
+ * Fetch ONLY the fields SanMar itself identifies as flat garment images.
  *
- * 1. The SFTP fields themselves:
- *      FRONT_FLAT_IMAGE_URL
- *      BACK_FLAT_IMAGE_URL
+ * This deliberately does not use:
+ * - colorProductImage (SanMar documents this as a front MODEL image)
+ * - productImage
+ * - frontModel / backModel
+ * - PromoStandards generic media classes
  *
- * 2. The CDN asset names. Example:
- *      ...A4N3142AthlOrangeFlatFront.jpg
- *      ...A4N3142AthlOrangeModelFront.jpg
- *
- * Explicit SFTP flat fields always win. A model/lifestyle image is never
- * selected for a storefront mockup or print-zone garment.
+ * The exact productImageInfo.frontFlat and .backFlat fields are authoritative,
+ * even when the CDN URL itself is opaque, e.g.:
+ *   https://cdnp.sanmar.com/medias/624Wx724H-null?context=...
  */
-function preferredImage(
-  side: Side,
-  explicitFlat: unknown[],
-  candidates: unknown[]
-) {
-  const exact = unique(explicitFlat).find(
-    (url) => !isWrongSide(url, side)
-  );
-  if (exact) return exact;
+async function fetchExactFlatMedia(
+  supabase: any,
+  shopId: string,
+  styleId: string
+): Promise<FlatMediaMap> {
+  const cacheKey =
+    `${shopId}:${styleId.trim().toUpperCase()}`;
 
-  const safe = unique(candidates).filter(
-    (url) =>
-      !isSanMarModelImage(url) &&
-      !isWrongSide(url, side)
+  const cached = liveFlatCache.get(
+    cacheKey
   );
 
-  const markedFlat = safe.find((url) =>
-    isSanMarFlatImage(url, side)
+  if (
+    cached &&
+    cached.expiresAt > Date.now()
+  ) {
+    return cached.media;
+  }
+
+  const connection =
+    await sanmarConnection(
+      supabase,
+      shopId
+    );
+
+  if (!connection) {
+    return {};
+  }
+
+  const username = decryptSecret(
+    connection.encrypted_account_number
   );
 
-  return markedFlat || safe[0] || "";
+  const password = decryptSecret(
+    connection.encrypted_api_key
+  );
+
+  const customerNumber = clean(
+    connection.settings?.customerNumber
+  );
+
+  if (
+    !username ||
+    !password ||
+    !customerNumber
+  ) {
+    return {};
+  }
+
+  const style = styleId
+    .trim()
+    .toUpperCase();
+
+  const endpoint = String(
+    connection.settings?.productInfoEndpoint ||
+      `${apiHost(
+        connection
+      )}/SanMarWebService/SanMarProductInfoServicePort`
+  );
+
+  const body =
+    `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ` +
+    `xmlns:impl="http://impl.webservice.integration.sanmar.com/">` +
+    `<soapenv:Header/><soapenv:Body>` +
+    `<impl:getProductInfoByStyleColorSize>` +
+    `<arg0><style>${escapeXml(
+      style
+    )}</style></arg0>` +
+    `<arg1>` +
+    `<sanMarCustomerNumber>${escapeXml(
+      customerNumber
+    )}</sanMarCustomerNumber>` +
+    `<sanMarUserName>${escapeXml(
+      username
+    )}</sanMarUserName>` +
+    `<sanMarUserPassword>${escapeXml(
+      password
+    )}</sanMarUserPassword>` +
+    `</arg1>` +
+    `</impl:getProductInfoByStyleColorSize>` +
+    `</soapenv:Body></soapenv:Envelope>`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type":
+        "text/xml; charset=utf-8",
+      Accept: "text/xml"
+    },
+    body,
+    cache: "no-store",
+    signal:
+      AbortSignal.timeout(45000)
+  });
+
+  const xml = await response.text();
+
+  if (
+    !response.ok ||
+    /<(?:[A-Za-z0-9_-]+:)?Fault\b/i.test(
+      xml
+    )
+  ) {
+    throw new Error(
+      xmlTag(xml, "faultstring") ||
+        xmlTag(xml, "message") ||
+        `SanMar Product Information request failed (${response.status}).`
+    );
+  }
+
+  const errorFlag =
+    xmlTag(xml, "errorOccurred") ||
+    xmlTag(xml, "errorOccured");
+
+  if (/^true$/i.test(errorFlag)) {
+    throw new Error(
+      xmlTag(xml, "message") ||
+        `SanMar could not load style ${style}.`
+    );
+  }
+
+  const media: FlatMediaMap = {};
+
+  for (const rowXml of xmlBlocks(
+    xml,
+    "listResponse"
+  )) {
+    const basic =
+      xmlBlocks(
+        rowXml,
+        "productBasicInfo"
+      )[0] || rowXml;
+
+    const images =
+      xmlBlocks(
+        rowXml,
+        "productImageInfo"
+      )[0] || "";
+
+    const returnedStyle = xmlTag(
+      basic,
+      "style"
+    )
+      .trim()
+      .toUpperCase();
+
+    if (
+      returnedStyle &&
+      returnedStyle !== style
+    ) {
+      continue;
+    }
+
+    const colorName =
+      xmlTag(basic, "color").trim() ||
+      xmlTag(
+        basic,
+        "catalogColor"
+      ).trim();
+
+    if (!colorName) continue;
+
+    media[colorName] ||= {};
+
+    /*
+      These two tags are the key correction.
+      Their semantic meaning comes from SanMar's service schema, so their URLs
+      do NOT need "FlatFront" / "FlatBack" in the filename.
+    */
+    const frontFlat = validUrl(
+      xmlTag(images, "frontFlat")
+    );
+
+    const backFlat = validUrl(
+      xmlTag(images, "backFlat")
+    );
+
+    const swatch =
+      validUrl(
+        xmlTag(
+          images,
+          "colorSquareImage"
+        )
+      ) ||
+      validUrl(
+        xmlTag(
+          images,
+          "colorSwatchImage"
+        )
+      );
+
+    if (frontFlat) {
+      media[
+        colorName
+      ].frontImageUrl ||= frontFlat;
+    }
+
+    if (backFlat) {
+      media[
+        colorName
+      ].backImageUrl ||= backFlat;
+    }
+
+    if (swatch) {
+      media[
+        colorName
+      ].swatchImageUrl ||= swatch;
+    }
+  }
+
+  liveFlatCache.set(cacheKey, {
+    expiresAt:
+      Date.now() +
+      LIVE_FLAT_CACHE_MS,
+    media
+  });
+
+  return media;
 }
 
-function cachedMediaForColor(
-  cached: CachedStyleRow | null | undefined,
-  colorName: string,
-  current?: {
-    frontImageUrl?: string;
-    backImageUrl?: string;
-    swatchImageUrl?: string;
-  },
-  variantCandidates?: Array<{
-    frontImageUrl?: string;
-    backImageUrl?: string;
-    swatchImageUrl?: string;
-  }>
+function cacheFlat(
+  rows: CachedVariant[],
+  side: Side
 ) {
-  const rows = (Array.isArray(cached?.variants)
-    ? cached!.variants!
-    : []
+  for (const row of rows) {
+    const candidate =
+      side === "front"
+        ? row.frontFlatUrl
+        : row.backFlatUrl;
+
+    const url = validUrl(candidate);
+
+    if (!url) continue;
+
+    /*
+      Older PrintFlow SanMar sync code used COLOR_PRODUCT_IMAGE as a fallback
+      when populating frontFlatUrl. SanMar documents COLOR_PRODUCT_IMAGE as a
+      model image, so an identical URL is NOT proof of a flat.
+    */
+    if (
+      side === "front" &&
+      sameUrl(
+        url,
+        row.colorProductImageUrl
+      )
+    ) {
+      continue;
+    }
+
+    if (isSanMarModelImage(url)) {
+      continue;
+    }
+
+    if (isWrongSide(url, side)) {
+      continue;
+    }
+
+    return url;
+  }
+
+  return "";
+}
+
+function cacheSwatch(
+  rows: CachedVariant[]
+) {
+  return (
+    rows
+      .map((row) =>
+        validUrl(row.swatchImageUrl)
+      )
+      .find(Boolean) || ""
+  );
+}
+
+function rowsForColor(
+  cached:
+    | CachedStyleRow
+    | null
+    | undefined,
+  colorName: string
+) {
+  return (
+    Array.isArray(cached?.variants)
+      ? cached!.variants!
+      : []
   ).filter(
-    (variant) => colorKey(variant.colorName) === colorKey(colorName)
+    (variant) =>
+      colorKey(
+        variant.colorName
+      ) === colorKey(colorName)
+  );
+}
+
+function resolvedColorMedia({
+  colorName,
+  cached,
+  live,
+  current,
+  variantCandidates
+}: {
+  colorName: string;
+  cached:
+    | CachedStyleRow
+    | null
+    | undefined;
+  live?: FlatMedia;
+  current?: FlatMedia;
+  variantCandidates?: FlatMedia[];
+}) {
+  const rows = rowsForColor(
+    cached,
+    colorName
   );
 
-  const currentRows = variantCandidates || [];
+  const variants =
+    variantCandidates || [];
 
-  const frontImageUrl = preferredImage(
-    "front",
-    rows.map((variant) => variant.frontFlatUrl),
-    [
-      ...rows.map((variant) => variant.frontFlatUrl),
-      ...rows.map((variant) => variant.colorProductImageUrl),
+  const liveFront = validUrl(
+    live?.frontImageUrl
+  );
+
+  const liveBack = validUrl(
+    live?.backImageUrl
+  );
+
+  const cachedFront = cacheFlat(
+    rows,
+    "front"
+  );
+
+  const cachedBack = cacheFlat(
+    rows,
+    "back"
+  );
+
+  const currentFront =
+    safeCustomOrNamedFlat(
       current?.frontImageUrl,
-      ...currentRows.map((variant) => variant.frontImageUrl)
-    ]
-  );
+      "front"
+    ) ||
+    variants
+      .map((variant) =>
+        safeCustomOrNamedFlat(
+          variant.frontImageUrl,
+          "front"
+        )
+      )
+      .find(Boolean) ||
+    "";
 
-  const backImageUrl = preferredImage(
-    "back",
-    rows.map((variant) => variant.backFlatUrl),
-    [
-      ...rows.map((variant) => variant.backFlatUrl),
+  const currentBack =
+    safeCustomOrNamedFlat(
       current?.backImageUrl,
-      ...currentRows.map((variant) => variant.backImageUrl)
-    ]
-  );
-
-  const swatchImageUrl =
-    rows.map((variant) => validUrl(variant.swatchImageUrl)).find(Boolean) ||
-    validUrl(current?.swatchImageUrl) ||
-    currentRows
-      .map((variant) => validUrl(variant.swatchImageUrl))
+      "back"
+    ) ||
+    variants
+      .map((variant) =>
+        safeCustomOrNamedFlat(
+          variant.backImageUrl,
+          "back"
+        )
+      )
       .find(Boolean) ||
     "";
 
   return {
-    frontImageUrl,
-    backImageUrl,
-    swatchImageUrl
+    /*
+      Live exact frontFlat/backFlat is first because it is the freshest
+      first-party signal and supports opaque CDN URLs.
+
+      Cache exact flat is second.
+
+      A manually supplied / clearly named flat image is third.
+    */
+    frontImageUrl:
+      liveFront ||
+      cachedFront ||
+      currentFront ||
+      "",
+
+    backImageUrl:
+      liveBack ||
+      cachedBack ||
+      currentBack ||
+      "",
+
+    swatchImageUrl:
+      validUrl(
+        live?.swatchImageUrl
+      ) ||
+      cacheSwatch(rows) ||
+      validUrl(
+        current?.swatchImageUrl
+      ) ||
+      variants
+        .map((variant) =>
+          validUrl(
+            variant.swatchImageUrl
+          )
+        )
+        .find(Boolean) ||
+      ""
   };
 }
 
@@ -208,88 +727,163 @@ async function cachedStyle(
 ): Promise<CachedStyleRow | null> {
   const { data, error } = await supabase
     .from("sanmar_catalog_styles")
-    .select("style_id,category,variants")
+    .select(
+      "style_id,category,variants"
+    )
     .eq("shop_id", shopId)
-    .eq("style_id", styleId.trim().toUpperCase())
+    .eq(
+      "style_id",
+      styleId
+        .trim()
+        .toUpperCase()
+    )
     .maybeSingle();
 
   if (error) throw error;
-  return (data || null) as CachedStyleRow | null;
+
+  return (
+    data || null
+  ) as CachedStyleRow | null;
+}
+
+function needsLiveExactFlats(
+  cached:
+    | CachedStyleRow
+    | null
+    | undefined,
+  colorNames: string[]
+) {
+  if (!colorNames.length) return false;
+
+  return colorNames.some(
+    (colorName) => {
+      const rows = rowsForColor(
+        cached,
+        colorName
+      );
+
+      return (
+        !cacheFlat(
+          rows,
+          "front"
+        ) ||
+        !cacheFlat(
+          rows,
+          "back"
+        )
+      );
+    }
+  );
 }
 
 /**
- * Applies SanMar's flat-image policy to a live style returned by the canonical
- * SanMar pipeline.
+ * Applies one strict SanMar media policy:
  *
- * The color/size/SKU data is untouched. Only media selection changes.
+ * - exact Standard Product Information frontFlat/backFlat
+ * - exact SFTP FRONT_FLAT/BACK_FLAT
+ * - user/manual or clearly named flat fallback
+ * - NEVER model/lifestyle/colorProductImage for the print garment
  */
-export async function withPreferredSanMarFlatMedia<T extends {
-  styleId: string;
-  variants: any[];
-  media?: Record<
-    string,
-    {
-      frontImageUrl?: string;
-      backImageUrl?: string;
-      swatchImageUrl?: string;
-    }
-  >;
-}>(
+export async function withPreferredSanMarFlatMedia<
+  T extends {
+    styleId: string;
+    variants: any[];
+    media?: FlatMediaMap;
+  }
+>(
   supabase: any,
   shopId: string,
   style: T
-): Promise<T & { cached?: CachedStyleRow | null }> {
+): Promise<
+  T & {
+    cached?: CachedStyleRow | null;
+  }
+> {
   const cached = await cachedStyle(
     supabase,
     shopId,
     style.styleId
   ).catch(() => null);
 
-  const media = {
-    ...(style.media || {})
-  };
-
   const colors = Array.from(
     new Set(
       (style.variants || [])
-        .map((variant: any) => clean(variant.colorName))
+        .map((variant: any) =>
+          clean(
+            variant.colorName
+          )
+        )
         .filter(Boolean)
     )
   );
 
-  for (const colorName of colors) {
-    const variantsForColor = (style.variants || []).filter(
-      (variant: any) =>
-        colorKey(variant.colorName) === colorKey(colorName)
-    );
+  let live: FlatMediaMap = {};
 
-    const current = media[colorName] || {};
-    const preferred = cachedMediaForColor(
+  /*
+    If the current cache does not have a trustworthy exact front AND back flat
+    for every color, ask SanMar's Standard Product Information service directly.
+    One request returns all style/color/size rows, so this is style-level, not
+    one request per color.
+  */
+  if (
+    needsLiveExactFlats(
       cached,
-      colorName,
-      current,
-      variantsForColor
-    );
-
-    media[colorName] = {
-      frontImageUrl: preferred.frontImageUrl || "",
-      backImageUrl: preferred.backImageUrl || "",
-      swatchImageUrl:
-        preferred.swatchImageUrl ||
-        current.swatchImageUrl ||
-        ""
-    };
+      colors
+    )
+  ) {
+    live =
+      await fetchExactFlatMedia(
+        supabase,
+        shopId,
+        style.styleId
+      ).catch(() => ({}));
   }
 
-  const variants = (style.variants || []).map((variant: any) => {
-    const preferred = media[variant.colorName] || {};
+  const media: FlatMediaMap = {};
+
+  for (const colorName of colors) {
+    const variantsForColor = (
+      style.variants || []
+    ).filter(
+      (variant: any) =>
+        colorKey(
+          variant.colorName
+        ) === colorKey(colorName)
+    );
+
+    media[colorName] =
+      resolvedColorMedia({
+        colorName,
+        cached,
+        live:
+          live[colorName] || {},
+        current:
+          style.media?.[
+            colorName
+          ] || {},
+        variantCandidates:
+          variantsForColor
+      });
+  }
+
+  const variants = (
+    style.variants || []
+  ).map((variant: any) => {
+    const preferred =
+      media[
+        variant.colorName
+      ] || {};
+
     return {
       ...variant,
-      frontImageUrl: preferred.frontImageUrl || "",
-      backImageUrl: preferred.backImageUrl || "",
+      frontImageUrl:
+        preferred.frontImageUrl ||
+        "",
+      backImageUrl:
+        preferred.backImageUrl ||
+        "",
       swatchImageUrl:
         preferred.swatchImageUrl ||
-        variant.swatchImageUrl ||
         ""
     };
   });
@@ -302,114 +896,225 @@ export async function withPreferredSanMarFlatMedia<T extends {
   };
 }
 
-function cloneConfiguration(value: any) {
+function cloneConfiguration(
+  value: any
+) {
   return {
     ...(value || {}),
-    colors: Array.isArray(value?.colors)
-      ? value.colors.map((color: any) => ({ ...color }))
+
+    colors: Array.isArray(
+      value?.colors
+    )
+      ? value.colors.map(
+          (color: any) => ({
+            ...color
+          })
+        )
       : [],
-    supplier: value?.supplier
-      ? {
-          ...value.supplier,
-          variants: Array.isArray(value.supplier.variants)
-            ? value.supplier.variants.map((variant: any) => ({
-                ...variant
-              }))
-            : []
-        }
-      : value?.supplier,
-    customization: value?.customization
-      ? { ...value.customization }
-      : value?.customization
+
+    supplier:
+      value?.supplier
+        ? {
+            ...value.supplier,
+
+            variants:
+              Array.isArray(
+                value.supplier
+                  .variants
+              )
+                ? value.supplier.variants.map(
+                    (
+                      variant: any
+                    ) => ({
+                      ...variant
+                    })
+                  )
+                : []
+          }
+        : value?.supplier,
+
+    customization:
+      value?.customization
+        ? {
+            ...value.customization
+          }
+        : value?.customization
   };
 }
 
-function applyCachedMediaToConfiguration(
+async function applyFlatMediaToConfiguration(
+  supabase: any,
+  shopId: string,
   configuration: any,
-  cached: CachedStyleRow | null | undefined
+  cached:
+    | CachedStyleRow
+    | null
+    | undefined
 ) {
-  const next = cloneConfiguration(configuration);
-  if (!Array.isArray(next.colors) || !next.colors.length) {
-    return { configuration: next, changed: false };
+  const next =
+    cloneConfiguration(
+      configuration
+    );
+
+  if (
+    !Array.isArray(next.colors) ||
+    !next.colors.length
+  ) {
+    return {
+      configuration: next,
+      changed: false
+    };
+  }
+
+  const styleId = clean(
+    next.supplier?.styleId
+  ).toUpperCase();
+
+  const colorNames = next.colors
+    .map((color: any) =>
+      clean(color?.name)
+    )
+    .filter(Boolean);
+
+  let live: FlatMediaMap = {};
+
+  if (
+    styleId &&
+    needsLiveExactFlats(
+      cached,
+      colorNames
+    )
+  ) {
+    live =
+      await fetchExactFlatMedia(
+        supabase,
+        shopId,
+        styleId
+      ).catch(() => ({}));
   }
 
   let changed = false;
 
-  next.colors = next.colors.map((color: any) => {
-    const preferred = cachedMediaForColor(
-      cached,
-      String(color?.name || ""),
-      {
-        frontImageUrl: color?.frontImageUrl,
-        backImageUrl: color?.backImageUrl,
-        swatchImageUrl: color?.swatchImageUrl
+  next.colors = next.colors.map(
+    (color: any) => {
+      const name = clean(
+        color?.name
+      );
+
+      const preferred =
+        resolvedColorMedia({
+          colorName: name,
+          cached,
+          live:
+            live[name] || {},
+          current: {
+            frontImageUrl:
+              color?.frontImageUrl,
+            backImageUrl:
+              color?.backImageUrl,
+            swatchImageUrl:
+              color?.swatchImageUrl
+          }
+        });
+
+      const front =
+        preferred.frontImageUrl ||
+        "";
+
+      const back =
+        preferred.backImageUrl ||
+        "";
+
+      const swatch =
+        preferred.swatchImageUrl ||
+        "";
+
+      if (
+        front !==
+          clean(
+            color?.frontImageUrl
+          ) ||
+        back !==
+          clean(
+            color?.backImageUrl
+          ) ||
+        swatch !==
+          clean(
+            color?.swatchImageUrl
+          )
+      ) {
+        changed = true;
       }
-    );
 
-    const front =
-      preferred.frontImageUrl ||
-      (isSanMarModelImage(color?.frontImageUrl)
-        ? ""
-        : clean(color?.frontImageUrl));
+      return {
+        ...color,
 
-    const back =
-      preferred.backImageUrl ||
-      (isSanMarModelImage(color?.backImageUrl)
-        ? ""
-        : clean(color?.backImageUrl));
+        frontImageUrl:
+          front || undefined,
 
-    const swatch =
-      preferred.swatchImageUrl ||
-      clean(color?.swatchImageUrl);
+        backImageUrl:
+          back || undefined,
 
-    if (
-      front !== clean(color?.frontImageUrl) ||
-      back !== clean(color?.backImageUrl) ||
-      swatch !== clean(color?.swatchImageUrl)
-    ) {
-      changed = true;
+        swatchImageUrl:
+          swatch || undefined
+      };
     }
-
-    return {
-      ...color,
-      frontImageUrl: front || undefined,
-      backImageUrl: back || undefined,
-      swatchImageUrl: swatch || undefined
-    };
-  });
-
-  const visibleColors = next.colors.filter(
-    (color: any) => color?.active !== false
   );
+
+  const visibleColors =
+    next.colors.filter(
+      (color: any) =>
+        color?.active !== false
+    );
 
   const defaultColor =
     visibleColors.find(
       (color: any) =>
-        String(color?.id || "") ===
-        String(next.defaultColorId || "")
+        String(
+          color?.id || ""
+        ) ===
+        String(
+          next.defaultColorId ||
+            ""
+        )
     ) ||
     visibleColors[0] ||
     next.colors[0];
 
-  const nextMockup = clean(defaultColor?.frontImageUrl);
+  const nextMockup = clean(
+    defaultColor?.frontImageUrl
+  );
 
-  if (nextMockup !== clean(next.mockupImageUrl)) {
+  if (
+    nextMockup !==
+    clean(
+      next.mockupImageUrl
+    )
+  ) {
     changed = true;
-    next.mockupImageUrl = nextMockup || undefined;
+
+    next.mockupImageUrl =
+      nextMockup || undefined;
   }
 
-  return { configuration: next, changed };
+  return {
+    configuration: next,
+    changed
+  };
 }
 
 /**
- * Makes already-imported SanMar products use flat garment imagery.
+ * Repair old SanMar products as they are loaded.
  *
- * - Public storefronts can call this with persist=false for immediate display.
- * - Admin Products calls it with persist=true so existing stored product
- *   configuration is permanently repaired without re-importing each style.
+ * Public storefront:
+ *   persist=false
+ *   -> correct display immediately
  *
- * Only image fields and mockupImageUrl are changed. Pricing, variants,
- * print zones, colors, visibility and all other product settings are preserved.
+ * Dashboard -> Products:
+ *   persist=true
+ *   -> correct display AND save the repaired URLs back to catalog_products
+ *
+ * Only garment image URLs + mockupImageUrl are changed.
  */
 export async function hydrateSanMarProductRowsWithFlatMedia<
   T extends {
@@ -421,21 +1126,32 @@ export async function hydrateSanMarProductRowsWithFlatMedia<
   supabase: any,
   shopId: string,
   rows: T[],
-  options?: { persist?: boolean }
+  options?: {
+    persist?: boolean;
+  }
 ): Promise<T[]> {
   const styleIds = Array.from(
     new Set(
       rows
         .map((row) => {
-          const supplier = row?.configuration?.supplier;
+          const supplier =
+            row?.configuration
+              ?.supplier;
+
           if (
-            String(supplier?.provider || "").toLowerCase() !==
+            String(
+              supplier?.provider ||
+                ""
+            ).toLowerCase() !==
             "sanmar"
           ) {
             return "";
           }
 
-          return String(supplier?.styleId || "")
+          return String(
+            supplier?.styleId ||
+              ""
+          )
             .trim()
             .toUpperCase();
         })
@@ -443,24 +1159,44 @@ export async function hydrateSanMarProductRowsWithFlatMedia<
     )
   );
 
-  if (!styleIds.length) return rows;
+  if (!styleIds.length) {
+    return rows;
+  }
 
-  const cachedByStyle = new Map<string, CachedStyleRow>();
+  const cachedByStyle =
+    new Map<
+      string,
+      CachedStyleRow
+    >();
 
-  for (let index = 0; index < styleIds.length; index += 100) {
-    const batch = styleIds.slice(index, index + 100);
+  for (
+    let index = 0;
+    index < styleIds.length;
+    index += 100
+  ) {
+    const batch = styleIds.slice(
+      index,
+      index + 100
+    );
 
-    const { data, error } = await supabase
-      .from("sanmar_catalog_styles")
-      .select("style_id,category,variants")
-      .eq("shop_id", shopId)
-      .in("style_id", batch);
+    const { data, error } =
+      await supabase
+        .from(
+          "sanmar_catalog_styles"
+        )
+        .select(
+          "style_id,category,variants"
+        )
+        .eq("shop_id", shopId)
+        .in("style_id", batch);
 
     if (error) throw error;
 
     for (const row of data || []) {
       cachedByStyle.set(
-        String(row.style_id || "").toUpperCase(),
+        String(
+          row.style_id || ""
+        ).toUpperCase(),
         row as CachedStyleRow
       );
     }
@@ -469,28 +1205,42 @@ export async function hydrateSanMarProductRowsWithFlatMedia<
   const repaired: T[] = [];
 
   for (const row of rows) {
-    const supplier = row?.configuration?.supplier;
-    const styleId = String(supplier?.styleId || "")
+    const supplier =
+      row?.configuration
+        ?.supplier;
+
+    const styleId = String(
+      supplier?.styleId || ""
+    )
       .trim()
       .toUpperCase();
 
     if (
-      String(supplier?.provider || "").toLowerCase() !== "sanmar" ||
+      String(
+        supplier?.provider || ""
+      ).toLowerCase() !==
+        "sanmar" ||
       !styleId
     ) {
       repaired.push(row);
       continue;
     }
 
-    const cached = cachedByStyle.get(styleId);
-    const result = applyCachedMediaToConfiguration(
-      row.configuration,
-      cached
-    );
+    const cached =
+      cachedByStyle.get(styleId);
+
+    const result =
+      await applyFlatMediaToConfiguration(
+        supabase,
+        shopId,
+        row.configuration,
+        cached
+      );
 
     const nextRow = {
       ...row,
-      configuration: result.configuration
+      configuration:
+        result.configuration
     };
 
     repaired.push(nextRow);
@@ -500,14 +1250,22 @@ export async function hydrateSanMarProductRowsWithFlatMedia<
       result.changed &&
       row.id
     ) {
-      const { error } = await supabase
-        .from("catalog_products")
-        .update({
-          configuration: result.configuration,
-          updated_at: new Date().toISOString()
-        })
-        .eq("shop_id", shopId)
-        .eq("id", row.id);
+      const { error } =
+        await supabase
+          .from(
+            "catalog_products"
+          )
+          .update({
+            configuration:
+              result.configuration,
+            updated_at:
+              new Date().toISOString()
+          })
+          .eq(
+            "shop_id",
+            shopId
+          )
+          .eq("id", row.id);
 
       if (error) throw error;
     }
@@ -522,7 +1280,16 @@ export function sanmarFlatImageDiagnostics(
 ) {
   return {
     url: clean(value),
-    flat: isSanMarFlatImage(value, side),
-    model: isSanMarModelImage(value)
+    flat:
+      isSanMarFlatImage(
+        value,
+        side
+      ),
+    model:
+      isSanMarModelImage(
+        value
+      ),
+    sanmar:
+      isSanMarUrl(value)
   };
 }
