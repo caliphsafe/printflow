@@ -247,6 +247,8 @@ export type PublicShop = {
   paymentReady?: boolean;
   /** True when an authenticated shop owner is reviewing an unpublished storefront. */
   previewMode?: boolean;
+  /** Headerless presentation for embedding the same storefront in a shop site. */
+  embedMode?: boolean;
 };
 
 export type SizeQuantity = { size: string; quantity: number };

@@ -17,6 +17,7 @@ import { hydrateSanMarProductRowsWithFlatMedia } from "@/lib/sanmar-flat-media";
 
 type Props = {
   params: Promise<{ shop: string }>;
+  searchParams: Promise<{ embed?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -42,9 +43,10 @@ function isLiveCustomProduct(
 }
 
 export default async function ShopDesignerPage({
-  params
+  params,
+  searchParams
 }: Props) {
-  const { shop: slug } = await params;
+  const [{ shop: slug }, query] = await Promise.all([params, searchParams]);
   const supabase = createSupabaseAdmin();
 
   const { data, error } = await supabase
@@ -188,6 +190,7 @@ export default async function ShopDesignerPage({
         DEFAULT_PRICING_PROFILE
     ),
     products,
+    embedMode: query.embed === "1",
     paymentReady:
       Number(paymentCount || 0) > 0
   };

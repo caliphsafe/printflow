@@ -5,9 +5,10 @@ import { useEffect } from "react";
 type StorefrontView = "products" | "customize";
 
 function storefrontView(): StorefrontView {
-  return document.querySelector(".modern-designer-layout")
-    ? "customize"
-    : "products";
+  const step = document
+    .querySelector(".modern-customer-shell")
+    ?.getAttribute("data-flow-step");
+  return step && step !== "products" ? "customize" : "products";
 }
 
 function documentHeight() {
@@ -38,13 +39,6 @@ export default function StorefrontEmbedBridge() {
 
       frame = requestAnimationFrame(() => {
         const view = storefrontView();
-        const customize = view === "customize";
-
-        root.classList.toggle(
-          "printflow-embedded-customize",
-          customize
-        );
-
         if (view !== lastView) {
           lastView = view;
           window.parent.postMessage(
@@ -57,24 +51,15 @@ export default function StorefrontEmbedBridge() {
           );
         }
 
-        /*
-          Product selection is intentionally content-height driven so an
-          embedded catalog behaves like a normal page.
-
-          Desktop customization is intentionally NOT content-height driven.
-          Its parent gives the iframe a viewport and the configuration column
-          scrolls inside that viewport. This is what lets the garment stay
-          visible while colors, decoration, quantities, and order details move.
-        */
-        if (!customize) {
-          window.parent.postMessage(
-            {
-              type: "printflow:resize",
-              height: documentHeight()
-            },
-            "*"
-          );
-        }
+        // Keep every wizard step in normal document flow so the host page
+        // can size its frame from content without trapping a second scroll area.
+        window.parent.postMessage(
+          {
+            type: "printflow:resize",
+            height: documentHeight()
+          },
+          "*"
+        );
       });
     };
 
@@ -97,10 +82,7 @@ export default function StorefrontEmbedBridge() {
       window.removeEventListener("resize", publish);
       if (frame) cancelAnimationFrame(frame);
 
-      root.classList.remove(
-        "printflow-embedded",
-        "printflow-embedded-customize"
-      );
+      root.classList.remove("printflow-embedded");
     };
   }, []);
 

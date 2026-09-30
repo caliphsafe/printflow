@@ -66,12 +66,37 @@ function activeColors(product?: CatalogProduct) {
 
 function defaultColorFor(product?: CatalogProduct) {
   if (!product) return undefined;
-  const colors = activeColors(product);
+  const colors = activeColors(product).filter((item) => !product.configuration.supplier || Boolean(item.frontImageUrl));
   return (
     colors.find((item) => item.id === product.configuration.defaultColorId) ||
     colors[0] ||
     product.configuration.colors[0]
   );
+}
+
+function customerProductName(product: CatalogProduct) {
+  const supplier = product.configuration.supplier;
+  if (!supplier) return product.name;
+  const brand = String(supplier.brandName || "").trim();
+  const styleId = String(supplier.styleId || "").trim();
+  let title = String(supplier.styleName || "").trim();
+  if (!title || title.toLowerCase() === styleId.toLowerCase()) title = product.name;
+  if (styleId && title.toLowerCase().endsWith(styleId.toLowerCase())) title = title.slice(0, -styleId.length).trim();
+  if (brand) {
+    const brandLower = brand.toLowerCase();
+    if (title.slice(0, brand.length).toLowerCase() === brandLower && title.slice(brand.length).trimStart().toLowerCase().startsWith(brandLower)) {
+      title = `${brand} ${title.slice(brand.length).trimStart().slice(brand.length).trimStart()}`;
+    } else if (title.slice(0, brand.length).toLowerCase() !== brandLower) {
+      title = `${brand} ${title}`;
+    }
+  }
+  return styleId ? `${styleId} | ${title}` : title;
+}
+
+function defaultDecorationMethod(product?: CatalogProduct) {
+  const methods = product?.configuration.customization.decorationMethods || [];
+  const headwear = /hat|headwear|cap|beanie|visor/i.test(`${product?.configuration.customization.category || ""} ${product?.name || ""}`);
+  return (headwear ? methods.find((method) => method.toLowerCase().includes("embroider")) : undefined) || methods[0] || "Screen Print";
 }
 
 function garmentImageFor(product: CatalogProduct, color: ShirtColor | undefined, side: DesignSide) {
@@ -191,10 +216,15 @@ function fitPlacementToArea(placement: ArtworkPlacement, area: PrintArea) {
 
 export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const previewMode = Boolean(shop.previewMode);
+  const embedMode = Boolean(shop.embedMode);
   const shopHomeUrl = shop.slug === ADVANCED_SHOP_SLUG ? ADVANCED_SITE_URL : "";
-  const products = shop.products.filter((item) => item.active);
+  const products = shop.products.filter((item) => item.active && (
+    item.configuration.supplier
+      ? item.configuration.colors.some((color) => color.active !== false && Boolean(color.frontImageUrl))
+      : true
+  ));
   const firstProduct = products[0];
-  const [step, setStep] = useState<"products" | "customize">("products");
+  const [step, setStep] = useState<"products" | "product" | "color" | "decoration" | "artwork" | "review">("products");
   const [productQuery, setProductQuery] = useState("");
   const [productCategory, setProductCategory] = useState("All");
   const [helpOpen, setHelpOpen] = useState(false);
@@ -205,7 +235,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const firstPrintSize = defaultPrintSize(firstProduct);
   const [printSizes, setPrintSizes] = useState<Record<DesignSide, PrintSize>>({ front: firstPrintSize, back: firstPrintSize });
   const [sizes, setSizes] = useState<SizeQuantity[]>(firstProduct?.configuration.sizes.map((size) => ({ size, quantity: 0 })) || []);
-  const [decoration, setDecoration] = useState(firstProduct?.configuration.customization.decorationMethods[0] || "Screen Print");
+  const [decoration, setDecoration] = useState(defaultDecorationMethod(firstProduct));
   const [inkColors, setInkColors] = useState<Record<DesignSide, number>>({ front: 1, back: 1 });
   const [front, setFront] = useState<SideState>(freshSide());
   const [back, setBack] = useState<SideState>(freshSide());
@@ -254,11 +284,22 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const totalPrice = pricing.totalPrice;
   const uploadLimitMb = formatMegabytes(shop.settings.upload.maxBytes);
   const productCategories = useMemo(() => ["All", ...Array.from(new Set(products.map((item) => item.configuration.customization.category).filter(Boolean)))], [products]);
+  const productBrands = useMemo(() => Array.from(new Set(products.map((item) => item.configuration.supplier?.brandName).filter((value): value is string => Boolean(value)))).sort(), [products]);
+  const [productBrand, setProductBrand] = useState("All brands");
   const visibleProducts = useMemo(() => products.filter((item) => {
     const matchesCategory = productCategory === "All" || item.configuration.customization.category === productCategory;
-    const searchable = `${item.name} ${item.description} ${item.configuration.customization.category}`.toLowerCase();
-    return matchesCategory && searchable.includes(productQuery.trim().toLowerCase());
-  }), [products, productCategory, productQuery]);
+    const matchesBrand = productBrand === "All brands" || item.configuration.supplier?.brandName === productBrand;
+    const searchable = `${item.name} ${item.description || ""} ${item.configuration.customization.category} ${item.configuration.supplier?.brandName || ""} ${item.configuration.supplier?.styleId || ""}`.toLowerCase();
+    return matchesCategory && matchesBrand && searchable.includes(productQuery.trim().toLowerCase());
+  }), [products, productCategory, productBrand, productQuery]);
+  const availableModes = useMemo(() => {
+    if (!product) return [];
+    return product.configuration.customization.designModes.filter((value) => {
+      if (value === "back") return product.configuration.customization.backEnabled && Boolean(color?.backImageUrl);
+      if (value === "front-back") return product.configuration.customization.frontEnabled && product.configuration.customization.backEnabled && Boolean(color?.frontImageUrl && color?.backImageUrl);
+      return product.configuration.customization.frontEnabled;
+    });
+  }, [product, color?.id]);
 
   useEffect(() => {
     if (!product) return;
@@ -318,7 +359,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     const nextPrintSize = defaultPrintSize(next);
     setPrintSizes({ front: nextPrintSize, back: nextPrintSize });
     setSizes(next.configuration.sizes.map((size) => ({ size, quantity: 0 })));
-    setDecoration(next.configuration.customization.decorationMethods[0] || "Screen Print");
+    setDecoration(defaultDecorationMethod(next));
     setInkColors({ front: 1, back: 1 });
     setDesignOptimizationRequested(false);
     setSelectedAddOnIds(availableAddOns(shop.pricing, next).filter((item) => item.customerSelectable && item.selectedByDefault).map((item) => item.id));
@@ -326,7 +367,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     setBack(freshSide());
     setError("");
     setCompleted(null);
-    setStep("customize");
+    setStep("product");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -656,10 +697,11 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   return (
     <main
       className="designer-shell modern-customer-shell"
+      data-flow-step={step}
       style={{ "--brand": shop.settings.brand.primaryColor, "--brand-text": shop.settings.brand.textColor, "--brand-accent": shop.settings.brand.accentColor || "#d8ff5f", "--brand-surface": shop.settings.brand.surfaceColor || "#f4f4ef" } as React.CSSProperties}
     >
       {previewMode && <div className="storefront-preview-banner"><div><strong>Storefront preview</strong><span>This is visible only to your shop account. Checkout is disabled until you open the live storefront.</span></div><a href="/dashboard/settings">Back to Shop setup</a></div>}
-      <header className="customer-header modern">
+      {!embedMode && <header className="customer-header modern">
         {shop.settings.brand.logoUrl ? (
           shopHomeUrl ? (
             <a href={shopHomeUrl} aria-label={`Back to ${shop.name}`}>
@@ -677,41 +719,37 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
         )}
         <div>
           <small>Custom order studio</small>
-          <b>{step === "products" ? "Choose a product" : product.name}</b>
+          <b>{step === "products" ? "Browse catalog" : product.name}</b>
         </div>
-        {step === "customize" && <button onClick={() => setStep("products")}>← Products</button>}
-      </header>
-      <div className="customer-progress-strip"><span className={step === "products" ? "active" : "complete"}>1 · Product</span><i/><span className={step === "customize" ? "active" : ""}>2 · Customize</span><i/><span>3 · Review & pay</span></div>
+        {step !== "products" && <button onClick={() => setStep("products")}>← Catalog</button>}
+      </header>}
+      {step !== "products" && <div className="customer-progress-strip" aria-label="Order progress">
+        {["Product", "Color & quantity", "Decoration", "Artwork", "Quote & order"].map((label, index) => {
+          const order = ["product", "color", "decoration", "artwork", "review"] as const;
+          const current = order.indexOf(step as typeof order[number]);
+          return <span key={label} className={index === current ? "active" : index < current ? "complete" : ""} onClick={() => index < current && setStep(order[index])}>{index > 0 && <i/>}{index + 1} · {label}</span>;
+        })}
+      </div>}
 
       {step === "products" ? (
         <section className="product-first-flow modern">
           <div className="customer-intro">
             <p className="customer-hero-badge">{shop.settings.customerExperience?.heroBadge || "CUSTOM APPAREL, MADE EASY"}</p>
             <h1>{shop.settings.customerExperience?.headline || "Choose your blank. Make it yours."}</h1>
-            <p>{shop.settings.customerExperience?.introduction || "Select a product to see colors, print options, and live pricing."}</p>
+            <p>{shop.settings.customerExperience?.introduction || "Browse the catalog and choose a product to begin a custom order."}</p>
             <div className="customer-trust-row">{(shop.settings.customerExperience?.trustMessage || "Secure checkout · Artwork review · Order confirmation").split("·").map((item)=><span key={item}>✓ {item.trim()}</span>)}</div>
           </div>
           <div className="customer-catalog-toolbar">
             <label><span>Find a product</span><input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Search shirts, hoodies, polos…" /></label>
             <div className="customer-category-tabs" aria-label="Product categories">{productCategories.map((category) => <button type="button" key={category} className={productCategory === category ? "active" : ""} onClick={() => setProductCategory(category)}>{category}</button>)}</div>
+            {productBrands.length > 0 && <label className="catalog-brand-filter"><span>Brand</span><select value={productBrand} onChange={(event) => setProductBrand(event.target.value)}><option>All brands</option>{productBrands.map((brand) => <option key={brand}>{brand}</option>)}</select></label>}
           </div>
           <div className="customer-product-grid modern">
             {visibleProducts.map((item) => {
               const firstColor = defaultColorFor(item);
-              const min = item.configuration.customization.minimumQuantity;
-              const sampleColor = firstColor || item.configuration.colors[0];
-              const price = calculateResolvedOrderPricing({
-                profile: shop.pricing,
-                product: item,
-                sizes: item.configuration.sizes.map((size, index) => ({ size, quantity: index === 0 ? min : 0 })),
-                color: sampleColor,
-                printSelections: { front: { printSize: "full", inkColors: 1 } },
-                decorationMethod: item.configuration.customization.decorationMethods[0] || "Screen Print",
-                designOptimizationRequested: false,
-                selectedAddOnIds: availableAddOns(shop.pricing, item).filter((addOn) => addOn.customerSelectable && addOn.selectedByDefault).map((addOn) => addOn.id)
-              });
+              const brand = item.configuration.supplier?.brandName;
               return (
-                <button className="customer-product-card modern" key={item.id} onClick={() => chooseProduct(item)}>
+                <button className="customer-product-card modern" key={item.id} onClick={() => { chooseProduct(item); setStep("product"); }}>
                   <div className="customer-product-image">
                     {firstColor?.frontImageUrl ? (
                       <img src={assetUrl(firstColor.frontImageUrl)} alt={`${item.name} — ${firstColor.name}`} />
@@ -722,22 +760,47 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                   </div>
                   <div>
                     <span>{item.configuration.customization.category}</span>
-                    <h2>{item.name}</h2>
+                    <h2>{customerProductName(item)}</h2>
+                    {brand && <small className="product-brand-name">{brand}</small>}
                     <p>{item.description}</p>
                     <div className="product-card-meta">
-                      <small>{item.configuration.colors.filter((candidate) => candidate.active !== false).length} colors</small>
+                      <small>{item.configuration.colors.filter((candidate) => candidate.active !== false && (!item.configuration.supplier || Boolean(candidate.frontImageUrl))).length} colors</small>
                       <small>{item.configuration.sizes.length} sizes</small>
-                      <small>Min. {min}</small>
                     </div>
-                    <strong>From ${price.unitPrice.toFixed(2)} per item</strong><small className="product-minimum-note">Minimum order: {min}</small>
+                    <span className="product-card-cta">View product <b>→</b></span>
                   </div>
                 </button>
               );
             })}
+            {!visibleProducts.length && <div className="catalog-empty-state"><h2>No matching products</h2><p>Try a different search or category.</p></div>}
           </div>
         </section>
-      ) : (
-        <section className="modern-designer-layout">
+      ) : step === "product" ? (
+        <section className="flow-step product-detail-step">
+          <button className="flow-back-link" onClick={() => setStep("products")}>← Back to catalog</button>
+          <div className="product-detail-grid">
+            <div className="product-detail-image">{defaultColorFor(product)?.frontImageUrl && <img src={assetUrl(defaultColorFor(product)?.frontImageUrl)} alt={product.name}/>}</div>
+            <div className="product-detail-copy"><p className="eyebrow">{product.configuration.customization.category}</p><h1>{customerProductName(product)}</h1><p className="product-brand-name">{product.configuration.supplier?.brandName}</p><p>{product.description}</p><p className="product-detail-facts">{activeColors(product).filter((item) => !product.configuration.supplier || Boolean(item.frontImageUrl)).length} colors · {product.configuration.sizes.length} sizes</p><button className="designer-primary" onClick={() => setStep("color")}>Customize this product</button></div>
+          </div>
+        </section>
+      ) : step === "color" ? (
+        <section className="flow-step">
+          <button className="flow-back-link" onClick={() => setStep("product")}>← Product</button><h1>Choose color and quantities</h1><p className="flow-lede">Select the garment color, then enter how many you need in each size.</p>
+          <div className="color-quantity-layout"><div className="color-step-preview">{garmentUrl ? <img src={garmentUrl} alt={`${product.name}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div><div><h2>Color</h2><div className="modern-color-picker">{activeColors(product).filter((item) => !product.configuration.supplier || Boolean(item.frontImageUrl)).map((item) => { const swatchUrl = assetUrl(item.swatchImageUrl || item.frontImageUrl); return <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => { setColor(item); if ((mode === "back" || mode === "front-back") && !item.backImageUrl) { setMode("front"); setSide("front"); } }} title={item.name}><i className="garment-color-swatch" style={swatchUrl ? undefined : {background: garmentColorFallback(item)}}>{swatchUrl && <img src={swatchUrl} alt="" aria-hidden="true"/>}</i><span>{item.name}</span></button>; })}</div><h2 className="flow-subheading">Quantity by size <small>Minimum {minimum} pieces</small></h2><div className="modern-size-grid">{sizes.map((item) => <label key={item.size}><span>{item.size}</span><div><button aria-label={`Decrease ${item.size}`} onClick={() => updateSize(item.size,item.quantity-1)}>−</button><input type="number" min="0" inputMode="numeric" value={item.quantity || ""} onChange={(event)=>updateSize(item.size,Number(event.target.value))}/><button aria-label={`Increase ${item.size}`} onClick={()=>updateSize(item.size,item.quantity+1)}>+</button></div></label>)}</div><div className={totalAssigned >= minimum ? "modern-quantity-status good" : "modern-quantity-status"}><span>Total quantity</span><b>{totalAssigned}</b><small>{totalAssigned >= minimum ? "Minimum reached" : `${minimum-totalAssigned} more needed`}</small></div><button className="designer-primary" disabled={totalAssigned < minimum} onClick={()=>{setError(""); setStep("decoration");}}>{totalAssigned < minimum ? `Add ${minimum-totalAssigned} more items` : "Continue to decoration"}</button></div></div>
+        </section>
+      ) : step === "decoration" ? (
+        <section className="flow-step"><button className="flow-back-link" onClick={()=>setStep("color")}>← Color & quantity</button><h1>Choose your decoration</h1><p className="flow-lede">Choose where and how your product will be customized.</p>
+          <WizardSection number="1" title="Print location">{availableModes.length ? <div className="radio-card-grid">{availableModes.map((value)=><label key={value} className={mode===value?"radio-card selected":"radio-card"}><input type="radio" name="mode" checked={mode===value} onChange={()=>chooseMode(value)}/><span><b>{modeLabel(value)}</b><small>{value==="front-back"?"Add a design to both sides.":`Design the ${value} only.`}</small></span><i/></label>)}</div> : <p>This product has no configured decoration locations. Contact the shop for help.</p>}</WizardSection>
+          {hasPrintSizeChoice && <WizardSection number="2" title="Decoration size"><div className="side-print-size-stack">{neededSides.map((target)=><div className="side-print-size-group" key={target}><span>{target==="front"?"Front":"Back"}</span><div className="print-size-choice-grid">{printSizeOptions.map((value)=>{const area=printAreaFor(product.configuration,target,value);return <label key={value} className={printSizes[target]===value?"print-size-choice selected":"print-size-choice"}><input type="radio" name={`${target}-print-size`} checked={printSizes[target]===value} onChange={()=>choosePrintSize(target,value)}/><span><b>{printSizeLabel(value)}</b><small>{area.widthInches}″ × {area.heightInches}″ max</small></span></label>;})}</div></div>)}</div></WizardSection>}
+          <WizardSection number={hasPrintSizeChoice?"3":"2"} title="Decoration method"><div className="decoration-method-grid">{product.configuration.customization.decorationMethods.map((item)=><button type="button" className={decoration===item?"decoration-method-card selected":"decoration-method-card"} key={item} onClick={()=>setDecoration(item)}><b>{item.toUpperCase()}</b><span>{item.toLowerCase().includes("screen")?"A great choice for larger runs and designs with a few colors.":item.toLowerCase().includes("dtf")?"Detailed, full-color designs with flexible order sizes.":item.toLowerCase().includes("embroider")?"A durable stitched finish for polos, hats, jackets, and logos.":"Select this decoration method."}</span></button>)}</div>
+            {decoration.toLowerCase().includes("screen")&&<div className="ink-color-estimator"><div><strong>Ink colors</strong><small>More colors and locations can affect the quote.</small></div>{neededSides.map((target)=><label key={target}><span>{target==="front"?"Front":"Back"}</span><select value={inkColors[target]} onChange={(event)=>setInkColors((current)=>({...current,[target]:Number(event.target.value)}))}>{Array.from({length:shop.pricing.screenPrinting.maximumColors},(_,index)=>index+1).map((count)=><option key={count} value={count}>{count} color{count===1?"":"s"}</option>)}</select></label>)}</div>}
+            {decoration.toLowerCase().includes("dtf")&&<p className="method-explainer">DTF pricing uses the artwork dimensions you set in the next step.</p>}{decoration.toLowerCase().includes("embroider")&&<p className="method-explainer">Embroidery pricing uses an estimated stitch tier. The shop will confirm production details.</p>}
+          </WizardSection>
+          <WizardSection number={hasPrintSizeChoice?"4":"3"} title="Optional services"><div className="customer-service-stack">{designOptimizationAmount>0&&<label className={designOptimizationRequested?"service-choice selected":"service-choice"}><input type="checkbox" checked={designOptimizationRequested} onChange={(event)=>setDesignOptimizationRequested(event.target.checked)}/><span className="fake-check">✓</span><span><b>{shop.pricing.designOptimizationFee.label}</b><small>{shop.pricing.designOptimizationFee.description}</small></span></label>}{customerAddOns.map((item)=><label key={item.id} className={selectedAddOnIds.includes(item.id)?"service-choice selected":"service-choice"}><input type="checkbox" checked={selectedAddOnIds.includes(item.id)} onChange={(event)=>setSelectedAddOnIds((current)=>event.target.checked?[...new Set([...current,item.id])]:current.filter((id)=>id!==item.id))}/><span className="fake-check">✓</span><span><b>{item.name}</b><small>{item.description}</small></span></label>)}</div></WizardSection>
+          <button className="designer-primary" onClick={()=>{setSide(neededSides[0]);setStep("artwork");}}>Continue to artwork</button>
+        </section>
+      ) : step === "artwork" ? (
+        <section className="modern-designer-layout artwork-flow-step">
           <div className="modern-stage-column">
             <div className="stage-topbar">
               <div className="side-tabs modern">
@@ -773,8 +836,8 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                       width={printZone.width}
                       height={printZone.height}
                       rx="8"
-                      fill="rgba(21,153,88,.14)"
-                      stroke="#159958"
+                      fill="color-mix(in srgb, var(--brand) 14%, transparent)"
+                      stroke="var(--brand)"
                       strokeWidth="3"
                     />
                     <text
@@ -784,7 +847,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                       dominantBaseline="middle"
                       fontSize="18"
                       fontWeight="800"
-                      fill="#0f6f42"
+                      fill="var(--brand)"
                     >
                       Upload artwork
                     </text>
@@ -808,7 +871,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                       height={sideState.placement.height}
                       rx="7"
                       fill="none"
-                      stroke="#159958"
+                      stroke="var(--brand)"
                       strokeWidth="4"
                       pointerEvents="none"
                     />
@@ -816,7 +879,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                       cx={sideState.placement.x + sideState.placement.width}
                       cy={sideState.placement.y + sideState.placement.height}
                       r="13"
-                      fill="#159958"
+                      fill="var(--brand)"
                       stroke="#fff"
                       strokeWidth="3"
                       onPointerDown={(event) => begin("resize", event)}
@@ -850,7 +913,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             </div>
           </div>
 
-          <div className="modern-config-column">
+          <div className="modern-config-column artwork-config-hidden">
           <aside className="designer-step-panel">
             <div className="designer-step-heading">
               <p className="eyebrow">CUSTOMIZE</p>
@@ -905,7 +968,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                     const swatchUrl = assetUrl(item.swatchImageUrl || item.frontImageUrl);
 
                     return (
-                      <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => setColor(item)} title={item.name}>
+                      <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => { setColor(item); if ((mode === "back" || mode === "front-back") && !item.backImageUrl) { setMode("front"); setSide("front"); } }} title={item.name}>
                         <i
                           className="garment-color-swatch"
                           style={swatchUrl ? undefined : { background: garmentColorFallback(item) }}
@@ -994,6 +1057,16 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             <small className="disclaimer">{shop.settings.customerExperience?.artworkDisclaimer}</small>
           </aside>
           </div>
+          <div className="artwork-step-actions"><p>{neededSides.every((target) => (target === "front" ? front : back).file) ? "Artwork added for every selected location." : `Upload artwork for ${neededSides.filter((target) => !(target === "front" ? front : back).file).join(" and ")}.`}</p><button className="designer-primary" disabled={neededSides.some((target) => !(target === "front" ? front : back).file)} onClick={()=>setStep("review")}>Review quote</button></div>
+        </section>
+      ) : (
+        <section className="flow-step quote-review-step">
+          <button className="flow-back-link" onClick={()=>setStep("artwork")}>← Artwork</button><h1>Review your quote</h1><p className="flow-lede">Check your order details and contact information before continuing to secure payment.</p>
+          <div className="quote-review-grid"><div className="quote-summary-card"><h2>Order summary</h2><dl><div><dt>Product</dt><dd>{customerProductName(product)}</dd></div><div><dt>Brand</dt><dd>{product.configuration.supplier?.brandName || "—"}</dd></div><div><dt>Color</dt><dd>{color.name}</dd></div><div><dt>Quantity</dt><dd>{totalAssigned} pieces · {sizes.filter((item)=>item.quantity>0).map((item)=>`${item.size} × ${item.quantity}`).join(", ")}</dd></div><div><dt>Decoration</dt><dd>{decoration}</dd></div><div><dt>Location</dt><dd>{modeLabel(mode)}{neededSides.map((target)=>` · ${target}: ${printSizeLabel(printSizes[target])}`).join("")}</dd></div><div><dt>Artwork</dt><dd>{neededSides.map((target)=>`${target}: ${(target==="front"?front:back).file ? "Uploaded ✓" : "Missing"}`).join(" · ")}</dd></div></dl>
+            <div className="quote-lines"><div><span>Garments</span><b>${pricing.garmentSubtotal.toFixed(2)}</b></div><div><span>Decoration</span><b>${pricing.printSubtotal.toFixed(2)}</b></div>{pricing.setupFee>0&&<div><span>Setup</span><b>${pricing.setupFee.toFixed(2)}</b></div>}{pricing.designOptimizationFee>0&&<div><span>Design service</span><b>${pricing.designOptimizationFee.toFixed(2)}</b></div>}{pricing.addOnTotal>0&&<div><span>Optional services</span><b>${pricing.addOnTotal.toFixed(2)}</b></div>}<div className="quote-total"><span>Order total</span><b>${totalPrice.toFixed(2)}</b></div><small>Calculated using this shop’s current pricing rules. Final production details are subject to shop review.</small></div>
+          </div><div className="quote-contact-card"><h2>Contact & order notes</h2><label>Full name<input autoComplete="name" placeholder="Your name" value={customer.name} onChange={(event)=>setCustomer({...customer,name:event.target.value})}/></label><label>Email<input type="email" autoComplete="email" placeholder="you@example.com" value={customer.email} onChange={(event)=>setCustomer({...customer,email:event.target.value})}/></label><label>Phone <span>Optional</span><input type="tel" autoComplete="tel" placeholder="Phone number" value={customer.phone} onChange={(event)=>setCustomer({...customer,phone:event.target.value})}/></label><label>Order notes<textarea rows={4} placeholder="Anything the shop should know?" value={notes} onChange={(event)=>setNotes(event.target.value)}/></label>
+            {previewMode ? <div className="customer-payment-warning preview"><b>Preview mode</b><span>Checkout is disabled in preview.</span></div> : !shop.paymentReady && <div className="customer-payment-warning"><b>Checkout is temporarily unavailable.</b><span>This shop has not connected a live payment provider yet.</span></div>}{error&&<div className="error-message">{error}</div>}{submissionStatus&&<div className="submission-status"><i/><span>{submissionStatus}</span></div>}<button className="designer-primary full modern" disabled={previewMode||!shop.paymentReady||submitting||!customer.name.trim()||!customer.email.trim()} onClick={submit}>{previewMode?"Preview mode · checkout disabled":submitting?"Preparing order…":`Continue to payment · $${totalPrice.toFixed(2)}`}</button><small className="disclaimer">{shop.settings.customerExperience?.artworkDisclaimer}</small>
+          </div></div>
         </section>
       )}
       <div className={helpOpen ? "storefront-help open" : "storefront-help"}>
