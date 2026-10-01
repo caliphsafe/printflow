@@ -162,6 +162,92 @@ const DEFAULT_FRONT_FULL: PrintArea = {
 };
 const DEFAULT_BACK_FULL: PrintArea = { ...DEFAULT_FRONT_FULL, y: 155, defaultY: 175 };
 
+function safeSanMarPrintAreas(headwear: boolean, productKindText: string) {
+  if (headwear) {
+    const capFront: PrintArea = {
+      x: 292, y: 300, width: 216, height: 130,
+      widthInches: 6, heightInches: 3.5,
+      artworkWidth: 204, artworkHeight: 119,
+      defaultX: 298, defaultY: 305
+    };
+    const capHeart: PrintArea = {
+      x: 326, y: 305, width: 148, height: 110,
+      widthInches: 4, heightInches: 3,
+      artworkWidth: 136, artworkHeight: 102,
+      defaultX: 332, defaultY: 309
+    };
+    return {
+      frontFullArea: capFront,
+      backFullArea: capFront,
+      frontHeartArea: capHeart,
+      backHeartArea: capHeart
+    };
+  }
+
+  if (/\b(pant|pants|trouser|shorts|bottoms|legging)\b/.test(productKindText)) {
+    const thigh: PrintArea = {
+      x: 250, y: 285, width: 156, height: 250,
+      widthInches: 5, heightInches: 8,
+      artworkWidth: 150, artworkHeight: 240,
+      defaultX: 253, defaultY: 290
+    };
+    return {
+      frontFullArea: thigh,
+      backFullArea: thigh,
+      frontHeartArea: { ...thigh, widthInches: 4, heightInches: 4, artworkWidth: 104, artworkHeight: 104 },
+      backHeartArea: { ...thigh, widthInches: 4, heightInches: 4, artworkWidth: 104, artworkHeight: 104 }
+    };
+  }
+
+  if (/\bsock|hosiery\b/.test(productKindText)) {
+    const sock: PrintArea = {
+      x: 332, y: 260, width: 136, height: 300,
+      widthInches: 3, heightInches: 8,
+      artworkWidth: 112, artworkHeight: 288,
+      defaultX: 344, defaultY: 266
+    };
+    return {
+      frontFullArea: sock,
+      backFullArea: sock,
+      frontHeartArea: { ...sock, widthInches: 3, heightInches: 3, artworkWidth: 100, artworkHeight: 100 },
+      backHeartArea: { ...sock, widthInches: 3, heightInches: 3, artworkWidth: 100, artworkHeight: 100 }
+    };
+  }
+
+  const frontFull: PrintArea = {
+    x: 276, y: 220, width: 248, height: 354,
+    widthInches: 14, heightInches: 18,
+    artworkWidth: 236, artworkHeight: 337,
+    defaultX: 282, defaultY: 228
+  };
+  const backFull: PrintArea = {
+    ...frontFull,
+    y: 228,
+    defaultY: 236
+  };
+  const frontHeart: PrintArea = {
+    x: 385, y: 232, width: 112, height: 118,
+    widthInches: 4, heightInches: 4,
+    artworkWidth: 104, artworkHeight: 104,
+    defaultX: 389, defaultY: 238
+  };
+  const backHeart: PrintArea = { ...frontHeart, y: 228, defaultY: 234 };
+  return {
+    frontFullArea: frontFull,
+    backFullArea: backFull,
+    frontHeartArea: frontHeart,
+    backHeartArea: backHeart
+  };
+}
+
+function isDefaultPrintArea(value: unknown, fallback: PrintArea) {
+  if (!value || typeof value !== "object") return true;
+  const area = value as Partial<PrintArea>;
+  return ["x", "y", "width", "height"].every(
+    (key) => Number(area[key as keyof PrintArea] ?? fallback[key as keyof PrintArea]) === fallback[key as keyof PrintArea]
+  );
+}
+
 export const DEFAULT_CONFIGURATION: ProductConfiguration = {
   sizes: ["S", "M", "L", "XL", "2XL"],
   colors: [
@@ -231,9 +317,29 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
   const productKindText = `${String(custom.category || "")} ${String(supplierRaw?.brandName || "")} ${String(supplierRaw?.styleName || "")}`.toLowerCase();
   const rawSizes = Array.isArray(raw.sizes) ? raw.sizes.map((size) => String(size).trim().toLowerCase()) : [];
   const oneSizeAccessory = rawSizes.length === 1 && /^(one size|os|osfa|adjustable)$/i.test(rawSizes[0]);
-  const likelyFullOnly = oneSizeAccessory || /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker)\b/.test(productKindText);
+  const isHeadwear = /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker)\b/.test(productKindText);
+  const likelyFullOnly = oneSizeAccessory || isHeadwear;
   const rawPrintSizes = Array.isArray(custom.printSizes) ? custom.printSizes.filter((size): size is PrintSize => size === "heart" || size === "full") : [];
   const printSizes: PrintSize[] = rawPrintSizes.length ? Array.from(new Set(rawPrintSizes)) : likelyFullOnly ? ["full"] : ["heart", "full"];
+  const safeSanMarAreas = String(supplierRaw?.provider || "").toLowerCase() === "sanmar"
+    ? safeSanMarPrintAreas(isHeadwear, productKindText)
+    : null;
+  const frontFullSource = custom.frontFullArea || custom.frontPrintArea;
+  const backFullSource = custom.backFullArea || custom.backPrintArea;
+  const frontFullArea = safeSanMarAreas && isDefaultPrintArea(frontFullSource, DEFAULT_CONFIGURATION.customization.frontFullArea)
+    ? normalizePrintArea(safeSanMarAreas.frontFullArea, DEFAULT_CONFIGURATION.customization.frontFullArea)
+    : normalizePrintArea(frontFullSource, DEFAULT_CONFIGURATION.customization.frontFullArea);
+  const backFullArea = safeSanMarAreas && isDefaultPrintArea(backFullSource, DEFAULT_CONFIGURATION.customization.backFullArea)
+    ? normalizePrintArea(safeSanMarAreas.backFullArea, DEFAULT_CONFIGURATION.customization.backFullArea)
+    : normalizePrintArea(backFullSource, DEFAULT_CONFIGURATION.customization.backFullArea);
+  const frontHeartSource = custom.frontHeartArea;
+  const backHeartSource = custom.backHeartArea;
+  const frontHeartArea = safeSanMarAreas && isDefaultPrintArea(frontHeartSource, DEFAULT_CONFIGURATION.customization.frontHeartArea)
+    ? normalizePrintArea(safeSanMarAreas.frontHeartArea, DEFAULT_CONFIGURATION.customization.frontHeartArea)
+    : normalizePrintArea(frontHeartSource, DEFAULT_CONFIGURATION.customization.frontHeartArea);
+  const backHeartArea = safeSanMarAreas && isDefaultPrintArea(backHeartSource, DEFAULT_CONFIGURATION.customization.backHeartArea)
+    ? normalizePrintArea(safeSanMarAreas.backHeartArea, DEFAULT_CONFIGURATION.customization.backHeartArea)
+    : normalizePrintArea(backHeartSource, DEFAULT_CONFIGURATION.customization.backHeartArea);
 
   return {
     sizes: Array.isArray(raw.sizes) && raw.sizes.length ? raw.sizes.map(String) : DEFAULT_CONFIGURATION.sizes,
@@ -273,13 +379,19 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
       frontSurcharge: 0,
       backSurcharge: 0,
       twoSideSurcharge: 0,
-      minimumQuantity: Math.max(12, Number(custom.minimumQuantity || 12)),
-      frontPrintArea: legacyFront,
-      backPrintArea: legacyBack,
-      frontHeartArea: normalizePrintArea(custom.frontHeartArea, DEFAULT_CONFIGURATION.customization.frontHeartArea),
-      frontFullArea: normalizePrintArea(custom.frontFullArea || custom.frontPrintArea, DEFAULT_CONFIGURATION.customization.frontFullArea),
-      backHeartArea: normalizePrintArea(custom.backHeartArea, DEFAULT_CONFIGURATION.customization.backHeartArea),
-      backFullArea: normalizePrintArea(custom.backFullArea || custom.backPrintArea, DEFAULT_CONFIGURATION.customization.backFullArea),
+      minimumQuantity: isHeadwear
+        ? Math.max(1, Number(custom.minimumQuantity || 1))
+        : Math.max(12, Number(custom.minimumQuantity || 12)),
+      frontPrintArea: safeSanMarAreas && isDefaultPrintArea(custom.frontPrintArea, DEFAULT_CONFIGURATION.customization.frontPrintArea)
+        ? frontFullArea
+        : legacyFront,
+      backPrintArea: safeSanMarAreas && isDefaultPrintArea(custom.backPrintArea, DEFAULT_CONFIGURATION.customization.backPrintArea)
+        ? backFullArea
+        : legacyBack,
+      frontHeartArea,
+      frontFullArea,
+      backHeartArea,
+      backFullArea,
       customerInstructions: custom.customerInstructions ? String(custom.customerInstructions) : DEFAULT_CONFIGURATION.customization.customerInstructions,
       pricingOverrides: normalizeProductPricingOverrides(custom.pricingOverrides)
     },

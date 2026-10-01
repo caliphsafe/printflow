@@ -30,13 +30,10 @@ export async function POST(request: Request) {
     body.displayName || ""
   ).trim();
 
-  const category = [
-    "T-Shirts",
-    "Polos",
-    "Hats"
-  ].includes(String(body.category))
-    ? String(body.category)
-    : "T-Shirts";
+  const category = String(body.category || "Apparel").trim() || "Apparel";
+  const headwear = /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker|caps)\b/i.test(
+    `${category} ${displayName}`
+  );
 
   const requestedColors: string[] =
     Array.isArray(body.selectedColors)
@@ -217,7 +214,7 @@ export async function POST(request: Request) {
       mockupImageUrl:
         colors[0]?.frontImageUrl,
       printLocations:
-        category === "Hats"
+        headwear
           ? ["Front"]
           : ["Front", "Back"],
       supplier: {
@@ -238,9 +235,9 @@ export async function POST(request: Request) {
         ...DEFAULT_CONFIGURATION.customization,
         category,
         minimumQuantity:
-          category === "Hats" ? 1 : 12,
+          headwear ? 1 : 12,
         decorationMethods:
-          category === "Hats"
+          headwear
             ? ["Embroidery"]
             : [
                 "Screen Print",
@@ -248,11 +245,11 @@ export async function POST(request: Request) {
                 "Embroidery"
               ],
         printSizes:
-          category === "Hats"
+          headwear
             ? ["full"]
             : ["heart", "full"],
         designModes:
-          category === "Hats"
+          headwear
             ? ["front"]
             : [
                 "front",
@@ -260,7 +257,7 @@ export async function POST(request: Request) {
                 "front-back"
               ],
         backEnabled:
-          category !== "Hats"
+          !headwear
       }
     } as any) as any;
 

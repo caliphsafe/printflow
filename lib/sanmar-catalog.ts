@@ -301,6 +301,42 @@ function escapeLike(value: string) {
   return value.replace(/[%_,]/g, " ").trim();
 }
 
+const SANMAR_FILTER_OPTIONS_TTL = 2 * 60 * 1000;
+const sanmarFilterOptionsCache = new Map<string, { expiresAt: number; value: { brands: string[]; categories: string[] } }>();
+
+export async function sanmarFilterOptions(supabase: any, shopId: string) {
+  const cached = sanmarFilterOptionsCache.get(shopId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const brands = new Set<string>();
+  const categories = new Set<string>();
+  const pageSize = 1000;
+
+  for (let offset = 0; offset < 20000; offset += pageSize) {
+    const { data, error } = await supabase
+      .from("sanmar_catalog_styles")
+      .select("style_id,brand_name,category")
+      .eq("shop_id", shopId)
+      .order("style_id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+    for (const row of data || []) {
+      const brand = String(row.brand_name || "").trim();
+      const category = String(row.category || "").trim();
+      if (brand) brands.add(brand);
+      if (category) categories.add(category);
+    }
+    if ((data || []).length < pageSize) break;
+  }
+
+  const value = {
+    brands: Array.from(brands).sort((a, b) => a.localeCompare(b)),
+    categories: Array.from(categories).sort((a, b) => a.localeCompare(b))
+  };
+  sanmarFilterOptionsCache.set(shopId, { expiresAt: Date.now() + SANMAR_FILTER_OPTIONS_TTL, value });
+  return value;
+}
+
 export async function listSanMarCatalogStyles({ supabase, shopId, category, q, brand, offset, limit }: {
   supabase: any;
   shopId: string;
@@ -356,7 +392,7 @@ export async function listSanMarCatalogStyles({ supabase, shopId, category, q, b
     })),
     total: Number(count || 0),
     brands,
-    categories: ["T-Shirts", "Polos/Knits", "Caps"]
+    categories: []
   };
 }
 

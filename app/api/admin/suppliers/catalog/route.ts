@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
-import { listSanMarCatalogStyles, sanmarSftpConfigured } from "@/lib/sanmar-catalog";
+import { listSanMarCatalogStyles, sanmarFilterOptions, sanmarSftpConfigured } from "@/lib/sanmar-catalog";
 import { field, safeImageUrl, ssRequest } from "@/lib/ss-activewear";
 
 type SupplierKey = "ss" | "sanmar";
@@ -53,36 +53,6 @@ async function ssIndex(shopId: string, connection: any, refresh: boolean) {
   return styles;
 }
 
-async function sanmarFilterOptions(supabase: any, shopId: string) {
-  const brands = new Set<string>();
-  const categories = new Set<string>();
-  const pageSize = 1000;
-
-  for (let offset = 0; offset < 20000; offset += pageSize) {
-    const { data, error } = await supabase
-      .from("sanmar_catalog_styles")
-      .select("style_id,brand_name,category")
-      .eq("shop_id", shopId)
-      .order("style_id", { ascending: true })
-      .range(offset, offset + pageSize - 1);
-
-    if (error) throw error;
-
-    for (const row of data || []) {
-      const brand = String(row.brand_name || "").trim();
-      const category = String(row.category || "").trim();
-      if (brand) brands.add(brand);
-      if (category) categories.add(category);
-    }
-
-    if ((data || []).length < pageSize) break;
-  }
-
-  return {
-    brands: Array.from(brands).sort((a, b) => a.localeCompare(b)),
-    categories: Array.from(categories).sort((a, b) => a.localeCompare(b))
-  };
-}
 
 export const runtime = "nodejs";
 export const maxDuration = 300;

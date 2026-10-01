@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import {
   listSanMarCatalogStyles,
+  sanmarFilterOptions,
   sanmarSftpConfigured
 } from "@/lib/sanmar-catalog";
 
 export const runtime = "nodejs";
-const ALLOWED = new Set(["T-Shirts", "Polos/Knits", "Caps"]);
 
 export async function GET(request: Request) {
   const { supabase, shop } = await getAdminContext();
@@ -33,9 +33,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const requestedCategory = url.searchParams.get("category") || "";
-  const category = ALLOWED.has(requestedCategory)
-    ? requestedCategory
-    : "T-Shirts";
+  const category = requestedCategory.trim();
   const q = (url.searchParams.get("q") || "").trim();
   const brand = (url.searchParams.get("brand") || "").trim();
   const offset = Math.max(
@@ -65,21 +63,26 @@ export async function GET(request: Request) {
     // sync could run for 300 seconds, Vercel would terminate it, and the
     // browser then tried to JSON.parse Vercel's plain-text "An error occurred"
     // response.
-    const result = await listSanMarCatalogStyles({
-      supabase,
-      shopId: shop.id,
-      category,
-      q,
-      brand,
-      offset,
-      limit
-    });
+    const [result, filters] = await Promise.all([
+      listSanMarCatalogStyles({
+        supabase,
+        shopId: shop.id,
+        category: category || undefined,
+        q,
+        brand,
+        offset,
+        limit
+      }),
+      sanmarFilterOptions(supabase, shop.id)
+    ]);
 
     const sftpConfigured = sanmarSftpConfigured(connection as any);
     const cachedStyleCount = Number(count || 0);
 
     return NextResponse.json({
       ...result,
+      brands: filters.brands,
+      categories: filters.categories,
       offset,
       limit,
       hasMore: offset + limit < result.total,

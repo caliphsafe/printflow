@@ -41,19 +41,7 @@ type DetailStyle = {
   >;
 };
 
-type CategoryKey = "T-Shirts" | "Polos" | "Hats";
-
-const CATEGORY_TO_SANMAR: Record<CategoryKey, string> = {
-  "T-Shirts": "T-Shirts",
-  Polos: "Polos/Knits",
-  Hats: "Caps"
-};
-
-const QUICK: Record<CategoryKey, string[]> = {
-  "T-Shirts": ["Port & Company", "Gildan", "District", "Sport-Tek"],
-  Polos: ["Port Authority", "Nike", "Sport-Tek", "OGIO"],
-  Hats: ["Port & Company", "New Era", "Sport-Tek", "Nike"]
-};
+const QUICK = ["Gildan", "Port Authority", "New Era", "hoodie", "jacket"];
 
 const money = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -70,7 +58,7 @@ export default function SanMarCatalogImporter({
   accountHint?: string | null;
   importedStyleIds?: string[];
 }) {
-  const [category, setCategory] = useState<CategoryKey>("T-Shirts");
+  const [category, setCategory] = useState("");
   const [styles, setStyles] = useState<BrowseStyle[]>([]);
   const [selected, setSelected] = useState<BrowseStyle | null>(null);
   const [detail, setDetail] = useState<DetailStyle | null>(null);
@@ -79,6 +67,7 @@ export default function SanMarCatalogImporter({
   const [q, setQ] = useState("");
   const [brand, setBrand] = useState("");
   const [brands, setBrands] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -92,12 +81,13 @@ export default function SanMarCatalogImporter({
   async function load(options?: {
     append?: boolean;
     search?: string;
-    nextCategory?: CategoryKey;
+    nextCategory?: string;
+    nextBrand?: string;
     refresh?: boolean;
   }) {
     if (!connected) return;
 
-    const nextCategory = options?.nextCategory || category;
+    const nextCategory = options?.nextCategory ?? category;
     const append = options?.append === true;
 
     setBusy(true);
@@ -105,9 +95,9 @@ export default function SanMarCatalogImporter({
 
     try {
       const params = new URLSearchParams({
-        category: CATEGORY_TO_SANMAR[nextCategory],
+        category: nextCategory,
         q: options?.search ?? q,
-        brand,
+        brand: options?.nextBrand ?? brand,
         offset: String(append ? styles.length : 0),
         limit: "36"
       });
@@ -131,6 +121,7 @@ export default function SanMarCatalogImporter({
         append ? [...current, ...(data.styles || [])] : data.styles || []
       );
       setBrands(data.brands || []);
+      setCategories(data.categories || []);
       setTotal(Number(data.total || 0));
       setHasMore(data.hasMore === true);
 
@@ -153,7 +144,7 @@ export default function SanMarCatalogImporter({
   }
 
   useEffect(() => {
-    if (connected) void load({ nextCategory: "T-Shirts", search: "" });
+    if (connected) void load({ nextCategory: "", search: "" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
@@ -208,7 +199,7 @@ export default function SanMarCatalogImporter({
       brandName: "SanMar",
       title: value,
       description: "",
-      category: CATEGORY_TO_SANMAR[category],
+      category: category,
       imageUrl: "",
       colorCount: 0,
       sizeCount: 0,
@@ -269,7 +260,7 @@ export default function SanMarCatalogImporter({
         body: JSON.stringify({
           styleId: detail.styleId,
           displayName,
-          category,
+          category: selected.category,
           selectedColors
         })
       });
@@ -296,10 +287,10 @@ export default function SanMarCatalogImporter({
     }
   }
 
-  function switchCategory(next: CategoryKey) {
+  function switchCategory(next: string) {
     setBrand("");
     setQ("");
-    void load({ nextCategory: next, search: "" });
+    void load({ nextCategory: next, nextBrand: "", search: "" });
   }
 
   if (!connected) {
@@ -308,8 +299,7 @@ export default function SanMarCatalogImporter({
         <div className="sanmar-wordmark">SANMAR</div>
         <h2>Connect SanMar to browse products.</h2>
         <p>
-          Once connected, Advanced can browse T-shirts, polos and hats using
-          live SanMar product data.
+          Once connected, browse every product type in the shop’s SanMar catalog.
         </p>
         <Link className="ae-button primary" href="/advanced-admin/settings">
           Connect SanMar
@@ -343,28 +333,21 @@ export default function SanMarCatalogImporter({
         </div>
 
         <div className="sanmar-category-tabs">
-          {(["T-Shirts", "Polos", "Hats"] as CategoryKey[]).map((item) => (
+          {["", ...categories].map((item) => (
             <button
               key={item}
               className={category === item ? "active" : ""}
               disabled={busy}
               onClick={() => switchCategory(item)}
             >
-              <b>{item}</b>
-              <small>
-                {item === "T-Shirts"
-                  ? "Tees"
-                  : item === "Polos"
-                  ? "Polos / Knits"
-                  : "Caps"}
-              </small>
+              <b>{item || "All product types"}</b>
             </button>
           ))}
         </div>
 
         <div className="sanmar-toolbar">
           <label className="sanmar-search">
-            <span>Search {category}</span>
+            <span>Search {category || "all SanMar products"}</span>
             <div>
               <input
                 value={q}
@@ -397,7 +380,7 @@ export default function SanMarCatalogImporter({
 
         <div className="sanmar-quick">
           <span>Popular</span>
-          {QUICK[category].map((value) => (
+          {QUICK.map((value) => (
             <button
               key={value}
               onClick={() => {
@@ -721,14 +704,17 @@ export default function SanMarCatalogImporter({
           color: #fff;
         }
         .sanmar-category-tabs {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          display: flex;
           gap: 8px;
           margin-bottom: 14px;
+          overflow-x: auto;
+          padding-bottom: 4px;
         }
         .sanmar-category-tabs button {
           display: grid;
           gap: 2px;
+          flex: 0 0 auto;
+          max-width: 240px;
           padding: 12px;
           border: 1px solid #dce2e7;
           border-radius: 13px;
@@ -1220,7 +1206,7 @@ export default function SanMarCatalogImporter({
             flex-direction: column;
           }
           .sanmar-category-tabs {
-            grid-template-columns: 1fr;
+            display: flex;
           }
           .sanmar-toolbar {
             grid-template-columns: 1fr;
