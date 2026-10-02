@@ -34,6 +34,20 @@ export async function POST(request: Request) {
   const headwear = /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker|caps)\b/i.test(
     `${category} ${displayName}`
   );
+  const requestedCustomization = body.customization && typeof body.customization === "object" ? body.customization : {};
+  const availableMethods = ["Screen Print", "DTF", "Embroidery", "Heat Transfer", "Sublimation"];
+  const availablePrintSizes = ["heart", "full"];
+  const requestedMethods = Array.isArray(requestedCustomization.decorationMethods)
+    ? requestedCustomization.decorationMethods.map((value: unknown) => String(value)).filter((value: string) => availableMethods.includes(value))
+    : [];
+  const requestedPrintSizes = Array.isArray(requestedCustomization.printSizes)
+    ? requestedCustomization.printSizes.map((value: unknown) => String(value)).filter((value: string) => availablePrintSizes.includes(value))
+    : [];
+  const finalCategory = String(requestedCustomization.category || category).trim().slice(0, 80) || category;
+  const minimumQuantity = Math.min(100000, Math.max(1, Math.floor(Number(requestedCustomization.minimumQuantity) || (headwear ? 1 : 12))));
+  const finalMethods = requestedMethods.length ? requestedMethods : (headwear ? ["Embroidery"] : ["Screen Print", "DTF", "Embroidery"]);
+  const finalPrintSizes = requestedPrintSizes.length ? requestedPrintSizes : (headwear ? ["full"] : ["heart", "full"]);
+  const backEnabled = typeof requestedCustomization.backEnabled === "boolean" ? requestedCustomization.backEnabled : !headwear;
 
   const requestedColors: string[] =
     Array.isArray(body.selectedColors)
@@ -233,10 +247,7 @@ export async function POST(request: Request) {
       defaultColorId: colors[0]?.id,
       mockupImageUrl:
         colors[0]?.frontImageUrl,
-      printLocations:
-        headwear
-          ? ["Front"]
-          : ["Front", "Back"],
+      printLocations: backEnabled ? ["Front", "Back"] : ["Front"],
       supplier: {
         provider: "sanmar",
         supplierName: "SanMar",
@@ -253,31 +264,12 @@ export async function POST(request: Request) {
       },
       customization: {
         ...DEFAULT_CONFIGURATION.customization,
-        category,
-        minimumQuantity:
-          headwear ? 1 : 12,
-        decorationMethods:
-          headwear
-            ? ["Embroidery"]
-            : [
-                "Screen Print",
-                "DTF",
-                "Embroidery"
-              ],
-        printSizes:
-          headwear
-            ? ["full"]
-            : ["heart", "full"],
-        designModes:
-          headwear
-            ? ["front"]
-            : [
-                "front",
-                "back",
-                "front-back"
-              ],
-        backEnabled:
-          !headwear
+        category: finalCategory,
+        minimumQuantity,
+        decorationMethods: finalMethods,
+        printSizes: finalPrintSizes,
+        designModes: backEnabled ? ["front", "back", "front-back"] : ["front"],
+        backEnabled
       }
     } as any) as any;
 

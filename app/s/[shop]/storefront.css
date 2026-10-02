@@ -168,10 +168,10 @@
   font-size: 10px;
 }
 
-/* Three-column desktop catalog */
+/* Four-column catalog across standalone and embedded storefronts */
 .modern-customer-shell .customer-product-grid.modern {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -472,7 +472,7 @@
 /* Tablet */
 @media (max-width: 1040px) {
   .modern-customer-shell .customer-product-grid.modern {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .modern-customer-shell .modern-designer-layout {
@@ -584,7 +584,7 @@
   }
 
   .modern-customer-shell .customer-product-grid.modern {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 10px;
   }
 
@@ -675,6 +675,6 @@
 /* Wider desktop / embed */
 @media (min-width: 1280px) {
   .modern-customer-shell .customer-product-grid.modern {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }

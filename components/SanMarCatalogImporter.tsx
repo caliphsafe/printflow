@@ -44,6 +44,25 @@ type DetailStyle = {
 
 type ImageSelection = { frontImageUrl: string; backImageUrl: string };
 
+type ImageChoice = { url: string; label: string; classTypeId?: string };
+
+function choiceKey(choice: ImageChoice) {
+  return choice.classTypeId?.trim() || choice.label.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function choicesForColor(color: DetailStyle["media"][string] | undefined): ImageChoice[] {
+  if (!color) return [];
+  return [
+    ...(color.imageChoices || []),
+    ...(color.frontImageUrl ? [{ url: color.frontImageUrl, label: "Front view" }] : []),
+    ...(color.backImageUrl ? [{ url: color.backImageUrl, label: "Back view" }] : [])
+  ].filter((choice, index, all) => choice.url && all.findIndex((item) => item.url === choice.url) === index);
+}
+
+function isBackChoice(choice: ImageChoice) {
+  return /back|rear|reverse/i.test(`${choice.label} ${choice.classTypeId || ""}`);
+}
+
 const QUICK = ["Gildan", "Port Authority", "New Era", "hoodie", "jacket"];
 
 const money = (value: number) =>
@@ -68,6 +87,14 @@ export default function SanMarCatalogImporter({
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [imageSelections, setImageSelections] = useState<Record<string, ImageSelection>>({});
   const [selectionStep, setSelectionStep] = useState<"colors" | "images">("colors");
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [frontChoiceKey, setFrontChoiceKey] = useState("");
+  const [backChoiceKey, setBackChoiceKey] = useState("");
+  const [setupCategory, setSetupCategory] = useState("");
+  const [minimumQuantity, setMinimumQuantity] = useState(12);
+  const [decorationMethods, setDecorationMethods] = useState<string[]>(["Screen Print", "DTF", "Embroidery"]);
+  const [printSizes, setPrintSizes] = useState<string[]>(["heart", "full"]);
+  const [backEnabled, setBackEnabled] = useState(true);
   const [displayName, setDisplayName] = useState("");
   const [q, setQ] = useState("");
   const [brand, setBrand] = useState("");
@@ -136,6 +163,7 @@ export default function SanMarCatalogImporter({
         setSelectedColors([]);
         setImageSelections({});
         setSelectionStep("colors");
+        setSetupOpen(false);
         setDisplayName("");
       }
     } catch (error) {
@@ -161,6 +189,7 @@ export default function SanMarCatalogImporter({
     setSelectedColors([]);
     setImageSelections({});
     setSelectionStep("colors");
+    setSetupOpen(false);
     setDisplayName(
       style.title
         .replace(new RegExp(`\\s*${style.styleId}\\s*$`, "i"), "")
@@ -193,6 +222,19 @@ export default function SanMarCatalogImporter({
           backImageUrl: media.backImageUrl || ""
         }])
       ));
+      const initialColor = Array.from(new Set(next.variants.map((item) => item.colorName)))[0];
+      const initialMedia = initialColor ? next.media?.[initialColor] : undefined;
+      const initialChoices = choicesForColor(initialMedia);
+      const initialFront = initialChoices.find((choice) => choice.url === initialMedia?.frontImageUrl) || initialChoices.find((choice) => !isBackChoice(choice));
+      const initialBack = initialChoices.find((choice) => choice.url === initialMedia?.backImageUrl) || initialChoices.find(isBackChoice);
+      setFrontChoiceKey(initialFront ? choiceKey(initialFront) : "");
+      setBackChoiceKey(initialBack ? choiceKey(initialBack) : "");
+      const inferredHeadwear = /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker|caps)\b/i.test(`${style.category} ${style.title}`);
+      setSetupCategory(style.category || "Apparel");
+      setMinimumQuantity(inferredHeadwear ? 1 : 12);
+      setDecorationMethods(inferredHeadwear ? ["Embroidery"] : ["Screen Print", "DTF", "Embroidery"]);
+      setPrintSizes(inferredHeadwear ? ["full"] : ["heart", "full"]);
+      setBackEnabled(!inferredHeadwear);
     } catch (error) {
       setMessageType("error");
       setMessage(
@@ -263,6 +305,39 @@ export default function SanMarCatalogImporter({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [detail]);
 
+  const representativeColor = colors.find((color) => selectedColors.includes(color.name)) || colors[0];
+  const representativeChoices = representativeColor ? choicesForColor(detail?.media?.[representativeColor.name]) : [];
+  const frontChoices = representativeChoices.filter((choice) => !isBackChoice(choice) && !/swatch/i.test(choice.label));
+  const backChoices = representativeChoices.filter((choice) => isBackChoice(choice) && !/swatch/i.test(choice.label));
+
+  function applyImageChoice(side: "front" | "back", selectedChoice: ImageChoice) {
+    const key = choiceKey(selectedChoice);
+    if (side === "front") setFrontChoiceKey(key);
+    else setBackChoiceKey(key);
+    setImageSelections((current) => {
+      const next = { ...current };
+      for (const colorName of selectedColors) {
+        const media = detail?.media?.[colorName];
+        const matching = choicesForColor(media).find((choice) => choiceKey(choice) === key);
+        const fallback = side === "front" ? media?.frontImageUrl : media?.backImageUrl;
+        next[colorName] = {
+          frontImageUrl: side === "front" ? (matching?.url || fallback || "") : (current[colorName]?.frontImageUrl || media?.frontImageUrl || ""),
+          backImageUrl: side === "back" ? (matching?.url || fallback || "") : (current[colorName]?.backImageUrl || media?.backImageUrl || "")
+        };
+      }
+      return next;
+    });
+  }
+
+  function imageSelectionForColor(colorName: string): ImageSelection {
+    const media = detail?.media?.[colorName];
+    const choices = choicesForColor(media);
+    return {
+      frontImageUrl: choices.find((choice) => choiceKey(choice) === frontChoiceKey)?.url || media?.frontImageUrl || "",
+      backImageUrl: choices.find((choice) => choiceKey(choice) === backChoiceKey)?.url || media?.backImageUrl || ""
+    };
+  }
+
   async function importProduct() {
     if (!selected || !detail || !selectedColors.length) return;
 
@@ -278,7 +353,8 @@ export default function SanMarCatalogImporter({
           displayName,
           category: selected.category,
           selectedColors,
-          imageSelections
+          imageSelections,
+          customization: { category: setupCategory || selected.category, minimumQuantity, decorationMethods, printSizes, backEnabled }
         })
       });
 
@@ -322,6 +398,62 @@ export default function SanMarCatalogImporter({
           Connect SanMar
         </Link>
       </section>
+    );
+  }
+
+  if (setupOpen && selected && detail && !detailBusy) {
+    const supportedMethods = ["Screen Print", "DTF", "Embroidery", "Heat Transfer", "Sublimation"];
+    const selectedSkuCount = detail.variants.filter((item) => selectedColors.includes(item.colorName)).length;
+    return (
+      <main className="sanmar-setup-page">
+        <header className="sanmar-setup-topbar">
+          <button type="button" className="sanmar-setup-back" onClick={() => setSetupOpen(false)}>← Back to catalog</button>
+          <div><span>PRODUCT SETUP</span><strong>{detail.brandName} · {detail.styleId}</strong></div>
+          <button className="ae-button primary" disabled={importBusy || !selectedColors.length} onClick={() => void importProduct()}>{importBusy ? "Adding product…" : "Submit product"}</button>
+        </header>
+        <div className="sanmar-setup-content">
+          <div className="sanmar-setup-heading">
+            <div><p className="ae-kicker">SANMAR · ITEM OPTIONS</p><h1>Set up this product</h1><p>Choose the customer-facing details, colors, and product photos before adding it to your catalog.</p></div>
+            <div className="sanmar-setup-item"><img src={representativeColor?.frontImageUrl || selected.imageUrl} alt="Selected SanMar item"/><span>{detail.brandName} {detail.styleId}</span></div>
+          </div>
+
+          <section className="sanmar-setup-section">
+            <header><span>01</span><div><h2>Product details</h2><p>These settings control how the product appears in your store.</p></div></header>
+            <div className="sanmar-setup-fields">
+              <label><span>Customer-facing product name</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder={`${detail.brandName} ${detail.styleId}`}/></label>
+              <label><span>Product type</span><select value={setupCategory} onChange={(event) => setSetupCategory(event.target.value)}>{Array.from(new Set([setupCategory, ...categories].filter(Boolean))).map((item) => <option key={item}>{item}</option>)}</select></label>
+              <label><span>Minimum order quantity</span><input type="number" min={1} value={minimumQuantity} onChange={(event) => setMinimumQuantity(Math.max(1, Number(event.target.value) || 1))}/></label>
+            </div>
+            <div className="sanmar-methods"><span>Available decoration methods</span><div>{supportedMethods.map((method) => <label key={method} className={decorationMethods.includes(method) ? "selected" : ""}><input type="checkbox" checked={decorationMethods.includes(method)} onChange={(event) => setDecorationMethods((current) => event.target.checked ? [...current, method] : current.filter((item) => item !== method))}/>{method}</label>)}</div></div>
+            <div className="sanmar-methods"><span>Print areas and sizes</span><div>{[{id:"heart",label:"Left chest / small"},{id:"full",label:"Full front"}].map((option) => <label key={option.id} className={printSizes.includes(option.id) ? "selected" : ""}><input type="checkbox" checked={printSizes.includes(option.id)} onChange={(event) => setPrintSizes((current) => event.target.checked ? [...current, option.id] : current.filter((item) => item !== option.id))}/>{option.label}</label>)}<label className={backEnabled ? "selected" : ""}><input type="checkbox" checked={backEnabled} onChange={(event) => setBackEnabled(event.target.checked)}/>Offer back decoration</label></div></div>
+          </section>
+
+          <section className="sanmar-setup-section">
+            <header><span>02</span><div><h2>Colors and sizes</h2><p>Select the colors to offer. Each selected color includes its live available sizes and inventory.</p></div><b>{selectedColors.length} colors · {selectedSkuCount} SKUs</b></header>
+            <div className="sanmar-setup-color-actions"><button type="button" onClick={() => setSelectedColors(colors.map((color) => color.name))}>Select all colors</button><button type="button" onClick={() => setSelectedColors([])}>Clear selection</button></div>
+            <div className="sanmar-setup-colors">{colors.map((color) => <label key={color.name} className={selectedColors.includes(color.name) ? "selected" : ""}><input type="checkbox" checked={selectedColors.includes(color.name)} onChange={(event) => {const nextColors = event.target.checked ? [...selectedColors, color.name] : selectedColors.filter((name) => name !== color.name); setSelectedColors(nextColors); if (event.target.checked) setImageSelections((current) => ({...current, [color.name]: imageSelectionForColor(color.name)}));}}/><img src={color.swatchImageUrl || color.frontImageUrl} alt=""/><span><strong>{color.name}</strong><small>{color.sizes.join(" · ")}</small><small>{color.inventory.toLocaleString()} units</small></span></label>)}</div>
+          </section>
+
+          <section className="sanmar-setup-section">
+            <header><span>03</span><div><h2>Storefront product images</h2><p>Pick the front and back views once. PrintFlow matches those views to each selected color automatically.</p></div></header>
+            <div className="sanmar-image-auto-note">✓ One selection applies to all {selectedColors.length} selected colors wherever SanMar provides the matching photo view.</div>
+            <div className="sanmar-visual-image-selectors">
+              {(["front", "back"] as const).map((side) => {
+                const choices = side === "front" ? frontChoices : backChoices;
+                const activeKey = side === "front" ? frontChoiceKey : backChoiceKey;
+                return <div className="sanmar-visual-image-group" key={side}><h3>{side === "front" ? "Front image" : "Back image"}<small>{side === "front" ? "Shown as the main product view" : "Shown as the alternate product view"}</small></h3>{choices.length ? <div className="sanmar-visual-image-grid">{choices.map((choice) => <button type="button" key={`${choiceKey(choice)}:${choice.url}`} className={choiceKey(choice) === activeKey ? "selected" : ""} onClick={() => applyImageChoice(side, choice)}><span className="sanmar-visual-image-preview"><img src={choice.url} alt={`${side} view option: ${choice.label}`}/>{choiceKey(choice) === activeKey && <i>✓</i>}</span><strong>{choice.label}</strong><small>{choiceKey(choice) === activeKey ? `Applied across selected colors` : `Use for all selected colors`}</small></button>)}</div> : <p className="sanmar-no-image-options">No {side} images were supplied for this item.</p>}</div>;
+              })}
+            </div>
+            {representativeColor && <div className="sanmar-image-preview-row"><span>Preview for {representativeColor.name}</span><div>{imageSelections[representativeColor.name]?.frontImageUrl && <img src={imageSelections[representativeColor.name].frontImageUrl} alt="Chosen front view"/>}{imageSelections[representativeColor.name]?.backImageUrl && <img src={imageSelections[representativeColor.name].backImageUrl} alt="Chosen back view"/>}</div></div>}
+          </section>
+
+          {message && <div className={`sanmar-message ${messageType}`}><span>{message}</span>{messageType === "success" && <Link href="/advanced-admin/products">View Products →</Link>}</div>}
+          <footer className="sanmar-setup-footer"><button type="button" className="ae-button" onClick={() => setSetupOpen(false)}>← Back to catalog</button><span>{selectedColors.length} colors and {selectedSkuCount} size/color variants selected</span><button className="ae-button primary" disabled={importBusy || !selectedColors.length} onClick={() => void importProduct()}>{importBusy ? "Adding product…" : "Submit and add product"}</button></footer>
+        </div>
+        <style jsx>{`
+          .sanmar-setup-page{min-height:100vh;background:#f5f7f9;color:#102033;padding-bottom:50px}.sanmar-setup-topbar{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:18px;padding:13px max(24px,calc((100vw - 1180px)/2));border-bottom:1px solid #dfe5ea;background:rgba(255,255,255,.96);backdrop-filter:blur(16px)}.sanmar-setup-topbar>div{display:grid;gap:3px;text-align:center}.sanmar-setup-topbar>div span,.sanmar-setup-heading .ae-kicker{font-size:10px;letter-spacing:.1em;font-weight:850;color:#687786}.sanmar-setup-topbar>div strong{font-size:13px}.sanmar-setup-topbar>:last-child{justify-self:end}.sanmar-setup-back{border:0;background:none;color:#274766;font:inherit;font-size:13px;font-weight:750;cursor:pointer}.sanmar-setup-content{width:min(100% - 36px,1080px);margin:0 auto}.sanmar-setup-heading{display:flex;align-items:center;justify-content:space-between;gap:25px;padding:35px 0 25px}.sanmar-setup-heading h1{margin:5px 0;font-size:clamp(28px,4vw,38px);letter-spacing:-.04em}.sanmar-setup-heading p:last-child{margin:0;color:#687786}.sanmar-setup-item{display:flex;align-items:center;gap:10px;min-width:190px;padding:9px;border:1px solid #e0e5e9;border-radius:13px;background:white;font-size:12px;font-weight:750}.sanmar-setup-item img{width:48px;height:48px;border-radius:8px;object-fit:contain;background:#f4f5f6}.sanmar-setup-section{margin:0 0 17px;padding:23px;border:1px solid #e0e5e9;border-radius:17px;background:#fff;box-shadow:0 5px 20px #13253a08}.sanmar-setup-section>header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.sanmar-setup-section>header>span{display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:10px;background:#edf2f6;color:#35516c;font-weight:850;font-size:12px}.sanmar-setup-section>header h2,.sanmar-setup-section>header p{margin:0}.sanmar-setup-section>header h2{font-size:17px}.sanmar-setup-section>header p{margin-top:3px;color:#758291;font-size:12px}.sanmar-setup-section>header>b{margin-left:auto;color:#607286;font-size:12px;white-space:nowrap}.sanmar-setup-fields{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px}.sanmar-setup-fields label{display:grid;gap:6px}.sanmar-setup-fields label>span,.sanmar-methods>span{font-size:11px;font-weight:800;color:#516174}.sanmar-setup-fields input,.sanmar-setup-fields select{width:100%;min-height:42px;padding:0 11px;border:1px solid #dce2e7;border-radius:9px;background:white;color:#14283d;font:inherit;font-size:13px}.sanmar-methods{display:grid;gap:9px;margin-top:16px}.sanmar-methods>div{display:flex;flex-wrap:wrap;gap:8px}.sanmar-methods label{display:flex;align-items:center;gap:7px;padding:9px 11px;border:1px solid #dce2e7;border-radius:999px;color:#526274;font-size:12px;cursor:pointer}.sanmar-methods label.selected{border-color:#183956;background:#eef4f8;color:#173550}.sanmar-setup-color-actions{display:flex;gap:16px;margin:0 0 12px}.sanmar-setup-color-actions button{padding:0;border:0;background:none;color:#234b6d;font-weight:750;font-size:12px;cursor:pointer}.sanmar-setup-colors{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}.sanmar-setup-colors label{display:grid;grid-template-columns:auto 48px 1fr;align-items:center;gap:10px;padding:9px;border:1px solid #e0e5e9;border-radius:11px;cursor:pointer}.sanmar-setup-colors label.selected{border-color:#355a77;box-shadow:inset 0 0 0 1px #355a77;background:#f7fafc}.sanmar-setup-colors input,.sanmar-methods input{accent-color:#183956}.sanmar-setup-colors img{width:48px;height:48px;border-radius:8px;object-fit:contain;background:#f5f6f7}.sanmar-setup-colors label>span{display:grid;gap:3px;min-width:0}.sanmar-setup-colors strong{font-size:12px}.sanmar-setup-colors small{overflow:hidden;color:#768392;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.sanmar-image-auto-note{padding:11px 13px;border-radius:10px;background:#edf7f0;color:#36704a;font-size:12px;font-weight:700}.sanmar-visual-image-selectors{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.sanmar-visual-image-group{min-width:0}.sanmar-visual-image-group h3{display:grid;gap:3px;margin:0 0 9px;font-size:13px}.sanmar-visual-image-group h3 small{color:#7a8794;font-size:10px;font-weight:500}.sanmar-visual-image-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:9px}.sanmar-visual-image-grid button{min-width:0;padding:7px;border:1px solid #e0e5e9;border-radius:11px;background:#fff;color:#172b3f;text-align:left;cursor:pointer}.sanmar-visual-image-grid button.selected{border-color:#244c6e;box-shadow:0 0 0 2px #244c6e1e}.sanmar-visual-image-preview{position:relative;display:grid;place-items:center;width:100%;aspect-ratio:1/1;border-radius:8px;background:#f4f5f6;overflow:hidden}.sanmar-visual-image-preview img{width:100%;height:100%;object-fit:contain}.sanmar-visual-image-preview i{position:absolute;top:6px;right:6px;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#173b59;color:#fff;font-style:normal;font-size:12px}.sanmar-visual-image-grid strong,.sanmar-visual-image-grid small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sanmar-visual-image-grid strong{margin:7px 1px 3px;font-size:11px}.sanmar-visual-image-grid small{margin:0 1px 2px;color:#788594;font-size:9px}.sanmar-no-image-options{color:#7d8893;font-size:12px}.sanmar-image-preview-row{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:15px;padding-top:13px;border-top:1px solid #edf0f2;color:#637386;font-size:11px}.sanmar-image-preview-row>div{display:flex;gap:8px}.sanmar-image-preview-row img{width:62px;height:62px;border:1px solid #e3e7ea;border-radius:8px;object-fit:contain;background:#f6f7f8}.sanmar-setup-footer{position:sticky;bottom:0;display:flex;align-items:center;justify-content:space-between;gap:15px;margin:20px -1px 0;padding:12px 14px;border:1px solid #dfe5ea;border-radius:13px;background:rgba(255,255,255,.96);box-shadow:0 8px 30px #10203316;backdrop-filter:blur(12px)}.sanmar-setup-footer>span{color:#697887;font-size:11px}.sanmar-setup-footer .ae-button.primary{justify-self:end}@media(max-width:720px){.sanmar-setup-topbar{grid-template-columns:1fr auto;padding:10px 14px}.sanmar-setup-topbar>div{display:none}.sanmar-setup-content{width:calc(100% - 22px)}.sanmar-setup-heading{align-items:flex-start;padding:24px 0 17px}.sanmar-setup-heading p:last-child{font-size:12px}.sanmar-setup-item{min-width:0;max-width:125px;font-size:10px}.sanmar-setup-item img{width:38px;height:38px}.sanmar-setup-section{padding:15px}.sanmar-setup-fields{grid-template-columns:1fr 1fr}.sanmar-setup-fields label:first-child{grid-column:1/-1}.sanmar-visual-image-selectors{grid-template-columns:1fr}.sanmar-setup-section>header{align-items:flex-start}.sanmar-setup-section>header>b{font-size:10px;white-space:normal}.sanmar-setup-footer{flex-wrap:wrap}.sanmar-setup-footer>span{order:3;width:100%;text-align:center}.sanmar-setup-footer>.ae-button{flex:1}.sanmar-visual-image-grid{grid-template-columns:repeat(auto-fill,minmax(112px,1fr))}}
+        `}</style>
+      </main>
     );
   }
 
@@ -549,9 +681,11 @@ export default function SanMarCatalogImporter({
                   </small>
                 </label>
 
+                <button className="ae-button primary sanmar-continue-setup" type="button" onClick={() => setSetupOpen(true)}>Submit item & choose options →</button>
+
                 <div className="sanmar-import-steps" aria-label="Import steps">
                   <button type="button" className={selectionStep === "colors" ? "active" : ""} onClick={() => setSelectionStep("colors")}>1. Colors and sizes</button>
-                  <button type="button" className={selectionStep === "images" ? "active" : ""} disabled={!selectedColors.length} onClick={() => setSelectionStep("images")}>2. Front and back photos</button>
+                  <button type="button" className={selectionStep === "images" ? "active" : ""} disabled={!selectedColors.length} onClick={() => setSetupOpen(true)}>2. Photos and item options</button>
                 </div>
 
                 {selectionStep === "colors" ? <>
@@ -646,9 +780,9 @@ export default function SanMarCatalogImporter({
                   <button
                     className="ae-button primary"
                     disabled={!selectedColors.length}
-                    onClick={() => setSelectionStep("images")}
+                    onClick={() => setSetupOpen(true)}
                   >
-                    Choose front and back photos →
+                    Submit item & choose options →
                   </button>
                 </div>
                 </> : <>

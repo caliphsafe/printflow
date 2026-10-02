@@ -95,7 +95,7 @@
 }
 
 @media(max-width:680px) {
-  .modern-customer-shell .customer-product-grid.modern { grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:9px; }
+  .modern-customer-shell .customer-product-grid.modern { grid-template-columns:repeat(4,minmax(0,1fr)) !important; gap:9px; }
   .modern-customer-shell .customer-product-card.modern { display:flex; }
   .modern-customer-shell .customer-product-card.modern > .customer-product-image { width:100%; aspect-ratio:1/1; }
   .modern-customer-shell .customer-product-card.modern > div:last-child { min-height:140px; padding:9px; }

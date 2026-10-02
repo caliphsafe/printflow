@@ -748,7 +748,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
 
       {step === "products" ? (
         <section className="product-first-flow modern">
-          <div className="customer-catalog-toolbar">
+          <div className="customer-catalog-toolbar" style={{ gridTemplateColumns: productBrands.length > 0 ? "minmax(0,1.4fr) minmax(0,.9fr) minmax(0,.9fr)" : "minmax(0,1.6fr) minmax(0,1fr)" }}>
             <label><span>Find a product</span><input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Search shirts, hoodies, polos…" /></label>
             <label className="catalog-category-filter"><span>Product type</span><select value={productCategory} onChange={(event) => setProductCategory(event.target.value)}>{productCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
             {productBrands.length > 0 && <label className="catalog-brand-filter"><span>Brand</span><select value={productBrand} onChange={(event) => setProductBrand(event.target.value)}><option>All brands</option>{productBrands.map((brand) => <option key={brand}>{brand}</option>)}</select></label>}
@@ -759,7 +759,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             <p>{shop.settings.customerExperience?.introduction || "Browse the catalog and choose a product to begin a custom order."}</p>
             <div className="customer-trust-row">{(shop.settings.customerExperience?.trustMessage || "Secure checkout · Artwork review · Order confirmation").split("·").map((item)=><span key={item}>✓ {item.trim()}</span>)}</div>
           </div>
-          <div className="customer-product-grid modern">
+          <div className="customer-product-grid modern" style={{ gridTemplateColumns: "repeat(4,minmax(0,1fr))" }}>
             {visibleProducts.map((item) => {
               const firstColor = defaultColorFor(item);
               const brand = item.configuration.supplier?.brandName;
