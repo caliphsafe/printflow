@@ -145,15 +145,35 @@ export async function POST(request: Request) {
       )
     );
 
-    const colors = selectedColors.map(
-      (name) => ({
+    const imageSelections = body.imageSelections && typeof body.imageSelections === "object"
+      ? body.imageSelections as Record<string, { frontImageUrl?: string; backImageUrl?: string }>
+      : {};
+    const colors = selectedColors.map((name) => {
+      const media = style.media?.[name] || {};
+      const requested = imageSelections[name] || {};
+      const choices = [
+        ...(media.imageChoices || []),
+        ...(media.frontImageUrl ? [{ url: media.frontImageUrl }] : []),
+        ...(media.backImageUrl ? [{ url: media.backImageUrl }] : [])
+      ];
+      const selectedImage = (side: "frontImageUrl" | "backImageUrl") => {
+        const candidate = String(requested[side] || "").trim();
+        if (candidate && choices.some((choice: any) => choice.url === candidate)) {
+          return candidate;
+        }
+        return media[side] || "";
+      };
+
+      return {
         id: slugify(name),
         name,
         hex: "#d9dee6",
         active: true,
-        ...(style.media?.[name] || {})
-      })
-    );
+        ...media,
+        frontImageUrl: selectedImage("frontImageUrl"),
+        backImageUrl: selectedImage("backImageUrl")
+      };
+    });
 
     const canonicalSupplierVariants =
       variants.map((variant: any) => ({

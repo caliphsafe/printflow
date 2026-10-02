@@ -1,4 +1,5 @@
 import { decryptSecret } from "@/lib/crypto";
+import type { SanMarImageChoice } from "@/lib/sanmar-canonical";
 
 type Side = "front" | "back";
 
@@ -29,6 +30,7 @@ type FlatMedia = {
   frontImageUrl?: string;
   backImageUrl?: string;
   swatchImageUrl?: string;
+  imageChoices?: SanMarImageChoice[];
 };
 
 type FlatMediaMap = Record<string, FlatMedia>;
@@ -851,8 +853,8 @@ export async function withPreferredSanMarFlatMedia<
         ) === colorKey(colorName)
     );
 
-    media[colorName] =
-      resolvedColorMedia({
+    media[colorName] = {
+      ...resolvedColorMedia({
         colorName,
         cached,
         live:
@@ -863,7 +865,10 @@ export async function withPreferredSanMarFlatMedia<
           ] || {},
         variantCandidates:
           variantsForColor
-      });
+      }),
+      imageChoices:
+        style.media?.[colorName]?.imageChoices || []
+    };
   }
 
   const variants = (
@@ -949,7 +954,8 @@ async function applyFlatMediaToConfiguration(
   cached:
     | CachedStyleRow
     | null
-    | undefined
+    | undefined,
+  allowLiveSanMarLookups = false
 ) {
   const next =
     cloneConfiguration(
@@ -979,6 +985,7 @@ async function applyFlatMediaToConfiguration(
   let live: FlatMediaMap = {};
 
   if (
+    allowLiveSanMarLookups &&
     styleId &&
     needsLiveExactFlats(
       cached,
@@ -1128,6 +1135,11 @@ export async function hydrateSanMarProductRowsWithFlatMedia<
   rows: T[],
   options?: {
     persist?: boolean;
+    /**
+     * Live SanMar requests can take tens of seconds and must not run while
+     * rendering a storefront or catalog page. Use the local SFTP cache there.
+     */
+    allowLiveSanMarLookups?: boolean;
   }
 ): Promise<T[]> {
   const styleIds = Array.from(
@@ -1169,37 +1181,48 @@ export async function hydrateSanMarProductRowsWithFlatMedia<
       CachedStyleRow
     >();
 
-  for (
-    let index = 0;
-    index < styleIds.length;
-    index += 100
-  ) {
-    const batch = styleIds.slice(
-      index,
-      index + 100
-    );
-
-    const { data, error } =
-      await supabase
-        .from(
-          "sanmar_catalog_styles"
-        )
-        .select(
-          "style_id,category,variants"
-        )
-        .eq("shop_id", shopId)
-        .in("style_id", batch);
-
-    if (error) throw error;
-
-    for (const row of data || []) {
-      cachedByStyle.set(
-        String(
-          row.style_id || ""
-        ).toUpperCase(),
-        row as CachedStyleRow
+  try {
+    for (
+      let index = 0;
+      index < styleIds.length;
+      index += 100
+    ) {
+      const batch = styleIds.slice(
+        index,
+        index + 100
       );
+
+      const { data, error } =
+        await supabase
+          .from(
+            "sanmar_catalog_styles"
+          )
+          .select(
+            "style_id,category,variants"
+          )
+          .eq("shop_id", shopId)
+          .in("style_id", batch);
+
+      if (error) throw error;
+
+      for (const row of data || []) {
+        cachedByStyle.set(
+          String(
+            row.style_id || ""
+          ).toUpperCase(),
+          row as CachedStyleRow
+        );
+      }
     }
+  } catch (error) {
+    // Media repair is best-effort. If an older database has not yet received
+    // the SanMar cache migration, show the saved product configuration instead
+    // of making the entire product/storefront page fail to render.
+    console.warn(
+      "Skipping SanMar image hydration because the catalog cache is unavailable.",
+      error instanceof Error ? error.message : String(error)
+    );
+    return rows;
   }
 
   const repaired: T[] = [];
@@ -1234,7 +1257,8 @@ export async function hydrateSanMarProductRowsWithFlatMedia<
         supabase,
         shopId,
         row.configuration,
-        cached
+        cached,
+        options?.allowLiveSanMarLookups === true
       );
 
     const nextRow = {

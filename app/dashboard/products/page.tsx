@@ -69,7 +69,10 @@ export default async function ProductsPage({
       supabase,
       shop.id,
       data || [],
-      { persist: true }
+      {
+        persist: true,
+        allowLiveSanMarLookups: false
+      }
     );
 
   const products: CatalogProduct[] =

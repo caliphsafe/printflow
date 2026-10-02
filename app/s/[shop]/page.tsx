@@ -29,6 +29,23 @@ function isLiveCustomProduct(
   product: CatalogProduct,
   shopSlug: string
 ) {
+  const category = String(
+    product.configuration.customization.category || ""
+  ).trim().toLowerCase();
+  const slug = String(product.slug || "").trim().toLowerCase();
+  const name = String(product.name || "").trim().toLowerCase();
+
+  // School uniforms remain in catalog_products and in their dedicated
+  // storefront_products collection, but never enter the custom apparel catalog.
+  if (
+    category === "school uniform" ||
+    category === "school uniforms" ||
+    slug.startsWith("espirito-") ||
+    name.includes("espirito santo")
+  ) {
+    return false;
+  }
+
   const supplier =
     product.configuration.supplier;
 
@@ -166,7 +183,10 @@ export default async function ShopDesignerPage({
       supabase,
       data.id,
       productRows || [],
-      { persist: false }
+      {
+        persist: false,
+        allowLiveSanMarLookups: false
+      }
     );
 
   const products: CatalogProduct[] =

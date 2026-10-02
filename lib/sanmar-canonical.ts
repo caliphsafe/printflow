@@ -23,7 +23,14 @@ export type SanMarCanonicalVariant = {
   frontImageUrl?: string;
   backImageUrl?: string;
   swatchImageUrl?: string;
+  imageChoices?: SanMarImageChoice[];
   source?: "cache" | "standard-product-info" | "promostandards-product-data";
+};
+
+export type SanMarImageChoice = {
+  url: string;
+  label: string;
+  classTypeId?: string;
 };
 
 export type SanMarStyleSource = {
@@ -44,6 +51,7 @@ export type SanMarMediaMap = Record<
     frontImageUrl?: string;
     backImageUrl?: string;
     swatchImageUrl?: string;
+    imageChoices?: SanMarImageChoice[];
   }
 >;
 
@@ -178,6 +186,7 @@ function emptyVariant(partial: Partial<SanMarCanonicalVariant>): SanMarCanonical
     frontImageUrl: partial.frontImageUrl || "",
     backImageUrl: partial.backImageUrl || "",
     swatchImageUrl: partial.swatchImageUrl || "",
+    imageChoices: partial.imageChoices || [],
     source: partial.source
   };
 }
@@ -276,6 +285,18 @@ export async function fetchSanMarStandardProductInfo(
         sanmarXmlTag(images, "backFlat") ||
           sanmarXmlTag(images, "backModel")
       ),
+      imageChoices: ([
+        ["Front flat", sanmarXmlTag(images, "frontFlat")],
+        ["Back flat", sanmarXmlTag(images, "backFlat")],
+        ["Front model", sanmarXmlTag(images, "frontModel")],
+        ["Back model", sanmarXmlTag(images, "backModel")],
+        ["Color product", sanmarXmlTag(images, "colorProductImage")],
+        ["Product image", sanmarXmlTag(images, "productImage")],
+        ["Swatch", sanmarXmlTag(images, "colorSquareImage") || sanmarXmlTag(images, "colorSwatchImage")]
+      ] as Array<[string, string]>).flatMap(([label, value]) => {
+        const url = secureImage(String(value || ""));
+        return url ? [{ url, label: String(label) }] : [];
+      }),
       swatchImageUrl: secureImage(
         sanmarXmlTag(images, "colorSquareImage") ||
           sanmarXmlTag(images, "colorSwatchImage")
@@ -551,6 +572,18 @@ export async function fetchSanMarMedia(
     if (!colorName || !urlValue) continue;
 
     media[colorName] ||= {};
+    media[colorName].imageChoices ||= [];
+    const classLabels: Record<string, string> = {
+      "1004": "Swatch",
+      "1006": "Product image",
+      "1007": "Front",
+      "1008": "Back",
+      "2001": "Product image"
+    };
+    const label = classLabels[classTypeId] || `Product image (${classTypeId || "other"})`;
+    if (!media[colorName].imageChoices.some((choice) => choice.url === urlValue)) {
+      media[colorName].imageChoices.push({ url: urlValue, label, classTypeId });
+    }
 
     if (classTypeId === "1007") {
       media[colorName].frontImageUrl = urlValue;

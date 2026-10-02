@@ -6,9 +6,13 @@
 .modern-customer-shell .customer-progress-strip span { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .modern-customer-shell .customer-progress-strip span.complete { cursor: pointer; }
 .modern-customer-shell .customer-progress-strip span i { display: inline-block; width: 20px; height: 1px; background: var(--sf-line-strong); }
-.modern-customer-shell .customer-catalog-toolbar { grid-template-columns: minmax(240px,1fr) auto; }
-.modern-customer-shell .catalog-brand-filter { display:flex; flex-direction:column; gap:7px; min-width:180px; color:var(--sf-muted); font-size:12px; }
-.modern-customer-shell .catalog-brand-filter select { min-height:44px; border:1px solid var(--sf-line); border-radius:12px; padding:0 12px; color:var(--sf-ink); background:var(--sf-panel); }
+.modern-customer-shell .customer-catalog-toolbar { grid-template-columns: minmax(220px,1fr) minmax(150px,.55fr) minmax(150px,.55fr); }
+.modern-customer-shell .catalog-brand-filter,
+.modern-customer-shell .catalog-category-filter { display:flex; flex-direction:column; gap:6px; min-width:0; color:var(--sf-muted); font-size:11px; }
+.modern-customer-shell .catalog-brand-filter > span,
+.modern-customer-shell .catalog-category-filter > span { display:block; color:var(--sf-muted); font-size:11px; }
+.modern-customer-shell .catalog-brand-filter select,
+.modern-customer-shell .catalog-category-filter select { min-height:42px; width:100%; border:1px solid var(--sf-line); border-radius:11px; padding:0 12px; color:var(--sf-ink); background:var(--sf-panel); font:inherit; }
 .modern-customer-shell .product-brand-name { display:block; color:var(--sf-muted); font-size:13px; }
 .modern-customer-shell .product-card-cta { display:flex; align-items:center; justify-content:space-between; margin-top:14px; color:var(--sf-primary); font-weight:800; }
 .modern-customer-shell .catalog-empty-state { grid-column:1/-1; padding:64px 20px; text-align:center; color:var(--sf-muted); }
@@ -74,7 +78,8 @@
   .modern-customer-shell .customer-progress-strip { justify-content:flex-start; overflow-x:auto; width:calc(100% - 24px); gap:10px; padding:10px 12px; font-size:10px; }
   .modern-customer-shell .customer-progress-strip span i { width:10px; }
   .modern-customer-shell .customer-catalog-toolbar { grid-template-columns:1fr; }
-  .modern-customer-shell .catalog-brand-filter { width:100%; }
+  .modern-customer-shell .catalog-brand-filter,
+  .modern-customer-shell .catalog-category-filter { width:100%; }
   .modern-customer-shell .product-detail-grid,.modern-customer-shell .color-quantity-layout,.modern-customer-shell .quote-review-grid { grid-template-columns:1fr; }
   .modern-customer-shell .product-detail-image { min-height:340px; }
   .modern-customer-shell .color-step-preview { position:static; min-height:320px; }

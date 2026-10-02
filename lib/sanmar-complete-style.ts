@@ -8,6 +8,7 @@ import {
   sanmarNormalize,
   type SanMarCanonicalVariant,
   type SanMarConnection,
+  type SanMarImageChoice,
   type SanMarMediaMap,
   type SanMarStyleSource
 } from "@/lib/sanmar-canonical";
@@ -29,7 +30,37 @@ type CachedVariant = {
   backModelUrl?: string;
   frontFlatUrl?: string;
   backFlatUrl?: string;
+  imageChoices?: SanMarImageChoice[];
 };
+
+function cachedImageChoices(raw: CachedVariant): SanMarImageChoice[] {
+  const choices: Array<[string, string | undefined]> = [
+    ["Front flat", raw.frontFlatUrl],
+    ["Back flat", raw.backFlatUrl],
+    ["Front model", raw.frontModelUrl],
+    ["Back model", raw.backModelUrl],
+    ["Color product", raw.colorProductImageUrl],
+    ["Swatch", raw.swatchImageUrl]
+  ];
+  const seen = new Set<string>();
+  return choices.flatMap(([label, rawUrl]) => {
+    const url = String(rawUrl || "").trim();
+    if (!/^https:\/\//i.test(url) || seen.has(url)) return [];
+    seen.add(url);
+    return [{ url, label }];
+  });
+}
+
+function mergeImageChoices(
+  current: SanMarImageChoice[] = [],
+  incoming: SanMarImageChoice[] = []
+): SanMarImageChoice[] {
+  const merged = new Map<string, SanMarImageChoice>();
+  for (const choice of [...current, ...incoming]) {
+    if (choice.url) merged.set(choice.url, choice);
+  }
+  return Array.from(merged.values());
+}
 
 function sourceKey(variant: Partial<SanMarCanonicalVariant>) {
   const uniqueKey = String(variant.uniqueKey || variant.sku || variant.skuId || "").trim();
@@ -93,6 +124,7 @@ function cacheVariant(styleId: string, raw: CachedVariant): SanMarCanonicalVaria
       raw.backModelUrl ||
       "",
     swatchImageUrl: raw.swatchImageUrl || "",
+    imageChoices: cachedImageChoices(raw),
     source: "cache"
   };
 }
@@ -128,7 +160,8 @@ function mergeVariant(
     active: current.active !== false && incoming.active !== false,
     frontImageUrl: current.frontImageUrl || incoming.frontImageUrl,
     backImageUrl: current.backImageUrl || incoming.backImageUrl,
-    swatchImageUrl: current.swatchImageUrl || incoming.swatchImageUrl
+    swatchImageUrl: current.swatchImageUrl || incoming.swatchImageUrl,
+    imageChoices: mergeImageChoices(current.imageChoices, incoming.imageChoices)
   };
 }
 
@@ -152,6 +185,12 @@ function cacheMedia(cached: any, variants: SanMarCanonicalVariant[]): SanMarMedi
     if (variant.frontImageUrl) media[color].frontImageUrl ||= variant.frontImageUrl;
     if (variant.backImageUrl) media[color].backImageUrl ||= variant.backImageUrl;
     if (variant.swatchImageUrl) media[color].swatchImageUrl ||= variant.swatchImageUrl;
+    media[color].imageChoices ||= [];
+    for (const choice of variant.imageChoices || []) {
+      if (!media[color].imageChoices.some((current) => current.url === choice.url)) {
+        media[color].imageChoices.push(choice);
+      }
+    }
   }
 
   if (cached?.image_url) {
@@ -182,7 +221,11 @@ function mergeMedia(base: SanMarMediaMap, incoming: SanMarMediaMap) {
       swatchImageUrl:
         value.swatchImageUrl ||
         result[color].swatchImageUrl ||
-        ""
+        "",
+      imageChoices: mergeImageChoices(
+        result[color].imageChoices,
+        value.imageChoices
+      )
     };
   }
 

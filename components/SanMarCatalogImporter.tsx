@@ -37,9 +37,12 @@ type DetailStyle = {
       frontImageUrl?: string;
       backImageUrl?: string;
       swatchImageUrl?: string;
+      imageChoices?: Array<{ url: string; label: string; classTypeId?: string }>;
     }
   >;
 };
+
+type ImageSelection = { frontImageUrl: string; backImageUrl: string };
 
 const QUICK = ["Gildan", "Port Authority", "New Era", "hoodie", "jacket"];
 
@@ -63,6 +66,8 @@ export default function SanMarCatalogImporter({
   const [selected, setSelected] = useState<BrowseStyle | null>(null);
   const [detail, setDetail] = useState<DetailStyle | null>(null);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [imageSelections, setImageSelections] = useState<Record<string, ImageSelection>>({});
+  const [selectionStep, setSelectionStep] = useState<"colors" | "images">("colors");
   const [displayName, setDisplayName] = useState("");
   const [q, setQ] = useState("");
   const [brand, setBrand] = useState("");
@@ -129,6 +134,8 @@ export default function SanMarCatalogImporter({
         setSelected(null);
         setDetail(null);
         setSelectedColors([]);
+        setImageSelections({});
+        setSelectionStep("colors");
         setDisplayName("");
       }
     } catch (error) {
@@ -152,6 +159,8 @@ export default function SanMarCatalogImporter({
     setSelected(style);
     setDetail(null);
     setSelectedColors([]);
+    setImageSelections({});
+    setSelectionStep("colors");
     setDisplayName(
       style.title
         .replace(new RegExp(`\\s*${style.styleId}\\s*$`, "i"), "")
@@ -178,6 +187,12 @@ export default function SanMarCatalogImporter({
       setSelectedColors(
         Array.from(new Set(next.variants.map((item) => item.colorName)))
       );
+      setImageSelections(Object.fromEntries(
+        Object.entries(next.media || {}).map(([colorName, media]) => [colorName, {
+          frontImageUrl: media.frontImageUrl || "",
+          backImageUrl: media.backImageUrl || ""
+        }])
+      ));
     } catch (error) {
       setMessageType("error");
       setMessage(
@@ -234,6 +249,7 @@ export default function SanMarCatalogImporter({
           frontImageUrl: media.frontImageUrl || "",
           backImageUrl: media.backImageUrl || "",
           swatchImageUrl: media.swatchImageUrl || "",
+          imageChoices: media.imageChoices || [],
           sizeCount: new Set(rows.map((item) => item.sizeName)).size,
           sizes: Array.from(new Set(rows.map((item) => item.sizeName))),
           inventory: rows.reduce(
@@ -261,7 +277,8 @@ export default function SanMarCatalogImporter({
           styleId: detail.styleId,
           displayName,
           category: selected.category,
-          selectedColors
+          selectedColors,
+          imageSelections
         })
       });
 
@@ -532,6 +549,12 @@ export default function SanMarCatalogImporter({
                   </small>
                 </label>
 
+                <div className="sanmar-import-steps" aria-label="Import steps">
+                  <button type="button" className={selectionStep === "colors" ? "active" : ""} onClick={() => setSelectionStep("colors")}>1. Colors and sizes</button>
+                  <button type="button" className={selectionStep === "images" ? "active" : ""} disabled={!selectedColors.length} onClick={() => setSelectionStep("images")}>2. Front and back photos</button>
+                </div>
+
+                {selectionStep === "colors" ? <>
                 <div className="sanmar-color-toolbar">
                   <div>
                     <h3>Choose customer colors</h3>
@@ -622,12 +645,57 @@ export default function SanMarCatalogImporter({
 
                   <button
                     className="ae-button primary"
-                    disabled={importBusy || !selectedColors.length}
-                    onClick={() => void importProduct()}
+                    disabled={!selectedColors.length}
+                    onClick={() => setSelectionStep("images")}
                   >
-                    {importBusy ? "Adding…" : "Add product to Advanced"}
+                    Choose front and back photos →
                   </button>
                 </div>
+                </> : <>
+                  <div className="sanmar-image-step-head">
+                    <h3>Choose product photos</h3>
+                    <p>Select the front and back image customers will see for each selected color. The recommended garment images are selected by default.</p>
+                  </div>
+                  <div className="sanmar-image-color-list">
+                    {colors.filter((color) => selectedColors.includes(color.name)).map((color) => {
+                      const selection = imageSelections[color.name] || { frontImageUrl: color.frontImageUrl, backImageUrl: color.backImageUrl };
+                      const choices = [
+                        ...color.imageChoices,
+                        ...(color.frontImageUrl ? [{ url: color.frontImageUrl, label: "Recommended front" }] : []),
+                        ...(color.backImageUrl ? [{ url: color.backImageUrl, label: "Recommended back" }] : [])
+                      ].filter((choice, index, all) => all.findIndex((item) => item.url === choice.url) === index);
+                      const frontChoices = choices.filter((choice) => !/back|swatch/i.test(choice.label));
+                      const backChoices = choices.filter((choice) => !/front|swatch/i.test(choice.label));
+                      return <section className="sanmar-image-color" key={color.name}>
+                        <h4>{color.name}</h4>
+                        <div className="sanmar-image-choice-grid">
+                          {(["front", "back"] as const).map((side) => {
+                            const key = side === "front" ? "frontImageUrl" : "backImageUrl";
+                            const sideChoices = side === "front" ? frontChoices : backChoices;
+                            const selectedUrl = selection[key] || sideChoices[0]?.url || "";
+                            return <label key={side} className="sanmar-image-choice">
+                              <span>{side === "front" ? "Front photo" : "Back photo"}</span>
+                              {selectedUrl ? <img src={selectedUrl} alt={`${color.name} ${side} garment preview`} /> : <div className="sanmar-image-choice-empty">No {side} image supplied</div>}
+                              <select value={selectedUrl} onChange={(event) => setImageSelections((current) => ({
+                                ...current,
+                                [color.name]: { ...selection, [key]: event.target.value }
+                              }))}>
+                                <option value="">No image</option>
+                                {(sideChoices.length ? sideChoices : choices).map((choice) => <option key={choice.url} value={choice.url}>{choice.label}</option>)}
+                              </select>
+                            </label>;
+                          })}
+                        </div>
+                      </section>;
+                    })}
+                  </div>
+                  <div className="sanmar-import-footer">
+                    <button className="ae-button" type="button" onClick={() => setSelectionStep("colors")}>← Back to colors</button>
+                    <button className="ae-button primary" disabled={importBusy || !selectedColors.length} onClick={() => void importProduct()}>
+                      {importBusy ? "Adding…" : "Add product to Advanced"}
+                    </button>
+                  </div>
+                </>}
               </>
             ) : null}
           </>
@@ -1153,6 +1221,42 @@ export default function SanMarCatalogImporter({
           color: #66727f;
           font-size: 6px;
         }
+        .sanmar-import-steps {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 6px;
+          margin: 14px 0;
+        }
+        .sanmar-import-steps button {
+          min-height: 36px;
+          padding: 8px;
+          border: 1px solid #dce2e7;
+          border-radius: 10px;
+          background: #fff;
+          color: #66727f;
+          font-size: 8px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+        .sanmar-import-steps button.active {
+          border-color: #0b2038;
+          background: #0b2038;
+          color: #fff;
+        }
+        .sanmar-import-steps button:disabled {
+          opacity: .45;
+          cursor: not-allowed;
+        }
+        .sanmar-image-step-head h3 { margin: 8px 0 4px; color: #0b2038; font-size: 11px; }
+        .sanmar-image-step-head p { margin: 0 0 12px; color: #66727f; font-size: 8px; line-height: 1.45; }
+        .sanmar-image-color-list { display: grid; gap: 10px; }
+        .sanmar-image-color { padding: 10px; border: 1px solid #dce2e7; border-radius: 12px; background: #fff; }
+        .sanmar-image-color h4 { margin: 0 0 8px; color: #0b2038; font-size: 9px; }
+        .sanmar-image-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .sanmar-image-choice { display: grid; gap: 5px; min-width: 0; color: #0b2038; font-size: 7px; font-weight: 800; }
+        .sanmar-image-choice img,.sanmar-image-choice-empty { width: 100%; height: 110px; border: 1px solid #e4e8ec; border-radius: 9px; background: #f4f6f7; object-fit: contain; }
+        .sanmar-image-choice-empty { display: grid; place-items: center; padding: 8px; color: #7a8490; text-align: center; font-weight: 600; }
+        .sanmar-image-choice select { width: 100%; min-height: 34px; border: 1px solid #dce2e7; border-radius: 8px; padding: 0 7px; background: #fff; color: #17202a; font: inherit; }
         .sanmar-message {
           display: grid;
           gap: 5px;

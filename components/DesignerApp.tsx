@@ -226,7 +226,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const firstProduct = products[0];
   const [step, setStep] = useState<"products" | "product" | "color" | "decoration" | "artwork" | "review">("products");
   const [productQuery, setProductQuery] = useState("");
-  const [productCategory, setProductCategory] = useState("All");
+  const [productCategory, setProductCategory] = useState("All categories");
   const [helpOpen, setHelpOpen] = useState(false);
   const [product, setProduct] = useState<CatalogProduct>(firstProduct);
   const [color, setColor] = useState<ShirtColor>(defaultColorFor(firstProduct) as ShirtColor);
@@ -283,11 +283,18 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const designOptimizationAmount = resolveDesignOptimizationFee(shop.pricing, product);
   const totalPrice = pricing.totalPrice;
   const uploadLimitMb = formatMegabytes(shop.settings.upload.maxBytes);
-  const productCategories = useMemo(() => ["All", ...Array.from(new Set(products.map((item) => item.configuration.customization.category).filter(Boolean)))], [products]);
+  const productCategories = useMemo(() => [
+    "All categories",
+    ...Array.from(new Set(
+      products
+        .map((item) => String(item.configuration.customization.category || "").trim())
+        .filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b))
+  ], [products]);
   const productBrands = useMemo(() => Array.from(new Set(products.map((item) => item.configuration.supplier?.brandName).filter((value): value is string => Boolean(value)))).sort(), [products]);
   const [productBrand, setProductBrand] = useState("All brands");
   const visibleProducts = useMemo(() => products.filter((item) => {
-    const matchesCategory = productCategory === "All" || item.configuration.customization.category === productCategory;
+    const matchesCategory = productCategory === "All categories" || item.configuration.customization.category === productCategory;
     const matchesBrand = productBrand === "All brands" || item.configuration.supplier?.brandName === productBrand;
     const searchable = `${item.name} ${item.description || ""} ${item.configuration.customization.category} ${item.configuration.supplier?.brandName || ""} ${item.configuration.supplier?.styleId || ""}`.toLowerCase();
     return matchesCategory && matchesBrand && searchable.includes(productQuery.trim().toLowerCase());
@@ -741,7 +748,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
           </div>
           <div className="customer-catalog-toolbar">
             <label><span>Find a product</span><input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Search shirts, hoodies, polos…" /></label>
-            <div className="customer-category-tabs" aria-label="Product categories">{productCategories.map((category) => <button type="button" key={category} className={productCategory === category ? "active" : ""} onClick={() => setProductCategory(category)}>{category}</button>)}</div>
+            <label className="catalog-category-filter"><span>Product type</span><select value={productCategory} onChange={(event) => setProductCategory(event.target.value)}>{productCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
             {productBrands.length > 0 && <label className="catalog-brand-filter"><span>Brand</span><select value={productBrand} onChange={(event) => setProductBrand(event.target.value)}><option>All brands</option>{productBrands.map((brand) => <option key={brand}>{brand}</option>)}</select></label>}
           </div>
           <div className="customer-product-grid modern">
