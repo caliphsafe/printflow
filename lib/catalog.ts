@@ -303,6 +303,18 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
         swatchImageUrl: item?.swatchImageUrl ? String(item.swatchImageUrl) : undefined,
         frontImageUrl: item?.frontImageUrl ? String(item.frontImageUrl) : undefined,
         backImageUrl: item?.backImageUrl ? String(item.backImageUrl) : undefined,
+        imageChoices: Array.isArray(item?.imageChoices)
+          ? item.imageChoices.flatMap((choice: any) => {
+              const url = String(choice?.url || "").trim();
+              return /^https:\/\//i.test(url)
+                ? [{
+                    url,
+                    label: String(choice?.label || "Product image"),
+                    ...(choice?.classTypeId ? { classTypeId: String(choice.classTypeId) } : {})
+                  }]
+                : [];
+            })
+          : undefined,
         active: item?.active !== false
       }))
     : DEFAULT_CONFIGURATION.colors;

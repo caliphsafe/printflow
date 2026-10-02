@@ -13,6 +13,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const configuration = {
     ...(product.configuration || {}),
+    ...(Array.isArray(body.colors) ? { colors: (product.configuration?.colors || []).map((color: any) => {
+      const requested = body.colors.find((item: any) => item.id === color.id);
+      if (!requested) return color;
+      const allowed = new Set((color.imageChoices || []).map((choice: any) => choice.url));
+      return {
+        ...color,
+        frontImageUrl: requested.frontImageUrl === "" ? undefined : allowed.has(requested.frontImageUrl) ? requested.frontImageUrl : color.frontImageUrl,
+        backImageUrl: requested.backImageUrl === "" ? undefined : allowed.has(requested.backImageUrl) ? requested.backImageUrl : color.backImageUrl
+      };
+    }) } : {}),
+    ...(body.defaultColorId ? { defaultColorId: String(body.defaultColorId) } : {}),
+    ...(Array.isArray(body.colors) ? { mockupImageUrl: (body.colors.find((color: any) => color.id === body.defaultColorId)?.frontImageUrl || product.configuration?.mockupImageUrl) } : {}),
     customization: {
       ...((product.configuration || {}).customization || {}),
       minimumQuantity: Math.max(1, Number(body.minimumQuantity || 1)),

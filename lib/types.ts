@@ -25,6 +25,7 @@ export type ShirtColor = {
   swatchImageUrl?: string;
   frontImageUrl?: string;
   backImageUrl?: string;
+  imageChoices?: Array<{ url: string; label: string; classTypeId?: string }>;
   active?: boolean;
 };
 

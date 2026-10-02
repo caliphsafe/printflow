@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AdvancedAdminProductManager from "@/components/AdvancedAdminProductManager";
 import { getAdvancedAdminContext } from "@/lib/advanced-admin";
+import { hydrateSanMarProductRowsWithFlatMedia } from "@/lib/sanmar-flat-media";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +17,15 @@ export default async function AdvancedProducts() {
   // This page is the CUSTOM APPAREL catalog manager.
   // Advanced only wants SanMar-imported garments here. School uniforms are
   // intentionally managed separately under Advanced Admin → School Uniforms.
-  const items = (products || []).filter(
+  const sanmarItems = (products || []).filter(
     (product: any) =>
       product.configuration?.supplier?.provider === "sanmar" &&
       product.configuration?.supplier?.sourceMode !== "demo"
   );
+  const items = await hydrateSanMarProductRowsWithFlatMedia(db, shop.id, sanmarItems, {
+    persist: true,
+    allowLiveSanMarLookups: false
+  });
 
   return <>
     <header className="ae-page-head">

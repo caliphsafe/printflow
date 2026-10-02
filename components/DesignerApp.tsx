@@ -99,6 +99,14 @@ function defaultDecorationMethod(product?: CatalogProduct) {
   return (headwear ? methods.find((method) => method.toLowerCase().includes("embroider")) : undefined) || methods[0] || "Screen Print";
 }
 
+function isSchoolStoreProduct(product: CatalogProduct) {
+  const category = String(product.configuration.customization.category || "").trim().toLowerCase();
+  const identity = `${product.slug || ""} ${product.name || ""} ${product.description || ""}`.toLowerCase();
+  return category === "school uniform" || category === "school uniforms" ||
+    /\bespirito[\s-]*santo\b|\bespirito[-\s]/i.test(identity) ||
+    String(product.slug || "").toLowerCase().startsWith("school-uniform-");
+}
+
 function garmentImageFor(product: CatalogProduct, color: ShirtColor | undefined, side: DesignSide) {
   if (!color) return "";
   return side === "front" ? color.frontImageUrl || "" : color.backImageUrl || "";
@@ -218,7 +226,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const previewMode = Boolean(shop.previewMode);
   const embedMode = Boolean(shop.embedMode);
   const shopHomeUrl = shop.slug === ADVANCED_SHOP_SLUG ? ADVANCED_SITE_URL : "";
-  const products = shop.products.filter((item) => item.active && (
+  const products = shop.products.filter((item) => item.active && !isSchoolStoreProduct(item) && (
     item.configuration.supplier
       ? item.configuration.colors.some((color) => color.active !== false && Boolean(color.frontImageUrl))
       : true
@@ -740,16 +748,16 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
 
       {step === "products" ? (
         <section className="product-first-flow modern">
+          <div className="customer-catalog-toolbar">
+            <label><span>Find a product</span><input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Search shirts, hoodies, polos…" /></label>
+            <label className="catalog-category-filter"><span>Product type</span><select value={productCategory} onChange={(event) => setProductCategory(event.target.value)}>{productCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
+            {productBrands.length > 0 && <label className="catalog-brand-filter"><span>Brand</span><select value={productBrand} onChange={(event) => setProductBrand(event.target.value)}><option>All brands</option>{productBrands.map((brand) => <option key={brand}>{brand}</option>)}</select></label>}
+          </div>
           <div className="customer-intro">
             <p className="customer-hero-badge">{shop.settings.customerExperience?.heroBadge || "CUSTOM APPAREL, MADE EASY"}</p>
             <h1>{shop.settings.customerExperience?.headline || "Choose your blank. Make it yours."}</h1>
             <p>{shop.settings.customerExperience?.introduction || "Browse the catalog and choose a product to begin a custom order."}</p>
             <div className="customer-trust-row">{(shop.settings.customerExperience?.trustMessage || "Secure checkout · Artwork review · Order confirmation").split("·").map((item)=><span key={item}>✓ {item.trim()}</span>)}</div>
-          </div>
-          <div className="customer-catalog-toolbar">
-            <label><span>Find a product</span><input type="search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Search shirts, hoodies, polos…" /></label>
-            <label className="catalog-category-filter"><span>Product type</span><select value={productCategory} onChange={(event) => setProductCategory(event.target.value)}>{productCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
-            {productBrands.length > 0 && <label className="catalog-brand-filter"><span>Brand</span><select value={productBrand} onChange={(event) => setProductBrand(event.target.value)}><option>All brands</option>{productBrands.map((brand) => <option key={brand}>{brand}</option>)}</select></label>}
           </div>
           <div className="customer-product-grid modern">
             {visibleProducts.map((item) => {

@@ -11,6 +11,8 @@ type CachedVariant = {
   backModelUrl?: string;
   frontFlatUrl?: string;
   backFlatUrl?: string;
+  frontFlat?: string;
+  backFlat?: string;
 };
 
 type CachedStyleRow = {
@@ -34,6 +36,24 @@ type FlatMedia = {
 };
 
 type FlatMediaMap = Record<string, FlatMedia>;
+
+function cachedImageChoices(cached: CachedStyleRow | null | undefined, colorName: string): SanMarImageChoice[] {
+  const variants = (cached?.variants || []).filter((item) => colorKey(item.colorName) === colorKey(colorName));
+  const fields: Array<[string, (variant: CachedVariant) => unknown]> = [
+    ["Front flat", (variant) => variant.frontFlatUrl || variant.frontFlat],
+    ["Back flat", (variant) => variant.backFlatUrl || variant.backFlat],
+    ["Front model", (variant) => variant.frontModelUrl],
+    ["Back model", (variant) => variant.backModelUrl],
+    ["Color product", (variant) => variant.colorProductImageUrl],
+    ["Swatch", (variant) => variant.swatchImageUrl]
+  ];
+  const choices = new Map<string, SanMarImageChoice>();
+  for (const variant of variants) for (const [label, read] of fields) {
+    const url = validUrl(read(variant));
+    if (url && !choices.has(url)) choices.set(url, { url, label });
+  }
+  return Array.from(choices.values());
+}
 
 const LIVE_FLAT_CACHE_MS = 30 * 60 * 1000;
 
@@ -1035,6 +1055,13 @@ async function applyFlatMediaToConfiguration(
       const swatch =
         preferred.swatchImageUrl ||
         "";
+      const imageChoices = Array.from(new Map([
+        ...(Array.isArray(color?.imageChoices) ? color.imageChoices : []),
+        ...cachedImageChoices(cached, name),
+        ...(preferred.frontImageUrl ? [{ url: preferred.frontImageUrl, label: "Selected front image" }] : []),
+        ...(preferred.backImageUrl ? [{ url: preferred.backImageUrl, label: "Selected back image" }] : [])
+      ].filter((choice: any) => validUrl(choice.url)).map((choice: any) => [choice.url, choice] as const)).values())
+        .sort((a, b) => a.label.localeCompare(b.label));
 
       if (
         front !==
@@ -1048,7 +1075,7 @@ async function applyFlatMediaToConfiguration(
         swatch !==
           clean(
             color?.swatchImageUrl
-          )
+          ) || JSON.stringify(imageChoices) !== JSON.stringify(color?.imageChoices || [])
       ) {
         changed = true;
       }
@@ -1063,7 +1090,8 @@ async function applyFlatMediaToConfiguration(
           back || undefined,
 
         swatchImageUrl:
-          swatch || undefined
+          swatch || undefined,
+        imageChoices
       };
     }
   );

@@ -672,7 +672,10 @@ export default function SanMarCatalogImporter({
                           {(["front", "back"] as const).map((side) => {
                             const key = side === "front" ? "frontImageUrl" : "backImageUrl";
                             const sideChoices = side === "front" ? frontChoices : backChoices;
-                            const selectedUrl = selection[key] || sideChoices[0]?.url || "";
+                            const selectedUrl = selection[key] || color[key] || sideChoices[0]?.url || "";
+                            const options = sideChoices.some((choice) => choice.url === selectedUrl)
+                              ? sideChoices
+                              : [...sideChoices, ...(selectedUrl ? [{ url: selectedUrl, label: `Current ${side} selection` }] : [])];
                             return <label key={side} className="sanmar-image-choice">
                               <span>{side === "front" ? "Front photo" : "Back photo"}</span>
                               {selectedUrl ? <img src={selectedUrl} alt={`${color.name} ${side} garment preview`} /> : <div className="sanmar-image-choice-empty">No {side} image supplied</div>}
@@ -681,7 +684,7 @@ export default function SanMarCatalogImporter({
                                 [color.name]: { ...selection, [key]: event.target.value }
                               }))}>
                                 <option value="">No image</option>
-                                {(sideChoices.length ? sideChoices : choices).map((choice) => <option key={choice.url} value={choice.url}>{choice.label}</option>)}
+                                {(options.length ? options : choices).map((choice) => <option key={choice.url} value={choice.url}>{choice.label}</option>)}
                               </select>
                             </label>;
                           })}

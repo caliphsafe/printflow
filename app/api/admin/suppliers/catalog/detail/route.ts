@@ -209,6 +209,7 @@ export async function GET(request: Request) {
             media.frontImageUrl || "",
           backImageUrl:
             media.backImageUrl || "",
+          imageChoices: media.imageChoices || [],
           sideImageUrl: "",
           supplier: "sanmar"
         };

@@ -105,6 +105,9 @@ export async function POST(request: Request) {
   const selectedSet = new Set(
     selectedColorNames
   );
+  const imageSelections = body.imageSelections && typeof body.imageSelections === "object"
+    ? body.imageSelections as Record<string, { frontImageUrl?: string; backImageUrl?: string }>
+    : {};
 
   let chosen = suppliedProducts.filter(
     (row) =>
@@ -178,6 +181,16 @@ export async function POST(request: Request) {
             liveStyle.media?.[
               variant.colorName
             ] || {};
+          const requestedImages = imageSelections[variant.colorName] || {};
+          const allowedImages = new Set([
+            ...(media.imageChoices || []).map((choice: any) => choice.url),
+            media.frontImageUrl,
+            media.backImageUrl
+          ].filter(Boolean));
+          const imageFor = (side: "frontImageUrl" | "backImageUrl") => {
+            const candidate = String(requestedImages[side] || "");
+            return candidate && allowedImages.has(candidate) ? candidate : media[side] || "";
+          };
 
           return {
             sku:
@@ -199,10 +212,9 @@ export async function POST(request: Request) {
             swatchImageUrl:
               media.swatchImageUrl ||
               "",
-            frontImageUrl:
-              media.frontImageUrl || "",
-            backImageUrl:
-              media.backImageUrl || ""
+            frontImageUrl: imageFor("frontImageUrl"),
+            backImageUrl: imageFor("backImageUrl"),
+            imageChoices: media.imageChoices || []
           };
         });
 
@@ -310,6 +322,7 @@ export async function POST(request: Request) {
                   mediaRow.backImageUrl
                 )
               : undefined,
+          imageChoices: Array.isArray(mediaRow?.imageChoices) ? mediaRow.imageChoices as ShirtColor["imageChoices"] : undefined,
           active: true
         };
       }

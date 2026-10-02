@@ -845,6 +845,25 @@ function ColorImageEditor({ values, onChange }: { values: ShirtColor[]; onChange
             </button>
           </div>
           <div className="side-photo-grid">
+            {color.imageChoices?.length ? (
+              <div className="supplier-image-choice-row">
+                {(["front", "back"] as const).map((side) => {
+                  const key = side === "front" ? "frontImageUrl" : "backImageUrl";
+                  const currentUrl = color[key] || "";
+                  const choices = Array.from(new Map([
+                    ...color.imageChoices!,
+                    ...(currentUrl ? [{ url: currentUrl, label: "Current image" }] : [])
+                  ].map((choice) => [choice.url, choice] as const)).values());
+                  return <label key={side}>
+                    <span>Choose {side} product image</span>
+                    <select value={currentUrl} onChange={(event) => onChange(values.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: event.target.value || undefined } : item))}>
+                      <option value="">No {side} image</option>
+                      {choices.map((choice) => <option key={choice.url} value={choice.url}>{choice.label}</option>)}
+                    </select>
+                  </label>;
+                })}
+              </div>
+            ) : null}
             <PhotoField
               title="Front image"
               url={color.frontImageUrl}

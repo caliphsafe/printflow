@@ -48,6 +48,7 @@ type Product = {
   swatchImageUrl?: string;
   frontImageUrl?: string;
   backImageUrl?: string;
+  imageChoices?: Array<{ url: string; label: string; classTypeId?: string }>;
   sideImageUrl?: string;
   supplier: SupplierKey;
 };
@@ -58,6 +59,7 @@ type ColorSummary = {
   frontImageUrl?: string;
   backImageUrl?: string;
   swatchImageUrl?: string;
+  imageChoices: Array<{ url: string; label: string; classTypeId?: string }>;
   sizeCount: number;
   inventory: number;
   priceMin: number;
@@ -92,6 +94,7 @@ export default function SupplierCatalogBrowser({
   const [selected, setSelected] = useState<Style | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [imageSelections, setImageSelections] = useState<Record<string, { frontImageUrl: string; backImageUrl: string }>>({});
   const [q, setQ] = useState("");
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
@@ -127,6 +130,7 @@ export default function SupplierCatalogBrowser({
     setSelected(null);
     setProducts([]);
     setSelectedColors([]);
+    setImageSelections({});
     setBrands([]);
     setCategories([]);
     setTotal(0);
@@ -187,6 +191,7 @@ export default function SupplierCatalogBrowser({
         setSelected(null);
         setProducts([]);
         setSelectedColors([]);
+        setImageSelections({});
       }
     } catch (error) {
       setMessageType("error");
@@ -208,6 +213,7 @@ export default function SupplierCatalogBrowser({
     setSelected(style);
     setProducts([]);
     setSelectedColors([]);
+    setImageSelections({});
     setMessage("");
     setDetailBusy(true);
 
@@ -232,6 +238,12 @@ export default function SupplierCatalogBrowser({
       setSelectedColors(
         Array.from(new Set(rows.map((item) => item.colorName)))
       );
+      const byColor = new Map<string, Product[]>();
+      rows.forEach((row) => byColor.set(row.colorName, [...(byColor.get(row.colorName) || []), row]));
+      setImageSelections(Object.fromEntries(Array.from(byColor.entries()).map(([name, colorRows]) => {
+        const sample = colorRows.find((row) => row.frontImageUrl || row.backImageUrl) || colorRows[0];
+        return [name, { frontImageUrl: sample.frontImageUrl || "", backImageUrl: sample.backImageUrl || "" }];
+      })));
 
       if (!rows.length) {
         setMessageType("info");
@@ -281,6 +293,12 @@ export default function SupplierCatalogBrowser({
           frontImageUrl: sample?.frontImageUrl,
           backImageUrl: sample?.backImageUrl,
           swatchImageUrl: sample?.swatchImageUrl,
+          imageChoices: Array.from(new Map(rows.flatMap((row) => [
+            ...(row.imageChoices || []),
+            ...(row.frontImageUrl ? [{ url: row.frontImageUrl, label: "Front image" }] : []),
+            ...(row.backImageUrl ? [{ url: row.backImageUrl, label: "Back image" }] : []),
+            ...(row.swatchImageUrl ? [{ url: row.swatchImageUrl, label: "Color swatch" }] : [])
+          ]).map((choice) => [choice.url, choice] as const)).values()),
           sizeCount: new Set(rows.map((row) => row.sizeName)).size,
           inventory: rows.reduce(
             (sum, row) => sum + Math.max(0, row.quantity || 0),
@@ -307,6 +325,7 @@ export default function SupplierCatalogBrowser({
           supplier,
           products,
           selectedColors,
+          imageSelections,
           style: selected,
           targetBusiness
         })
@@ -663,9 +682,10 @@ export default function SupplierCatalogBrowser({
                   </div>
                 </div>
 
+                {supplier === "sanmar" && <p className="supplier-image-pick-hint">Choose the customer-facing front and back image for each color before importing. You can change these selections later in Products → Colors.</p>}
                 <div className="supplier-live-color-list">
                   {colors.map((color) => (
-                    <label
+                    <div
                       key={color.name}
                       className={
                         selectedColors.includes(color.name)
@@ -673,19 +693,18 @@ export default function SupplierCatalogBrowser({
                           : "supplier-live-color"
                       }
                     >
-                      <input
-                        type="checkbox"
-                        checked={selectedColors.includes(color.name)}
-                        onChange={(event) =>
-                          setSelectedColors(
-                            event.target.checked
-                              ? [...selectedColors, color.name]
-                              : selectedColors.filter(
-                                  (value) => value !== color.name
-                                )
-                          )
-                        }
-                      />
+                      <label className="supplier-live-color-main">
+                        <input
+                          type="checkbox"
+                          checked={selectedColors.includes(color.name)}
+                          onChange={(event) =>
+                            setSelectedColors(
+                              event.target.checked
+                                ? [...selectedColors, color.name]
+                                : selectedColors.filter((value) => value !== color.name)
+                            )
+                          }
+                        />
 
                       <div className="supplier-live-color-images">
                         {color.frontImageUrl ? (
@@ -726,7 +745,23 @@ export default function SupplierCatalogBrowser({
                           wholesale
                         </small>
                       </div>
-                    </label>
+                      </label>
+                      <div className="supplier-live-image-selectors">
+                        {(["frontImageUrl", "backImageUrl"] as const).map((side) => {
+                          const current = imageSelections[color.name] || { frontImageUrl: color.frontImageUrl || "", backImageUrl: color.backImageUrl || "" };
+                          const selectedUrl = current[side] || "";
+                          const label = side === "frontImageUrl" ? "Front photo" : "Back photo";
+                          const choices = Array.from(new Map([
+                            ...color.imageChoices,
+                            ...(selectedUrl ? [{ url: selectedUrl, label: `${label} · current selection` }] : [])
+                          ].map((choice) => [choice.url, choice] as const)).values());
+                          return <label key={side}><span>{label}</span><select value={selectedUrl} onChange={(event) => setImageSelections((currentSelections) => ({
+                            ...currentSelections,
+                            [color.name]: { ...current, [side]: event.target.value }
+                          }))}><option value="">No image</option>{choices.map((choice) => <option key={choice.url} value={choice.url}>{choice.label}</option>)}</select></label>;
+                        })}
+                      </div>
+                    </div>
                   ))}
                 </div>
 
