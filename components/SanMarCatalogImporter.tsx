@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { readApiResponse } from "@/lib/client-api-response";
 import { decodeHtmlEntities } from "@/lib/html-entities";
+import { defaultProductImage, productImageChoiceKey, uniqueProductImageChoices } from "@/lib/product-images";
 import { AVAILABLE_DECORATION_METHODS } from "@/lib/catalog";
 import { DEFAULT_CONFIGURATION, normalizeConfiguration, normalizePrintArea } from "@/lib/catalog";
 import type { DesignSide, PrintArea, PrintSize } from "@/lib/types";
@@ -21,7 +22,7 @@ type BrowseStyle = {
   priceMax: number;
 };
 
-type ImageChoice = { url: string; label: string; classTypeId?: string };
+type ImageChoice = { url: string; label: string; classTypeId?: string; colorName?: string };
 type ImageSelection = { frontImageUrl: string; backImageUrl: string };
 type Variant = {
   sku: string;
@@ -83,7 +84,7 @@ function hasLocationForSide(locations: string[], side: DesignSide) {
 const money = (value: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value || 0);
 
 function choiceKey(choice: ImageChoice) {
-  return choice.classTypeId?.trim() || choice.label.trim().toLowerCase().replace(/\s+/g, " ");
+  return productImageChoiceKey(choice);
 }
 
 function choicesForColor(media?: ProductDetail["media"][string]): ImageChoice[] {
@@ -122,8 +123,10 @@ function initialSetupItem(style: BrowseStyle, detail: ProductDetail): SetupItem 
   const colors = [...new Set(detail.variants.map((variant) => variant.colorName))];
   const firstMedia = detail.media?.[colors[0]];
   const firstChoices = choicesForColor(firstMedia);
-  const front = firstChoices.find((choice) => choice.url === firstMedia?.frontImageUrl) || firstChoices.find((choice) => !isBackChoice(choice));
-  const back = firstChoices.find((choice) => choice.url === firstMedia?.backImageUrl) || firstChoices.find(isBackChoice);
+  const defaultFront = defaultProductImage(firstChoices, "front") || firstMedia?.frontImageUrl || "";
+  const defaultBack = defaultProductImage(firstChoices, "back") || firstMedia?.backImageUrl || "";
+  const front = firstChoices.find((choice) => choice.url === defaultFront);
+  const back = firstChoices.find((choice) => choice.url === defaultBack);
   const headwear = /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker|caps)\b/i.test(`${style.category} ${style.title}`);
   const base = normalizeConfiguration({
     ...DEFAULT_CONFIGURATION,
@@ -149,7 +152,11 @@ function initialSetupItem(style: BrowseStyle, detail: ProductDetail): SetupItem 
     selectedColors: colors,
     imageSelections: Object.fromEntries(colors.map((name) => {
       const media = detail.media?.[name] || {};
-      return [name, { frontImageUrl: media.frontImageUrl || "", backImageUrl: media.backImageUrl || "" }];
+      const colorChoices = choicesForColor(media);
+      return [name, {
+        frontImageUrl: defaultProductImage(colorChoices, "front") || media.frontImageUrl || "",
+        backImageUrl: defaultProductImage(colorChoices, "back") || media.backImageUrl || ""
+      }];
     })),
     frontChoiceKey: front ? choiceKey(front) : "",
     backChoiceKey: back ? choiceKey(back) : "",
@@ -400,9 +407,15 @@ export default function SanMarCatalogImporter({
         {setupItems.map((item) => {
           const colors = colorSummaries(item.detail);
           const representative = colors.find((color) => item.selectedColors.includes(color.name)) || colors[0];
-          const representativeChoices = representative ? choicesForColor(item.detail.media?.[representative.name]) : [];
-          const frontChoices = representativeChoices.filter((choice) => !isBackChoice(choice) && !/swatch/i.test(choice.label));
-          const backChoices = representativeChoices.filter((choice) => isBackChoice(choice) && !/swatch/i.test(choice.label));
+          const itemChoices = uniqueProductImageChoices(...colors.map((color) =>
+            choicesForColor(item.detail.media?.[color.name]).map((choice) => ({
+              ...choice,
+              colorName: color.name,
+              label: `${color.name} · ${choice.label}`
+            }))
+          )) as ImageChoice[];
+          const frontChoices = itemChoices.filter((choice) => !isBackChoice(choice) && !/swatch/i.test(choice.label));
+          const backChoices = itemChoices.filter((choice) => isBackChoice(choice) && !/swatch/i.test(choice.label));
           const zones = /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker|caps)\b/i.test(`${item.category} ${item.style.title}`) ? HEADWEAR_ZONES : APPAREL_ZONES;
           const activeZoneKey = ZONE_KEYS[item.zoneSide][item.zoneSize];
           const activeZone = item.printAreas[activeZoneKey];
@@ -424,7 +437,13 @@ export default function SanMarCatalogImporter({
               <section className="sanmar-wizard-section"><header><h3>Front and back images</h3><span>Choose each view once; matching SanMar image types are applied across this item’s selected colors.</span></header><div className="sanmar-image-gallery-columns">{(["front", "back"] as const).map((side) => {
                 const choices = side === "front" ? frontChoices : backChoices;
                 const activeKey = side === "front" ? item.frontChoiceKey : item.backChoiceKey;
-                return <div className="sanmar-image-gallery" key={side}><h4>{side === "front" ? "Front image" : "Back image"}</h4>{choices.length ? <div>{choices.map((choice) => <button type="button" className={choiceKey(choice) === activeKey ? "selected" : ""} key={`${choiceKey(choice)}-${choice.url}`} onClick={() => representative && selectImageStyle(item.style.styleId, side, choice, representative.name)}><span><img src={choice.url} alt={`${side} option ${choice.label}`}/>{choiceKey(choice) === activeKey && <i>✓</i>}</span><b>{choice.label}</b><small>{choiceKey(choice) === activeKey ? "Applied to matching colors" : "Use this image style"}</small></button>)}</div> : <p>No {side} image choices supplied by SanMar.</p>}</div>;
+                const selectedUrl = representative
+                  ? item.imageSelections[representative.name]?.[side === "front" ? "frontImageUrl" : "backImageUrl"]
+                  : "";
+                return <div className="sanmar-image-gallery" key={side}><h4>{side === "front" ? "Front image" : "Back image"}</h4>{choices.length ? <div>{choices.map((choice) => {
+                  const active = choice.url === selectedUrl || (choiceKey(choice) === activeKey && !selectedUrl);
+                  return <button type="button" className={active ? "selected" : ""} key={`${choice.colorName || "style"}-${choiceKey(choice)}-${choice.url}`} onClick={() => selectImageStyle(item.style.styleId, side, choice, choice.colorName || representative?.name || "")}><span><img src={choice.url} alt={`${side} option ${choice.label}`}/>{active && <i>✓</i>}</span><b>{choice.label}</b><small>{active ? "Current view" : "Use this image style for selected colors"}</small></button>;
+                })}</div> : <p>No {side} image choices supplied by SanMar.</p>}</div>;
               })}</div>{representative && <div className="sanmar-color-image-preview"><b>Selected views for {representative.name}</b><div>{item.imageSelections[representative.name]?.frontImageUrl && <img src={item.imageSelections[representative.name].frontImageUrl} alt="Selected front"/>}{item.imageSelections[representative.name]?.backImageUrl && <img src={item.imageSelections[representative.name].backImageUrl} alt="Selected back"/>}</div></div>}</section>
               <section className="sanmar-wizard-section sanmar-extra-options"><header><h3>Available decoration methods</h3><span>Choose one or more methods customers may use for this product.</span></header><div className="sanmar-option-pills">{METHODS.map((method) => <label key={method} className={item.decorationMethods.includes(method) ? "selected" : ""}><input type="checkbox" checked={item.decorationMethods.includes(method)} onChange={(event) => toggleDecorationMethod(item.style.styleId, method, event.target.checked)}/>{method}</label>)}</div><div className="sanmar-option-pills"><b>Print size options</b>{PRINT_SIZES.map((size) => <label key={size.id} className={item.printSizes.includes(size.id) ? "selected" : ""}><input type="checkbox" checked={item.printSizes.includes(size.id)} onChange={(event) => updateSetupItem(item.style.styleId, (current) => ({ ...current, printSizes: event.target.checked ? [...current.printSizes, size.id] : current.printSizes.filter((entry) => entry !== size.id) }))}/>{size.label}</label>)}</div></section>
             </> : <>

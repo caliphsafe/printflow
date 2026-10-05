@@ -559,40 +559,56 @@ export async function fetchSanMarMedia(
 
   const responseXml = await soap(url, xml);
   const media: SanMarMediaMap = {};
+  const displayColors = Array.from(new Set(displayColorByPartId.values()));
+  const matchingDisplayColor = (value: string) => displayColors.find(
+    (color) => sanmarNormalize(color) === sanmarNormalize(value)
+  );
 
   for (const mediaXml of sanmarXmlBlocks(responseXml, "MediaContent")) {
     const partId = sanmarXmlTag(mediaXml, "partId").trim();
     const colorFromResponse = sanmarXmlTag(mediaXml, "color").trim();
-    const colorName =
-      (partId ? displayColorByPartId.get(partId) : undefined) ||
-      colorFromResponse;
+    const mappedColor = (partId ? displayColorByPartId.get(partId) : undefined)
+      || matchingDisplayColor(colorFromResponse);
     const urlValue = secureImage(sanmarXmlTag(mediaXml, "url"));
-    const classTypeId = sanmarXmlTag(mediaXml, "classTypeId").trim();
+    const classTypes = sanmarXmlBlocks(mediaXml, "ClassType").map((classType) => ({
+      id: sanmarXmlTag(classType, "classTypeId").trim(),
+      name: sanmarXmlTag(classType, "classTypeName").trim()
+    })).filter((classType) => classType.id || classType.name);
+    const classTypeId = classTypes.find((item) => ["1004", "1007", "1008"].includes(item.id))?.id
+      || classTypes.find((item) => ["1006", "2001"].includes(item.id))?.id
+      || sanmarXmlTag(mediaXml, "classTypeId").trim();
+    const classTypeName = classTypes.map((item) => item.name).filter(Boolean).join(" · ") || sanmarXmlTag(mediaXml, "classTypeName").trim();
 
-    if (!colorName || !urlValue) continue;
+    if (!urlValue) continue;
 
-    media[colorName] ||= {};
-    media[colorName].imageChoices ||= [];
     const classLabels: Record<string, string> = {
       "1004": "Swatch",
-      "1006": "Product image",
+      "1006": "Primary product image",
       "1007": "Front",
-      "1008": "Back",
-      "2001": "Product image"
+      "1008": "Rear",
+      "2001": "High resolution product image"
     };
-    const label = classLabels[classTypeId] || `Product image (${classTypeId || "other"})`;
-    if (!media[colorName].imageChoices.some((choice) => choice.url === urlValue)) {
-      media[colorName].imageChoices.push({ url: urlValue, label, classTypeId });
-    }
+    const label = classTypeName || classLabels[classTypeId] || `Product image (${classTypeId || "other"})`;
+    // Some valid style-level media records have no color or a partId that
+    // cannot be mapped to a returned variant. Keep them available for every
+    // color rather than silently dropping them from the image picker.
+    const targetColors = mappedColor ? [mappedColor] : displayColors.length ? displayColors : colorFromResponse ? [colorFromResponse] : [];
+    for (const targetColor of targetColors) {
+      media[targetColor] ||= {};
+      media[targetColor].imageChoices ||= [];
+      if (!media[targetColor].imageChoices.some((choice) => choice.url === urlValue)) {
+        media[targetColor].imageChoices.push({ url: urlValue, label, ...(classTypeId ? { classTypeId } : {}) });
+      }
 
-    if (classTypeId === "1007") {
-      media[colorName].frontImageUrl = urlValue;
-    } else if (classTypeId === "1008") {
-      media[colorName].backImageUrl = urlValue;
-    } else if (classTypeId === "1004") {
-      media[colorName].swatchImageUrl = urlValue;
-    } else if (classTypeId === "1006" || classTypeId === "2001") {
-      media[colorName].frontImageUrl ||= urlValue;
+      if (classTypes.some((item) => item.id === "1007" || /\bfront\b/i.test(item.name)) || classTypeId === "1007" || /\bfront\b/i.test(label)) {
+        media[targetColor].frontImageUrl = urlValue;
+      } else if (classTypes.some((item) => item.id === "1008" || /\b(rear|back)\b/i.test(item.name)) || classTypeId === "1008" || /\b(rear|back)\b/i.test(label)) {
+        media[targetColor].backImageUrl = urlValue;
+      } else if (classTypes.some((item) => item.id === "1004" || /swatch/i.test(item.name)) || classTypeId === "1004" || /swatch/i.test(label)) {
+        media[targetColor].swatchImageUrl ||= urlValue;
+      } else if (classTypes.some((item) => ["1006", "2001"].includes(item.id)) || classTypeId === "1006" || classTypeId === "2001") {
+        media[targetColor].frontImageUrl ||= urlValue;
+      }
     }
   }
 

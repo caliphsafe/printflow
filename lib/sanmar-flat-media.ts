@@ -1,4 +1,5 @@
 import { decryptSecret } from "@/lib/crypto";
+import { defaultProductImage, isModelProductImage, uniqueProductImageChoices } from "@/lib/product-images";
 import type { SanMarImageChoice } from "@/lib/sanmar-canonical";
 
 type Side = "front" | "back";
@@ -13,6 +14,7 @@ type CachedVariant = {
   backFlatUrl?: string;
   frontFlat?: string;
   backFlat?: string;
+  imageChoices?: SanMarImageChoice[];
 };
 
 type CachedStyleRow = {
@@ -39,18 +41,23 @@ type FlatMediaMap = Record<string, FlatMedia>;
 
 function cachedImageChoices(cached: CachedStyleRow | null | undefined, colorName: string): SanMarImageChoice[] {
   const variants = (cached?.variants || []).filter((item) => colorKey(item.colorName) === colorKey(colorName));
-  const fields: Array<[string, (variant: CachedVariant) => unknown]> = [
-    ["Front flat", (variant) => variant.frontFlatUrl || variant.frontFlat],
-    ["Back flat", (variant) => variant.backFlatUrl || variant.backFlat],
-    ["Front model", (variant) => variant.frontModelUrl],
-    ["Back model", (variant) => variant.backModelUrl],
-    ["Color product", (variant) => variant.colorProductImageUrl],
-    ["Swatch", (variant) => variant.swatchImageUrl]
-  ];
   const choices = new Map<string, SanMarImageChoice>();
-  for (const variant of variants) for (const [label, read] of fields) {
-    const url = validUrl(read(variant));
-    if (url && !choices.has(url)) choices.set(url, { url, label });
+  for (const variant of variants) {
+    const frontFlat = validUrl(variant.frontFlatUrl || variant.frontFlat);
+    const backFlat = validUrl(variant.backFlatUrl || variant.backFlat);
+    const fields: Array<[string, string]> = [
+      ...(frontFlat && !sameUrl(frontFlat, variant.colorProductImageUrl) && !isSanMarModelImage(frontFlat) ? [["Front flat", frontFlat] as [string, string]] : []),
+      ...(backFlat && !sameUrl(backFlat, variant.backModelUrl) && !isSanMarModelImage(backFlat) ? [["Back flat", backFlat] as [string, string]] : []),
+      ["Front model", validUrl(variant.frontModelUrl)],
+      ["Back model", validUrl(variant.backModelUrl)],
+      ["Color product", validUrl(variant.colorProductImageUrl)],
+      ["Swatch", validUrl(variant.swatchImageUrl)]
+    ];
+    for (const choice of variant.imageChoices || []) {
+      const url = validUrl(choice.url);
+      if (url && !choices.has(url)) choices.set(url, { ...choice, url });
+    }
+    for (const [label, url] of fields) if (url && !choices.has(url)) choices.set(url, { url, label });
   }
   return Array.from(choices.values());
 }
@@ -531,12 +538,16 @@ async function fetchExactFlatMedia(
       media[
         colorName
       ].frontImageUrl ||= frontFlat;
+      media[colorName].imageChoices ||= [];
+      media[colorName].imageChoices.push({ url: frontFlat, label: "Front flat", classTypeId: "flat-front" });
     }
 
     if (backFlat) {
       media[
         colorName
       ].backImageUrl ||= backFlat;
+      media[colorName].imageChoices ||= [];
+      media[colorName].imageChoices.push({ url: backFlat, label: "Back flat", classTypeId: "flat-back" });
     }
 
     if (swatch) {
@@ -873,8 +884,7 @@ export async function withPreferredSanMarFlatMedia<
         ) === colorKey(colorName)
     );
 
-    media[colorName] = {
-      ...resolvedColorMedia({
+    const resolved = resolvedColorMedia({
         colorName,
         cached,
         live:
@@ -885,9 +895,24 @@ export async function withPreferredSanMarFlatMedia<
           ] || {},
         variantCandidates:
           variantsForColor
-      }),
-      imageChoices:
-        style.media?.[colorName]?.imageChoices || []
+      });
+    const currentMedia = style.media?.[colorName] || {};
+    const variantChoices = variantsForColor.flatMap((variant: any) => variant.imageChoices || []);
+    const imageChoices = uniqueProductImageChoices(
+      currentMedia.imageChoices || [],
+      live[colorName]?.imageChoices || [],
+      cachedImageChoices(cached, colorName),
+      variantChoices,
+      resolved.frontImageUrl ? [{ url: resolved.frontImageUrl, label: "Front flat", classTypeId: "flat-front" }] : [],
+      resolved.backImageUrl ? [{ url: resolved.backImageUrl, label: "Back flat", classTypeId: "flat-back" }] : [],
+      currentMedia.frontImageUrl ? [{ url: currentMedia.frontImageUrl, label: isModelProductImage({ url: currentMedia.frontImageUrl }) ? "Front model" : "Front image" }] : [],
+      currentMedia.backImageUrl ? [{ url: currentMedia.backImageUrl, label: isModelProductImage({ url: currentMedia.backImageUrl }) ? "Back model" : "Back image" }] : []
+    );
+    media[colorName] = {
+      ...resolved,
+      frontImageUrl: resolved.frontImageUrl || defaultProductImage(imageChoices, "front") || currentMedia.frontImageUrl || "",
+      backImageUrl: resolved.backImageUrl || defaultProductImage(imageChoices, "back") || currentMedia.backImageUrl || "",
+      imageChoices
     };
   }
 
@@ -1055,20 +1080,23 @@ async function applyFlatMediaToConfiguration(
       const swatch =
         preferred.swatchImageUrl ||
         "";
-      const imageChoices = Array.from(new Map([
-        ...(Array.isArray(color?.imageChoices) ? color.imageChoices : []),
-        ...cachedImageChoices(cached, name),
-        ...(preferred.frontImageUrl ? [{ url: preferred.frontImageUrl, label: "Selected front image" }] : []),
-        ...(preferred.backImageUrl ? [{ url: preferred.backImageUrl, label: "Selected back image" }] : [])
-      ].filter((choice: any) => validUrl(choice.url)).map((choice: any) => [choice.url, choice] as const)).values())
-        .sort((a, b) => a.label.localeCompare(b.label));
+      const imageChoices = uniqueProductImageChoices(
+        Array.isArray(color?.imageChoices) ? color.imageChoices : [],
+        cachedImageChoices(cached, name),
+        preferred.frontImageUrl ? [{ url: preferred.frontImageUrl, label: "Front flat", classTypeId: "flat-front" }] : [],
+        preferred.backImageUrl ? [{ url: preferred.backImageUrl, label: "Back flat", classTypeId: "flat-back" }] : [],
+        color?.frontImageUrl ? [{ url: color.frontImageUrl, label: isModelProductImage({ url: color.frontImageUrl }) ? "Front model" : "Front image" }] : [],
+        color?.backImageUrl ? [{ url: color.backImageUrl, label: isModelProductImage({ url: color.backImageUrl }) ? "Back model" : "Back image" }] : []
+      );
+      const selectedFront = front || defaultProductImage(imageChoices, "front") || clean(color?.frontImageUrl);
+      const selectedBack = back || defaultProductImage(imageChoices, "back") || clean(color?.backImageUrl);
 
       if (
-        front !==
+        selectedFront !==
           clean(
             color?.frontImageUrl
           ) ||
-        back !==
+        selectedBack !==
           clean(
             color?.backImageUrl
           ) ||
@@ -1084,10 +1112,10 @@ async function applyFlatMediaToConfiguration(
         ...color,
 
         frontImageUrl:
-          front || undefined,
+          selectedFront || undefined,
 
         backImageUrl:
-          back || undefined,
+          selectedBack || undefined,
 
         swatchImageUrl:
           swatch || undefined,
@@ -1095,6 +1123,18 @@ async function applyFlatMediaToConfiguration(
       };
     }
   );
+
+  const fallbackDefaultColor = next.colors.find((color: any) => color.id === next.defaultColorId && color.active !== false)
+    || next.colors.find((color: any) => color.active !== false)
+    || next.colors[0];
+  if (fallbackDefaultColor && !clean(fallbackDefaultColor.frontImageUrl) && clean(next.mockupImageUrl)) {
+    fallbackDefaultColor.frontImageUrl = clean(next.mockupImageUrl);
+    fallbackDefaultColor.imageChoices = uniqueProductImageChoices(
+      fallbackDefaultColor.imageChoices || [],
+      [{ url: clean(next.mockupImageUrl), label: "Current product image" }]
+    );
+    changed = true;
+  }
 
   const visibleColors =
     next.colors.filter(

@@ -8,6 +8,7 @@ import {
 } from "@/lib/catalog";
 import { sanmarCompleteStyle } from "@/lib/sanmar-complete-style";
 import { withPreferredSanMarFlatMedia } from "@/lib/sanmar-flat-media";
+import { defaultProductImage, uniqueProductImageChoices } from "@/lib/product-images";
 import { decodeHtmlEntities } from "@/lib/html-entities";
 
 export const dynamic = "force-dynamic";
@@ -182,17 +183,17 @@ export async function POST(request: Request) {
     const colors = selectedColors.map((name) => {
       const media = style.media?.[name] || {};
       const requested = imageSelections[name] || {};
-      const choices = [
-        ...(media.imageChoices || []),
-        ...(media.frontImageUrl ? [{ url: media.frontImageUrl }] : []),
-        ...(media.backImageUrl ? [{ url: media.backImageUrl }] : [])
-      ];
+      const choices = uniqueProductImageChoices(
+        media.imageChoices || [],
+        media.frontImageUrl ? [{ url: media.frontImageUrl, label: "Front image" }] : [],
+        media.backImageUrl ? [{ url: media.backImageUrl, label: "Back image", classTypeId: "1008" }] : []
+      );
       const selectedImage = (side: "frontImageUrl" | "backImageUrl") => {
         const candidate = String(requested[side] || "").trim();
         if (candidate && choices.some((choice: any) => choice.url === candidate)) {
           return candidate;
         }
-        return media[side] || "";
+        return media[side] || defaultProductImage(choices, side === "frontImageUrl" ? "front" : "back") || "";
       };
 
       return {
@@ -201,6 +202,7 @@ export async function POST(request: Request) {
         hex: "#d9dee6",
         active: true,
         ...media,
+        imageChoices: choices,
         frontImageUrl: selectedImage("frontImageUrl"),
         backImageUrl: selectedImage("backImageUrl")
       };

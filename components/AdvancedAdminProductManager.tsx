@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { decodeProductNameFields } from "@/lib/html-entities";
 import { AVAILABLE_DECORATION_METHODS, normalizeDecorationMethods } from "@/lib/catalog";
+import { defaultProductImage, uniqueProductImageChoices } from "@/lib/product-images";
 
 const methods = [...AVAILABLE_DECORATION_METHODS];
 
@@ -43,8 +44,13 @@ export default function AdvancedAdminProductManager({ product }: { product: any 
       const media = data.style?.media || {};
       setColors((current:any[]) => current.map((color) => {
         const found = media[color.name] || {};
-        const imageChoices = Array.from(new Map([...(color.imageChoices || []), ...(found.imageChoices || [])].filter((choice:any)=>choice.url).map((choice:any)=>[choice.url,choice] as const)).values());
-        return { ...color, imageChoices, frontImageUrl: color.frontImageUrl || found.frontImageUrl || undefined, backImageUrl: color.backImageUrl || found.backImageUrl || undefined };
+        const imageChoices = uniqueProductImageChoices(color.imageChoices || [], found.imageChoices || []);
+        return {
+          ...color,
+          imageChoices,
+          frontImageUrl: color.frontImageUrl || found.frontImageUrl || defaultProductImage(imageChoices, "front") || undefined,
+          backImageUrl: color.backImageUrl || found.backImageUrl || defaultProductImage(imageChoices, "back") || undefined
+        };
       }));
       setMessage("SanMar photos loaded. Choose the front and back images, then save the product.");
     } catch (error) {
@@ -75,7 +81,7 @@ export default function AdvancedAdminProductManager({ product }: { product: any 
       <label className="ae-switch"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)}/><span>{active ? "LIVE" : "DRAFT"}</span></label>
     </header>
     <div className="ae-product-preview">{image ? <img src={image} alt="Product preview"/> : <span>Supplier image will appear after import.</span>}</div>
-    <div className="ae-product-image-choices"><strong>Customer product images</strong><small>Choose the photos shoppers see for each color. You can change these choices at any time.</small>{supplier?.provider==="sanmar"&&colors.some((color:any)=>!color.imageChoices?.length)&&<button className="ae-button" type="button" onClick={()=>void loadSanMarImages()} disabled={imagesBusy}>{imagesBusy?"Loading SanMar photos…":"Load all SanMar photos"}</button>}{colors.map((color:any,index:number)=>{
+    <div className="ae-product-image-choices"><strong>Customer product images</strong><small>Choose the photos shoppers see for each color. You can change these choices at any time.</small>{supplier?.provider==="sanmar"&&<button className="ae-button" type="button" onClick={()=>void loadSanMarImages()} disabled={imagesBusy}>{imagesBusy?"Loading SanMar photos…":"Refresh all SanMar photos"}</button>}{colors.map((color:any,index:number)=>{
       const choices=Array.from(new Map([...(color.imageChoices||[]),...(color.frontImageUrl?[{url:color.frontImageUrl,label:"Current front"}]:[]),...(color.backImageUrl?[{url:color.backImageUrl,label:"Current back"}]:[])].filter((choice:any)=>choice.url).map((choice:any)=>[choice.url,choice] as const)).values());
       return <section key={color.id}><b>{color.name}</b><div>{(["frontImageUrl","backImageUrl"] as const).map((side)=> <label key={side}><span>{side==="frontImageUrl"?"Front photo":"Back photo"}</span><select value={color[side]||""} onChange={(event)=>setColors((current:any[])=>current.map((item,itemIndex)=>itemIndex===index?{...item,[side]:event.target.value||undefined}:item))}><option value="">No image</option>{choices.map((choice:any)=><option key={choice.url} value={choice.url}>{choice.label}</option>)}</select></label>)}</div></section>;
     })}</div>

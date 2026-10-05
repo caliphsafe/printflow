@@ -6,6 +6,7 @@ import FloatingSaveBar from "@/components/FloatingSaveBar";
 import { useUnsavedChanges } from "@/components/useUnsavedChanges";
 import { useRouter } from "next/navigation";
 import { decodeProductNameFields } from "@/lib/html-entities";
+import { defaultProductImage, isBackProductImage, isModelProductImage, isSwatchProductImage, productImageChoiceKey as getProductImageChoiceKey, uniqueProductImageChoices } from "@/lib/product-images";
 import type {
   CatalogProduct,
   DesignSide,
@@ -73,14 +74,14 @@ function assetUrl(url?: string) {
   }
 }
 
-type ProductImageChoice = NonNullable<ShirtColor["imageChoices"]>[number];
+type ProductImageChoice = NonNullable<ShirtColor["imageChoices"]>[number] & { colorName?: string };
 
 function productImageChoiceKey(choice: ProductImageChoice) {
-  return choice.classTypeId?.trim() || choice.label.trim().toLowerCase().replace(/\s+/g, " ");
+  return getProductImageChoiceKey(choice);
 }
 
 function productImageIsBack(choice: ProductImageChoice) {
-  return choice.classTypeId?.trim() === "1008" || /back|rear|reverse/i.test(choice.label);
+  return isBackProductImage(choice);
 }
 
 function zoneKey(side: DesignSide, size: PrintSize): ZoneKey {
@@ -840,13 +841,13 @@ function ProductImagesEditor({
   const [imagesBusy, setImagesBusy] = useState(false);
   const [message, setMessage] = useState("");
   const primary = values.find((color) => color.active !== false) || values[0];
-  const choices = primary ? Array.from(new Map([
-    ...(primary.imageChoices || []),
-    ...(primary.frontImageUrl ? [{ url: primary.frontImageUrl, label: "Current front" }] : []),
-    ...(primary.backImageUrl ? [{ url: primary.backImageUrl, label: "Current back" }] : [])
-  ].filter((choice) => choice.url).map((choice) => [choice.url, choice] as const)).values()) : [];
-  const frontChoices = choices.filter((choice) => !productImageIsBack(choice));
-  const backChoices = choices.filter(productImageIsBack);
+  const choices = uniqueProductImageChoices(...values.map((color) => [
+    ...(color.imageChoices || []).map((choice) => ({ ...choice, colorName: color.name, label: `${color.name} · ${choice.label}` })),
+    ...(color.frontImageUrl ? [{ url: color.frontImageUrl, label: `${color.name} · ${isModelProductImage({ url: color.frontImageUrl }) ? "Front model" : "Current front"}`, colorName: color.name }] : []),
+    ...(color.backImageUrl ? [{ url: color.backImageUrl, label: `${color.name} · ${isModelProductImage({ url: color.backImageUrl }) ? "Back model" : "Current back"}`, classTypeId: "1008", colorName: color.name }] : [])
+  ])) as ProductImageChoice[];
+  const frontChoices = choices.filter((choice) => !productImageIsBack(choice) && !isSwatchProductImage(choice));
+  const backChoices = choices.filter((choice) => productImageIsBack(choice) && !isSwatchProductImage(choice));
 
   function applyChoice(side: DesignSide, choice: ProductImageChoice) {
     const key = side === "front" ? "frontImageUrl" : "backImageUrl";
@@ -868,9 +869,14 @@ function ProductImagesEditor({
       if (!response.ok) throw new Error(data.error || "Unable to load SanMar photos.");
       const media = data.style?.media || {};
       onChange(values.map((color) => {
-        const found = media[color.name] || {};
-        const imageChoices = Array.from(new Map([...(color.imageChoices || []), ...(found.imageChoices || [])].filter((choice: ProductImageChoice) => choice.url).map((choice: ProductImageChoice) => [choice.url, choice] as const)).values());
-        return { ...color, imageChoices, frontImageUrl: color.frontImageUrl || found.frontImageUrl || undefined, backImageUrl: color.backImageUrl || found.backImageUrl || undefined };
+      const found = media[color.name] || {};
+        const imageChoices = uniqueProductImageChoices(color.imageChoices || [], found.imageChoices || []);
+        return {
+          ...color,
+          imageChoices,
+          frontImageUrl: color.frontImageUrl || found.frontImageUrl || defaultProductImage(imageChoices, "front") || undefined,
+          backImageUrl: color.backImageUrl || found.backImageUrl || defaultProductImage(imageChoices, "back") || undefined
+        };
       }));
       setMessage("SanMar image options loaded.");
     } catch (error) {

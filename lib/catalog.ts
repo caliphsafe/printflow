@@ -1,4 +1,5 @@
 import { decodeHtmlEntities } from "@/lib/html-entities";
+import { defaultProductImage, uniqueProductImageChoices } from "@/lib/product-images";
 import type {
   CatalogProduct,
   DesignSide,
@@ -315,27 +316,27 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
   const legacyBack = normalizePrintArea(custom.backPrintArea, DEFAULT_CONFIGURATION.customization.backFullArea);
 
   const colors = Array.isArray(raw.colors) && raw.colors.length
-    ? raw.colors.map((item, index) => ({
-        id: String(item?.id || `color-${index + 1}`),
-        name: decodeHtmlEntities(item?.name || `Color ${index + 1}`),
-        hex: String(item?.hex || "#111111"),
-        swatchImageUrl: item?.swatchImageUrl ? String(item.swatchImageUrl) : undefined,
-        frontImageUrl: item?.frontImageUrl ? String(item.frontImageUrl) : undefined,
-        backImageUrl: item?.backImageUrl ? String(item.backImageUrl) : undefined,
-        imageChoices: Array.isArray(item?.imageChoices)
-          ? item.imageChoices.flatMap((choice: any) => {
-              const url = String(choice?.url || "").trim();
-              return /^https:\/\//i.test(url)
-                ? [{
-                    url,
-                    label: String(choice?.label || "Product image"),
-                    ...(choice?.classTypeId ? { classTypeId: String(choice.classTypeId) } : {})
-                  }]
-                : [];
-            })
-          : undefined,
-        active: item?.active !== false
-      }))
+    ? raw.colors.map((item, index) => {
+        const imageChoices = uniqueProductImageChoices(Array.isArray(item?.imageChoices)
+          ? item.imageChoices.map((choice: any) => ({
+              url: String(choice?.url || "").trim(),
+              label: String(choice?.label || "Product image"),
+              ...(choice?.classTypeId ? { classTypeId: String(choice.classTypeId) } : {})
+            }))
+          : []);
+        const existingFront = item?.frontImageUrl ? String(item.frontImageUrl) : "";
+        const existingBack = item?.backImageUrl ? String(item.backImageUrl) : "";
+        return {
+          id: String(item?.id || `color-${index + 1}`),
+          name: decodeHtmlEntities(item?.name || `Color ${index + 1}`),
+          hex: String(item?.hex || "#111111"),
+          swatchImageUrl: item?.swatchImageUrl ? String(item.swatchImageUrl) : undefined,
+          frontImageUrl: existingFront || defaultProductImage(imageChoices, "front") || undefined,
+          backImageUrl: existingBack || defaultProductImage(imageChoices, "back") || undefined,
+          imageChoices: imageChoices.length ? imageChoices : undefined,
+          active: item?.active !== false
+        };
+      })
     : DEFAULT_CONFIGURATION.colors;
 
   const visibleColors = colors.filter((item) => item.active !== false);
@@ -344,6 +345,13 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
     visibleColors.find((item) => item.id === rawDefaultColorId) ||
     visibleColors[0] ||
     colors[0];
+  if (defaultColor && !defaultColor.frontImageUrl && raw.mockupImageUrl) {
+    defaultColor.frontImageUrl = String(raw.mockupImageUrl);
+    defaultColor.imageChoices = uniqueProductImageChoices(
+      defaultColor.imageChoices || [],
+      [{ url: String(raw.mockupImageUrl), label: "Current product image" }]
+    );
+  }
 
   const productKindText = `${String(custom.category || "")} ${String(supplierRaw?.brandName || "")} ${String(supplierRaw?.styleName || "")}`.toLowerCase();
   const rawSizes = Array.isArray(raw.sizes) ? raw.sizes.map((size) => String(size).trim().toLowerCase()) : [];

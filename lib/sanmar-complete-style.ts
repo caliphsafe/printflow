@@ -1,5 +1,6 @@
 import { getSanMarCachedStyle } from "@/lib/sanmar-catalog";
 import { decodeHtmlEntities } from "@/lib/html-entities";
+import { isModelProductImage } from "@/lib/product-images";
 import {
   fetchSanMarInventory,
   fetchSanMarMedia,
@@ -35,21 +36,23 @@ type CachedVariant = {
 };
 
 function cachedImageChoices(raw: CachedVariant): SanMarImageChoice[] {
+  const sameUrl = (left?: string, right?: string) => Boolean(left && right && left.trim() === right.trim());
   const choices: Array<[string, string | undefined]> = [
-    ["Front flat", raw.frontFlatUrl],
-    ["Back flat", raw.backFlatUrl],
+    ...(!sameUrl(raw.frontFlatUrl, raw.colorProductImageUrl) && !isModelProductImage({ url: raw.frontFlatUrl || "" }) ? [["Front flat", raw.frontFlatUrl] as [string, string | undefined]] : []),
+    ...(!sameUrl(raw.backFlatUrl, raw.backModelUrl) && !isModelProductImage({ url: raw.backFlatUrl || "" }) ? [["Back flat", raw.backFlatUrl] as [string, string | undefined]] : []),
     ["Front model", raw.frontModelUrl],
     ["Back model", raw.backModelUrl],
     ["Color product", raw.colorProductImageUrl],
     ["Swatch", raw.swatchImageUrl]
   ];
   const seen = new Set<string>();
-  return choices.flatMap(([label, rawUrl]) => {
+  const generated = choices.flatMap(([label, rawUrl]) => {
     const url = String(rawUrl || "").trim();
     if (!/^https:\/\//i.test(url) || seen.has(url)) return [];
     seen.add(url);
     return [{ url, label }];
   });
+  return mergeImageChoices(generated, raw.imageChoices || []);
 }
 
 function mergeImageChoices(
