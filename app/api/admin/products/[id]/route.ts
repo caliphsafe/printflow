@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
-import { normalizeConfiguration, slugify } from "@/lib/catalog";
+import { normalizeConfiguration, normalizeDecorationMethods, slugify } from "@/lib/catalog";
 import { decodeHtmlEntities } from "@/lib/html-entities";
 
 type Props = { params: Promise<{ id: string }> };
@@ -12,6 +12,13 @@ export async function PATCH(request: Request, { params }: Props) {
   const body = await request.json();
   const name = decodeHtmlEntities(String(body.name || "").trim());
   if (!name) return NextResponse.json({ error: "Product name is required." }, { status: 400 });
+  const requestedMethods = body.configuration?.customization?.decorationMethods;
+  if (Array.isArray(requestedMethods) && !normalizeDecorationMethods(requestedMethods).length) {
+    return NextResponse.json({ error: "Choose at least one supported decoration method for this product." }, { status: 400 });
+  }
+  if (Array.isArray(requestedMethods)) {
+    body.configuration.customization.decorationMethods = normalizeDecorationMethods(requestedMethods);
+  }
 
   const { data, error } = await supabase
     .from("catalog_products")

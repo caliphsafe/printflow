@@ -3,6 +3,7 @@ import { getAdminContext } from "@/lib/admin-data";
 import {
   DEFAULT_CONFIGURATION,
   normalizeConfiguration,
+  normalizeDecorationMethods,
   slugify
 } from "@/lib/catalog";
 import { defaultBrandGarmentSetup } from "@/lib/brand-commerce";
@@ -48,6 +49,10 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
+  const requestedMethods = Array.isArray(body.decorationMethods)
+    ? normalizeDecorationMethods(body.decorationMethods)
+    : [...DEFAULT_CONFIGURATION.customization.decorationMethods];
+  if (!requestedMethods.length) return NextResponse.json({ error: "Choose at least one supported decoration method before importing." }, { status: 400 });
   const supplier = supplierFrom(
     String(body.supplier || "")
   );
@@ -417,11 +422,7 @@ export async function POST(request: Request) {
     customization: {
       ...DEFAULT_CONFIGURATION.customization,
       category,
-      decorationMethods: [
-        "Screen Print",
-        "DTF",
-        "Embroidery"
-      ],
+      decorationMethods: requestedMethods,
       printSizes: fullSizeOnly
         ? ["full"]
         : ["heart", "full"]

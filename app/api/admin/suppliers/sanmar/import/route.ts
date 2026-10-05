@@ -3,6 +3,7 @@ import { getAdminContext } from "@/lib/admin-data";
 import {
   DEFAULT_CONFIGURATION,
   normalizeConfiguration,
+  normalizeDecorationMethods,
   slugify
 } from "@/lib/catalog";
 import { sanmarCompleteStyle } from "@/lib/sanmar-complete-style";
@@ -39,18 +40,20 @@ export async function POST(request: Request) {
   const requestedPrintAreas = requestedCustomization.printAreas && typeof requestedCustomization.printAreas === "object"
     ? requestedCustomization.printAreas
     : {};
-  const availableMethods = ["Screen Print", "DTF", "Embroidery", "Heat Transfer", "Sublimation"];
   const availablePrintSizes = ["heart", "full"];
   const availablePrintLocations = ["Front", "Back", "Left Chest", "Right Chest", "Left Sleeve", "Right Sleeve", "Hat Front", "Hat Side", "Hat Back"];
   const requestedMethods = Array.isArray(requestedCustomization.decorationMethods)
-    ? requestedCustomization.decorationMethods.map((value: unknown) => String(value)).filter((value: string) => availableMethods.includes(value))
+    ? normalizeDecorationMethods(requestedCustomization.decorationMethods)
     : [];
   const requestedPrintSizes = Array.isArray(requestedCustomization.printSizes)
     ? requestedCustomization.printSizes.map((value: unknown) => String(value)).filter((value: string) => availablePrintSizes.includes(value))
     : [];
   const finalCategory = String(requestedCustomization.category || category).trim().slice(0, 80) || category;
   const minimumQuantity = Math.min(100000, Math.max(1, Math.floor(Number(requestedCustomization.minimumQuantity) || (headwear ? 1 : 12))));
-  const finalMethods = requestedMethods.length ? requestedMethods : (headwear ? ["Embroidery"] : ["Screen Print", "DTF", "Embroidery"]);
+  const finalMethods = Array.isArray(requestedCustomization.decorationMethods)
+    ? requestedMethods
+    : (headwear ? ["Embroidery"] : [...DEFAULT_CONFIGURATION.customization.decorationMethods]);
+  if (!finalMethods.length) return NextResponse.json({ error: "Choose at least one supported decoration method before importing this product." }, { status: 400 });
   const finalPrintSizes = requestedPrintSizes.length ? requestedPrintSizes : (headwear ? ["full"] : ["heart", "full"]);
   const requestedLocations = Array.isArray(requestedCustomization.printLocations)
     ? requestedCustomization.printLocations.map((value: unknown) => String(value)).filter((value: string) => availablePrintLocations.includes(value))

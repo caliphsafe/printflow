@@ -265,7 +265,7 @@ export const DEFAULT_CONFIGURATION: ProductConfiguration = {
   ],
   customization: {
     category: "T-Shirts",
-    decorationMethods: ["Screen Print", "DTF", "Embroidery"],
+    decorationMethods: ["Screen Printing", "Embroidery", "DTF (Direct To Fabric)"],
     printSizes: ["heart", "full"],
     designModes: ["front", "back", "front-back"],
     frontEnabled: true,
@@ -284,6 +284,24 @@ export const DEFAULT_CONFIGURATION: ProductConfiguration = {
     pricingOverrides: DEFAULT_PRODUCT_PRICING_OVERRIDES
   }
 };
+
+export const AVAILABLE_DECORATION_METHODS = [
+  "Screen Printing",
+  "Embroidery",
+  "DTF (Direct To Fabric)"
+] as const;
+
+export function normalizeDecorationMethods(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const normalized = value.map((entry) => {
+    const method = String(entry || "").trim().toLowerCase();
+    if (method.includes("screen")) return "Screen Printing";
+    if (method.includes("embroider")) return "Embroidery";
+    if (method.includes("dtf")) return "DTF (Direct To Fabric)";
+    return "";
+  }).filter(Boolean);
+  return AVAILABLE_DECORATION_METHODS.filter((method) => normalized.includes(method));
+}
 
 export function slugify(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "product";
@@ -384,7 +402,9 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
     manualUnitCost: Math.max(0, Number(raw.manualUnitCost ?? 0)),
     customization: {
       category: String(custom.category || "T-Shirts"),
-      decorationMethods: Array.isArray(custom.decorationMethods) && custom.decorationMethods.length ? custom.decorationMethods.map(String) : ["Screen Print", "DTF", "Embroidery"],
+      decorationMethods: Array.isArray(custom.decorationMethods) && custom.decorationMethods.length
+        ? normalizeDecorationMethods(custom.decorationMethods)
+        : [...DEFAULT_CONFIGURATION.customization.decorationMethods],
       printSizes,
       designModes: Array.isArray(custom.designModes) && custom.designModes.length ? custom.designModes : ["front", "back", "front-back"],
       frontEnabled: custom.frontEnabled !== false,

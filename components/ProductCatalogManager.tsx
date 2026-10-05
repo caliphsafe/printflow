@@ -17,7 +17,9 @@ import type {
   SupplierVariant
 } from "@/lib/types";
 import {
+  AVAILABLE_DECORATION_METHODS,
   DEFAULT_CONFIGURATION,
+  normalizeDecorationMethods,
   normalizePrintArea,
   slugify
 } from "@/lib/catalog";
@@ -251,6 +253,18 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
 
   function updateCustomization(next: Partial<ProductConfiguration["customization"]>) {
     if (draft) updateConfiguration({ customization: { ...draft.configuration.customization, ...next } });
+  }
+
+  function toggleDecorationMethod(method: string, checked: boolean) {
+    if (!draft) return;
+    const current = normalizeDecorationMethods(draft.configuration.customization.decorationMethods);
+    const next = checked ? [...new Set([...current, method])] : current.filter((item) => item !== method);
+    if (!next.length) {
+      setMessage("Keep at least one decoration method enabled for this product.");
+      return;
+    }
+    updateCustomization({ decorationMethods: next });
+    setMessage("");
   }
 
   function updateZone(side: DesignSide, size: PrintSize, value: PrintArea) {
@@ -523,12 +537,16 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                       />
                     </div>
                   </Panel>
-                  <Panel title="Decoration methods" description="These appear as a compact dropdown in the customer designer.">
-                    <TagEditor
-                      values={draft.configuration.customization.decorationMethods}
-                      placeholder="Add method"
-                      onChange={(decorationMethods) => updateCustomization({ decorationMethods })}
-                    />
+                  <Panel title="Available decoration methods" description="Choose one or more methods customers may use for this product. Keep at least one selected.">
+                    <div className="selection-card-grid">
+                      {AVAILABLE_DECORATION_METHODS.map((method) => <CheckCard
+                        key={method}
+                        title={method}
+                        text={method === "Screen Printing" ? "Offer screen printing for this product." : method === "Embroidery" ? "Offer embroidery for this product." : "Offer DTF (Direct To Fabric) for this product."}
+                        checked={normalizeDecorationMethods(draft.configuration.customization.decorationMethods).includes(method)}
+                        onChange={(checked) => toggleDecorationMethod(method, checked)}
+                      />)}
+                    </div>
                   </Panel>
                   <Panel title="Available sizes" description="Customers enter exactly how many garments they need in each size.">
                     <TagEditor values={draft.configuration.sizes} placeholder="Add size" onChange={(sizes) => updateConfiguration({ sizes })} />

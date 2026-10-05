@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { readApiResponse } from "@/lib/client-api-response";
 import { decodeHtmlEntities } from "@/lib/html-entities";
+import { AVAILABLE_DECORATION_METHODS } from "@/lib/catalog";
 import { DEFAULT_CONFIGURATION, normalizeConfiguration, normalizePrintArea } from "@/lib/catalog";
 import type { DesignSide, PrintArea, PrintSize } from "@/lib/types";
 
@@ -65,7 +66,7 @@ type WizardStep = "catalog" | "images" | "zones";
 type ZoneKey = "frontHeartArea" | "frontFullArea" | "backHeartArea" | "backFullArea";
 
 const QUICK = ["Gildan", "Port Authority", "New Era", "hoodie", "jacket"];
-const METHODS = ["Screen Print", "DTF", "Embroidery", "Heat Transfer", "Sublimation"];
+const METHODS = [...AVAILABLE_DECORATION_METHODS];
 const PRINT_SIZES = [{ id: "heart", label: "Left chest / small" }, { id: "full", label: "Full front" }];
 const APPAREL_ZONES = ["Front", "Back", "Left Chest", "Right Chest", "Left Sleeve", "Right Sleeve"];
 const HEADWEAR_ZONES = ["Hat Front", "Hat Side", "Hat Back"];
@@ -143,7 +144,7 @@ function initialSetupItem(style: BrowseStyle, detail: ProductDetail): SetupItem 
     displayName: style.title.replace(new RegExp(`\\s*${style.styleId}\\s*$`, "i"), "").trim() || `${style.brandName} ${style.styleId}`,
     category: style.category || "Apparel",
     minimumQuantity: headwear ? 1 : 12,
-    decorationMethods: headwear ? ["Embroidery"] : ["Screen Print", "DTF", "Embroidery"],
+    decorationMethods: headwear ? ["Embroidery"] : [...METHODS],
     printSizes: headwear ? ["full"] : ["heart", "full"],
     selectedColors: colors,
     imageSelections: Object.fromEntries(colors.map((name) => {
@@ -270,6 +271,21 @@ export default function SanMarCatalogImporter({
     setSetupItems((current) => current.map((item) => item.style.styleId === styleId ? update(item) : item));
   }
 
+  function toggleDecorationMethod(styleId: string, method: string, checked: boolean) {
+    const item = setupItems.find((candidate) => candidate.style.styleId === styleId);
+    if (!item || (!checked && item.decorationMethods.length === 1)) {
+      setMessage("Keep at least one decoration method enabled for each product.");
+      return;
+    }
+    setMessage("");
+    updateSetupItem(styleId, (current) => ({
+      ...current,
+      decorationMethods: checked
+        ? [...new Set([...current.decorationMethods, method])]
+        : current.decorationMethods.filter((entry) => entry !== method)
+    }));
+  }
+
   function selectImageStyle(styleId: string, side: "front" | "back", choice: ImageChoice, fromColor: string) {
     updateSetupItem(styleId, (item) => {
       const key = choiceKey(choice);
@@ -311,7 +327,7 @@ export default function SanMarCatalogImporter({
   }
 
   async function importProducts() {
-    if (setupItems.some((item) => !item.selectedColors.length || !item.printLocations.length)) return;
+    if (setupItems.some((item) => !item.selectedColors.length || !item.decorationMethods.length || !item.printLocations.length)) return;
     setImportBusy(true);
     setMessage("");
     const failures: string[] = [];
@@ -366,7 +382,7 @@ export default function SanMarCatalogImporter({
   }
 
   const selectedCount = selectedStyles.length;
-  const canImport = setupItems.length > 0 && setupItems.every((item) => item.selectedColors.length > 0 && item.printLocations.length > 0);
+  const canImport = setupItems.length > 0 && setupItems.every((item) => item.selectedColors.length > 0 && item.decorationMethods.length > 0 && item.printLocations.length > 0);
 
   if (!connected) {
     return <section className="ae-card sanmar-connect-state"><div className="sanmar-wordmark">SANMAR</div><h2>Connect SanMar to browse products.</h2><p>Once connected, browse every product type in the shop’s SanMar catalog.</p><Link className="ae-button primary" href="/advanced-admin/settings">Connect SanMar</Link></section>;
@@ -410,7 +426,7 @@ export default function SanMarCatalogImporter({
                 const activeKey = side === "front" ? item.frontChoiceKey : item.backChoiceKey;
                 return <div className="sanmar-image-gallery" key={side}><h4>{side === "front" ? "Front image" : "Back image"}</h4>{choices.length ? <div>{choices.map((choice) => <button type="button" className={choiceKey(choice) === activeKey ? "selected" : ""} key={`${choiceKey(choice)}-${choice.url}`} onClick={() => representative && selectImageStyle(item.style.styleId, side, choice, representative.name)}><span><img src={choice.url} alt={`${side} option ${choice.label}`}/>{choiceKey(choice) === activeKey && <i>✓</i>}</span><b>{choice.label}</b><small>{choiceKey(choice) === activeKey ? "Applied to matching colors" : "Use this image style"}</small></button>)}</div> : <p>No {side} image choices supplied by SanMar.</p>}</div>;
               })}</div>{representative && <div className="sanmar-color-image-preview"><b>Selected views for {representative.name}</b><div>{item.imageSelections[representative.name]?.frontImageUrl && <img src={item.imageSelections[representative.name].frontImageUrl} alt="Selected front"/>}{item.imageSelections[representative.name]?.backImageUrl && <img src={item.imageSelections[representative.name].backImageUrl} alt="Selected back"/>}</div></div>}</section>
-              <section className="sanmar-wizard-section sanmar-extra-options"><header><h3>Ordering options</h3><span>Optional settings for this product.</span></header><div className="sanmar-option-pills"><b>Decoration methods</b>{METHODS.map((method) => <label key={method} className={item.decorationMethods.includes(method) ? "selected" : ""}><input type="checkbox" checked={item.decorationMethods.includes(method)} onChange={(event) => updateSetupItem(item.style.styleId, (current) => ({ ...current, decorationMethods: event.target.checked ? [...current.decorationMethods, method] : current.decorationMethods.filter((entry) => entry !== method) }))}/>{method}</label>)}</div><div className="sanmar-option-pills"><b>Print size options</b>{PRINT_SIZES.map((size) => <label key={size.id} className={item.printSizes.includes(size.id) ? "selected" : ""}><input type="checkbox" checked={item.printSizes.includes(size.id)} onChange={(event) => updateSetupItem(item.style.styleId, (current) => ({ ...current, printSizes: event.target.checked ? [...current.printSizes, size.id] : current.printSizes.filter((entry) => entry !== size.id) }))}/>{size.label}</label>)}</div></section>
+              <section className="sanmar-wizard-section sanmar-extra-options"><header><h3>Available decoration methods</h3><span>Choose one or more methods customers may use for this product.</span></header><div className="sanmar-option-pills">{METHODS.map((method) => <label key={method} className={item.decorationMethods.includes(method) ? "selected" : ""}><input type="checkbox" checked={item.decorationMethods.includes(method)} onChange={(event) => toggleDecorationMethod(item.style.styleId, method, event.target.checked)}/>{method}</label>)}</div><div className="sanmar-option-pills"><b>Print size options</b>{PRINT_SIZES.map((size) => <label key={size.id} className={item.printSizes.includes(size.id) ? "selected" : ""}><input type="checkbox" checked={item.printSizes.includes(size.id)} onChange={(event) => updateSetupItem(item.style.styleId, (current) => ({ ...current, printSizes: event.target.checked ? [...current.printSizes, size.id] : current.printSizes.filter((entry) => entry !== size.id) }))}/>{size.label}</label>)}</div></section>
             </> : <>
               <section className="sanmar-wizard-section">
                 <header><h3>Print locations</h3><span>Choose where customers may print, then edit the printable area for this product.</span></header>

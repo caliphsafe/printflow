@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { decodeHtmlEntities } from "@/lib/html-entities";
+import { normalizeDecorationMethods } from "@/lib/catalog";
 import { getAdvancedAdminApiContext } from "@/lib/advanced-admin";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -11,6 +12,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: product } = await db.from("catalog_products").select("*").eq("id", id).eq("shop_id", shop.id).maybeSingle();
   if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
+
+  const requestedMethods = Array.isArray(body.decorationMethods)
+    ? normalizeDecorationMethods(body.decorationMethods)
+    : normalizeDecorationMethods(product.configuration?.customization?.decorationMethods);
+  if (!requestedMethods.length) return NextResponse.json({ error: "Choose at least one supported decoration method for this product." }, { status: 400 });
 
   const configuration = {
     ...(product.configuration || {}),
@@ -29,7 +35,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     customization: {
       ...((product.configuration || {}).customization || {}),
       minimumQuantity: Math.max(1, Number(body.minimumQuantity || 1)),
-      decorationMethods: Array.isArray(body.decorationMethods) ? body.decorationMethods.filter(Boolean) : ((product.configuration || {}).customization?.decorationMethods || [])
+      decorationMethods: requestedMethods
     }
   };
 

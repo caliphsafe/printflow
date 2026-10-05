@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { readApiResponse } from "@/lib/client-api-response";
 import SanMarCatalogImporter from "@/components/SanMarCatalogImporter";
+import { AVAILABLE_DECORATION_METHODS } from "@/lib/catalog";
 
 type SupplierKey = "ss" | "sanmar";
 
@@ -97,6 +98,7 @@ export default function SupplierCatalogBrowser({
   const [selected, setSelected] = useState<Style | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [decorationMethods, setDecorationMethods] = useState<string[]>([...AVAILABLE_DECORATION_METHODS]);
   const [imageSelections, setImageSelections] = useState<Record<string, { frontImageUrl: string; backImageUrl: string }>>({});
   const [q, setQ] = useState("");
   const [brand, setBrand] = useState("");
@@ -133,6 +135,7 @@ export default function SupplierCatalogBrowser({
     setSelected(null);
     setProducts([]);
     setSelectedColors([]);
+    setDecorationMethods([...AVAILABLE_DECORATION_METHODS]);
     setImageSelections({});
     setBrands([]);
     setCategories([]);
@@ -220,6 +223,7 @@ export default function SupplierCatalogBrowser({
     setSelected(style);
     setProducts([]);
     setSelectedColors([]);
+    setDecorationMethods(/\b(hat|cap|headwear|beanie|visor|bucket hat|trucker)\b/i.test(`${style.category} ${style.title}`) ? ["Embroidery"] : [...AVAILABLE_DECORATION_METHODS]);
     setImageSelections({});
     setMessage("");
     setDetailBusy(true);
@@ -332,6 +336,7 @@ export default function SupplierCatalogBrowser({
           supplier,
           products,
           selectedColors,
+          decorationMethods,
           imageSelections,
           style: selected,
           targetBusiness
@@ -790,6 +795,25 @@ export default function SupplierCatalogBrowser({
                   ))}
                 </div>
 
+                <section className="selection-panel" style={{ marginTop: 18 }}>
+                  <header><h3>Available decoration methods</h3><p>Choose at least one method customers may use for this product.</p></header>
+                  <div className="selection-card-grid">
+                    {AVAILABLE_DECORATION_METHODS.map((method) => <label className={decorationMethods.includes(method) ? "selection-card selected" : "selection-card"} key={method}>
+                      <input type="checkbox" checked={decorationMethods.includes(method)} onChange={(event) => {
+                        if (!event.target.checked && decorationMethods.length === 1) {
+                          setMessageType("error");
+                          setMessage("Keep at least one decoration method enabled for this product.");
+                          return;
+                        }
+                        setMessage("");
+                        setDecorationMethods((current) => event.target.checked ? [...new Set([...current, method])] : current.filter((item) => item !== method));
+                      }}/>
+                      <span className="fake-check">✓</span>
+                      <span><strong>{method}</strong><small>Show this method as available in the storefront.</small></span>
+                    </label>)}
+                  </div>
+                </section>
+
                 {!!colors.length && (
                   <div className="supplier-import-footer">
                     <div>
@@ -806,7 +830,7 @@ export default function SupplierCatalogBrowser({
 
                     <button
                       className="primary-button"
-                      disabled={importBusy || !selectedColors.length}
+                      disabled={importBusy || !selectedColors.length || !decorationMethods.length}
                       onClick={importProduct}
                     >
                       {importBusy

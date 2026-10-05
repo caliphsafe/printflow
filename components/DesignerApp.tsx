@@ -2,7 +2,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { printAreaFor } from "@/lib/catalog";
+import { normalizeDecorationMethods, printAreaFor } from "@/lib/catalog";
 import { availableAddOns, calculateResolvedOrderPricing, resolveDesignOptimizationFee } from "@/lib/pricing-settings";
 import type {
   ArtworkPlacement,
@@ -128,7 +128,7 @@ function storefrontCategoryOrder(category: string) {
 function defaultDecorationMethod(product?: CatalogProduct) {
   const methods = product?.configuration.customization.decorationMethods || [];
   const headwear = /hat|headwear|cap|beanie|visor/i.test(`${product?.configuration.customization.category || ""} ${product?.name || ""}`);
-  return (headwear ? methods.find((method) => method.toLowerCase().includes("embroider")) : undefined) || methods[0] || "Screen Print";
+  return (headwear ? methods.find((method) => method.toLowerCase().includes("embroider")) : undefined) || methods[0] || "";
 }
 
 function isSchoolStoreProduct(product: CatalogProduct) {
@@ -263,6 +263,10 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     name: decodeHtmlEntities(item.name),
     configuration: {
       ...item.configuration,
+      customization: {
+        ...item.configuration.customization,
+        decorationMethods: normalizeDecorationMethods(item.configuration.customization.decorationMethods)
+      },
       colors: item.configuration.colors.map((color) => ({ ...color, name: decodeHtmlEntities(color.name) })),
       supplier: item.configuration.supplier ? {
         ...item.configuration.supplier,
@@ -643,6 +647,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
 
   async function submit() {
     setError("");
+    if (!product.configuration.customization.decorationMethods.includes(decoration)) return setError("Choose a decoration method available for this product.");
     if (neededSides.some((target) => !(target === "front" ? front.file : back.file))) return setError(`Upload artwork for ${neededSides.join(" and ")}.`);
     if (!customer.name.trim() || !customer.email.trim()) return setError("Enter your name and email.");
     if (totalAssigned < minimum) return setError(`Your order must include at least ${minimum} items. You currently have ${totalAssigned}.`);
@@ -836,6 +841,9 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                     <div className="product-card-info">
                       <span className="product-card-category">{category}</span>
                       <h2>{customerProductName(item)}</h2>
+                      <div className="product-card-decoration-methods" aria-label="Available decoration methods">
+                        {item.configuration.customization.decorationMethods.map((method) => <span key={method}>{method}</span>)}
+                      </div>
                       {brand && <small className="product-brand-name">{brand}</small>}
                       {item.description && <p>{item.description}</p>}
                       <div className="product-card-meta"><small>{item.configuration.colors.filter((candidate) => candidate.active !== false && (!item.configuration.supplier || Boolean(candidate.frontImageUrl))).length} colors</small><small>{item.configuration.sizes.length} sizes</small></div>
@@ -865,12 +873,12 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             <div className="guided-options-scroll"><button className="flow-back-link" onClick={()=>setStep("color")}>← Color & quantity</button><h1>Decoration</h1><p className="flow-lede">Choose where and how your product will be customized.</p>
           <WizardSection number="1" title="Print location">{availableModes.length ? <div className="radio-card-grid">{availableModes.map((value)=><label key={value} className={mode===value?"radio-card selected":"radio-card"}><input type="radio" name="mode" checked={mode===value} onChange={()=>chooseMode(value)}/><span><b>{modeLabel(value)}</b><small>{value==="front-back"?"Add a design to both sides.":`Design the ${value} only.`}</small></span><i/></label>)}</div> : <p>This product has no configured decoration locations. Contact the shop for help.</p>}</WizardSection>
           {hasPrintSizeChoice && <WizardSection number="2" title="Decoration size"><div className="side-print-size-stack">{neededSides.map((target)=><div className="side-print-size-group" key={target}><span>{target==="front"?"Front":"Back"}</span><div className="print-size-choice-grid">{printSizeOptions.map((value)=>{const area=printAreaFor(product.configuration,target,value);return <label key={value} className={printSizes[target]===value?"print-size-choice selected":"print-size-choice"}><input type="radio" name={`${target}-print-size`} checked={printSizes[target]===value} onChange={()=>choosePrintSize(target,value)}/><span><b>{printSizeLabel(value)}</b><small>{area.widthInches}″ × {area.heightInches}″ max</small></span></label>;})}</div></div>)}</div></WizardSection>}
-          <WizardSection number={hasPrintSizeChoice?"3":"2"} title="Decoration method"><label className="guided-field"><span>How should we decorate it?</span><select value={decoration} onChange={(event)=>setDecoration(event.target.value)}>{product.configuration.customization.decorationMethods.map((item)=><option key={item}>{item}</option>)}</select></label>
+          <WizardSection number={hasPrintSizeChoice?"3":"2"} title="Decoration method">{product.configuration.customization.decorationMethods.length ? <label className="guided-field"><span>How should we decorate it?</span><select value={decoration} onChange={(event)=>setDecoration(event.target.value)}>{product.configuration.customization.decorationMethods.map((item)=><option key={item}>{item}</option>)}</select></label> : <p className="method-explainer">No decoration methods are enabled for this product. Please contact the shop.</p>}
             {decoration.toLowerCase().includes("screen")&&<div className="ink-color-estimator"><div><strong>Ink colors</strong><small>More colors and locations can affect the quote.</small></div>{neededSides.map((target)=><label key={target}><span>{target==="front"?"Front":"Back"}</span><select value={inkColors[target]} onChange={(event)=>setInkColors((current)=>({...current,[target]:Number(event.target.value)}))}>{Array.from({length:shop.pricing.screenPrinting.maximumColors},(_,index)=>index+1).map((count)=><option key={count} value={count}>{count} color{count===1?"":"s"}</option>)}</select></label>)}</div>}
             {decoration.toLowerCase().includes("dtf")&&<p className="method-explainer">DTF pricing uses the artwork dimensions you set in the next step.</p>}{decoration.toLowerCase().includes("embroider")&&<p className="method-explainer">Embroidery pricing uses an estimated stitch tier. The shop will confirm production details.</p>}
           </WizardSection>
           <WizardSection number={hasPrintSizeChoice?"4":"3"} title="Optional services"><div className="customer-service-stack">{designOptimizationAmount>0&&<label className={designOptimizationRequested?"service-choice selected":"service-choice"}><input type="checkbox" checked={designOptimizationRequested} onChange={(event)=>setDesignOptimizationRequested(event.target.checked)}/><span className="fake-check">✓</span><span><b>{shop.pricing.designOptimizationFee.label}</b><small>{shop.pricing.designOptimizationFee.description}</small></span></label>}{customerAddOns.map((item)=><label key={item.id} className={selectedAddOnIds.includes(item.id)?"service-choice selected":"service-choice"}><input type="checkbox" checked={selectedAddOnIds.includes(item.id)} onChange={(event)=>setSelectedAddOnIds((current)=>event.target.checked?[...new Set([...current,item.id])]:current.filter((id)=>id!==item.id))}/><span className="fake-check">✓</span><span><b>{item.name}</b><small>{item.description}</small></span></label>)}</div></WizardSection>
-          <button className="designer-primary" onClick={()=>{setSide(neededSides[0]);setStep("artwork");}}>Continue to artwork</button>
+          <button className="designer-primary" disabled={!product.configuration.customization.decorationMethods.length} onClick={()=>{setSide(neededSides[0]);setStep("artwork");}}>Continue to artwork</button>
             </div>
           </div>
         </section>
@@ -1027,11 +1035,11 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
               </div>
             </WizardSection>
             <WizardSection number={hasPrintSizeChoice ? "4" : "3"} title="Decoration method">
-              <select className="modern-select" value={decoration} onChange={(event) => setDecoration(event.target.value)}>
+              {product.configuration.customization.decorationMethods.length ? <select className="modern-select" value={decoration} onChange={(event) => setDecoration(event.target.value)}>
                 {product.configuration.customization.decorationMethods.map((item) => (
                   <option key={item}>{item}</option>
                 ))}
-              </select>
+              </select> : <p className="method-explainer">No decoration methods are enabled for this product. Please contact the shop.</p>}
               {decoration.toLowerCase().includes("screen") && (
                 <div className="ink-color-estimator">
                   <div><strong>Estimated ink colors</strong><small>Choose the number of printed colors on each side. The shop confirms the final count during artwork review.</small></div>

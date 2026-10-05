@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
-import { DEFAULT_CONFIGURATION, normalizeConfiguration, slugify } from "@/lib/catalog";
+import { DEFAULT_CONFIGURATION, normalizeConfiguration, normalizeDecorationMethods, slugify } from "@/lib/catalog";
 import { decodeHtmlEntities } from "@/lib/html-entities";
 
 export async function POST(request: Request) {
@@ -10,6 +10,13 @@ export async function POST(request: Request) {
   const body = await request.json();
   const name = decodeHtmlEntities(String(body.name || "").trim());
   if (!name) return NextResponse.json({ error: "Product name is required." }, { status: 400 });
+  const requestedMethods = body.configuration?.customization?.decorationMethods;
+  if (Array.isArray(requestedMethods) && !normalizeDecorationMethods(requestedMethods).length) {
+    return NextResponse.json({ error: "Choose at least one supported decoration method for this product." }, { status: 400 });
+  }
+  if (Array.isArray(requestedMethods)) {
+    body.configuration.customization.decorationMethods = normalizeDecorationMethods(requestedMethods);
+  }
 
   const baseSlug = slugify(String(body.slug || name));
   let slug = baseSlug;

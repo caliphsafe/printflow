@@ -2,8 +2,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { decodeProductNameFields } from "@/lib/html-entities";
+import { AVAILABLE_DECORATION_METHODS, normalizeDecorationMethods } from "@/lib/catalog";
 
-const methods = ["Screen Printing", "DTF", "Embroidery"];
+const methods = [...AVAILABLE_DECORATION_METHODS];
 
 export default function AdvancedAdminProductManager({ product }: { product: any }) {
   product = decodeProductNameFields(product);
@@ -13,7 +14,7 @@ export default function AdvancedAdminProductManager({ product }: { product: any 
   const [colors, setColors] = useState(product.configuration?.colors || []);
   const [defaultColorId, setDefaultColorId] = useState(product.configuration?.defaultColorId || product.configuration?.colors?.[0]?.id || "");
   const [minimumQuantity, setMinimumQuantity] = useState(Number(product.configuration?.customization?.minimumQuantity || 1));
-  const [decorationMethods, setDecorationMethods] = useState<string[]>(product.configuration?.customization?.decorationMethods || []);
+  const [decorationMethods, setDecorationMethods] = useState<string[]>(normalizeDecorationMethods(product.configuration?.customization?.decorationMethods));
   const [busy, setBusy] = useState(false);
   const [imagesBusy, setImagesBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -21,10 +22,15 @@ export default function AdvancedAdminProductManager({ product }: { product: any 
   const supplier = product.configuration?.supplier;
   const activeDefault = colors.find((c:any) => c.id === defaultColorId && c.active !== false) || colors.find((c:any) => c.active !== false) || colors[0];
   const image = activeDefault?.frontImageUrl || product.configuration?.mockupImageUrl;
-  const dirty = name !== product.name || active !== product.active || minimumQuantity !== Number(product.configuration?.customization?.minimumQuantity || 1) || JSON.stringify(decorationMethods) !== JSON.stringify(product.configuration?.customization?.decorationMethods || []) || JSON.stringify(colors) !== JSON.stringify(product.configuration?.colors || []) || defaultColorId !== (product.configuration?.defaultColorId || product.configuration?.colors?.[0]?.id || "");
+  const dirty = name !== product.name || active !== product.active || minimumQuantity !== Number(product.configuration?.customization?.minimumQuantity || 1) || JSON.stringify(decorationMethods) !== JSON.stringify(normalizeDecorationMethods(product.configuration?.customization?.decorationMethods)) || JSON.stringify(colors) !== JSON.stringify(product.configuration?.colors || []) || defaultColorId !== (product.configuration?.defaultColorId || product.configuration?.colors?.[0]?.id || "");
 
   function toggleMethod(method: string) {
-    setDecorationMethods((current) => current.includes(method) ? current.filter((x) => x !== method) : [...current, method]);
+    if (decorationMethods.includes(method) && decorationMethods.length === 1) {
+      setMessage("Keep at least one decoration method enabled for this product.");
+      return;
+    }
+    setDecorationMethods((current) => current.includes(method) ? current.filter((item) => item !== method) : [...current, method]);
+    setMessage("");
   }
 
   async function loadSanMarImages() {
