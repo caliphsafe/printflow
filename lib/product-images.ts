@@ -4,6 +4,10 @@ export type ProductImageChoice = {
   classTypeId?: string;
 };
 
+export type NormalizedProductImageChoice = ProductImageChoice & {
+  label: string;
+};
+
 function imageDescription(choice: ProductImageChoice) {
   return `${choice.label || ""} ${choice.url || ""}`.toLowerCase();
 }
@@ -40,12 +44,12 @@ export function productImageChoiceKey(choice: ProductImageChoice & { colorName?:
   return classTypeId || label.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-export function uniqueProductImageChoices(...groups: Array<ProductImageChoice[] | null | undefined>) {
-  const choices = new Map<string, ProductImageChoice>();
+export function uniqueProductImageChoices(...groups: Array<ProductImageChoice[] | null | undefined>): NormalizedProductImageChoice[] {
+  const choices = new Map<string, NormalizedProductImageChoice>();
   for (const choice of groups.flatMap((group) => group || [])) {
     const url = String(choice.url || "").trim();
     if (!/^https?:\/\//i.test(url)) continue;
-    const next = { ...choice, url, label: String(choice.label || "Product image").trim() || "Product image" };
+    const next: NormalizedProductImageChoice = { ...choice, url, label: String(choice.label || "Product image").trim() || "Product image" };
     const previous = choices.get(url);
     if (!previous || imageLabelScore(next.label) > imageLabelScore(previous.label)) choices.set(url, next);
   }

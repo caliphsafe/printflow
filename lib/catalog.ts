@@ -353,7 +353,10 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
     defaultColor.imageChoices = uniqueProductImageChoices(
       defaultColor.imageChoices || [],
       [{ url: String(raw.mockupImageUrl), label: "Current product image" }]
-    );
+    ).map((choice) => ({
+      ...choice,
+      label: typeof choice.label === "string" && choice.label.trim() ? choice.label : "Product image"
+    }));
   }
 
   const productKindText = `${String(custom.category || "")} ${String(supplierRaw?.brandName || "")} ${String(supplierRaw?.styleName || "")}`.toLowerCase();
