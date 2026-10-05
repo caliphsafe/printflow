@@ -110,6 +110,21 @@ function customerProductName(product: CatalogProduct) {
   return styleId ? `${styleId} | ${title}` : title;
 }
 
+function storefrontCategory(value?: string) {
+  const raw = String(value || "").trim();
+  const normalized = raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (/\b(t shirts?|tee shirts?|tees?)\b/.test(normalized)) return "T-Shirts";
+  if (/\b(hoodies?|sweatshirts?|fleece)\b/.test(normalized)) return "Hoodies";
+  if (/\b(polos?|knits?)\b/.test(normalized)) return "Polos";
+  if (/\b(hats?|headwear|caps?|beanies?|visors?)\b/.test(normalized)) return "Hats";
+  return raw || "Other products";
+}
+
+function storefrontCategoryOrder(category: string) {
+  const priority: Record<string, number> = { "T-Shirts": 0, Hoodies: 1, Polos: 2, Hats: 3 };
+  return priority[category] ?? 4;
+}
+
 function defaultDecorationMethod(product?: CatalogProduct) {
   const methods = product?.configuration.customization.decorationMethods || [];
   const headwear = /hat|headwear|cap|beanie|visor/i.test(`${product?.configuration.customization.category || ""} ${product?.name || ""}`);
@@ -327,14 +342,13 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     "All categories",
     ...Array.from(new Set(
       products
-        .map((item) => String(item.configuration.customization.category || "").trim())
-        .filter(Boolean)
-    )).sort((a, b) => a.localeCompare(b))
+        .map((item) => storefrontCategory(item.configuration.customization.category))
+    )).sort((a, b) => storefrontCategoryOrder(a) - storefrontCategoryOrder(b) || a.localeCompare(b))
   ], [products]);
   const productBrands = useMemo(() => Array.from(new Set(products.map((item) => item.configuration.supplier?.brandName).filter((value): value is string => Boolean(value)))).sort(), [products]);
   const [productBrand, setProductBrand] = useState("All brands");
   const visibleProducts = useMemo(() => products.filter((item) => {
-    const matchesCategory = productCategory === "All categories" || String(item.configuration.customization.category || "").trim() === productCategory;
+    const matchesCategory = productCategory === "All categories" || storefrontCategory(item.configuration.customization.category) === productCategory;
     const matchesBrand = productBrand === "All brands" || item.configuration.supplier?.brandName === productBrand;
     const searchable = `${item.name} ${item.description || ""} ${item.configuration.customization.category} ${item.configuration.supplier?.brandName || ""} ${item.configuration.supplier?.styleId || ""}`.toLowerCase();
     return matchesCategory && matchesBrand && searchable.includes(productQuery.trim().toLowerCase());
@@ -342,13 +356,13 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const visibleProductGroups = useMemo(() => {
     const groups = new Map<string, CatalogProduct[]>();
     for (const item of visibleProducts) {
-      const category = String(item.configuration.customization.category || "Other products").trim() || "Other products";
+      const category = storefrontCategory(item.configuration.customization.category);
       groups.set(category, [...(groups.get(category) || []), item]);
     }
     return Array.from(groups, ([category, items]) => ({
       category,
       items: items.sort((left, right) => customerProductName(left).localeCompare(customerProductName(right)))
-    })).sort((left, right) => left.category.localeCompare(right.category));
+    })).sort((left, right) => storefrontCategoryOrder(left.category) - storefrontCategoryOrder(right.category) || left.category.localeCompare(right.category));
   }, [visibleProducts]);
   const availableModes = useMemo(() => {
     if (!product) return [];
