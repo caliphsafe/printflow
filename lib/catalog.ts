@@ -317,13 +317,16 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
 
   const colors = Array.isArray(raw.colors) && raw.colors.length
     ? raw.colors.map((item, index) => {
-        const imageChoices = uniqueProductImageChoices(Array.isArray(item?.imageChoices)
+        const imageChoices: { url: string; label: string; classTypeId?: string }[] = uniqueProductImageChoices(Array.isArray(item?.imageChoices)
           ? item.imageChoices.map((choice: any) => ({
               url: String(choice?.url || "").trim(),
               label: String(choice?.label || "Product image"),
               ...(choice?.classTypeId ? { classTypeId: String(choice.classTypeId) } : {})
             }))
-          : []);
+          : []).map((choice) => ({
+            ...choice,
+            label: typeof choice.label === "string" && choice.label.trim() ? choice.label : "Product image"
+          }));
         const existingFront = item?.frontImageUrl ? String(item.frontImageUrl) : "";
         const existingBack = item?.backImageUrl ? String(item.backImageUrl) : "";
         return {
