@@ -8,11 +8,17 @@ export default async function SupplierCatalogPage() {
 
   if (!shop) return <p>No shop configured.</p>;
 
-  const { data: connections } = await supabase
-    .from("supplier_connections")
-    .select("provider,status,account_hint,last_tested_at")
-    .eq("shop_id", shop.id)
-    .in("provider", ["ss-activewear", "sanmar"]);
+  const [{ data: connections }, { data: products }] = await Promise.all([
+    supabase
+      .from("supplier_connections")
+      .select("provider,status,account_hint,last_tested_at")
+      .eq("shop_id", shop.id)
+      .in("provider", ["ss-activewear", "sanmar"]),
+    supabase
+      .from("catalog_products")
+      .select("configuration")
+      .eq("shop_id", shop.id)
+  ]);
 
   const byProvider = new Map<string, any>(
     (connections || []).map((connection) => [connection.provider, connection])
@@ -30,6 +36,17 @@ export default async function SupplierCatalogPage() {
       lastTestedAt: byProvider.get("sanmar")?.last_tested_at || null
     }
   };
+  const importedSanMarStyleIds = Array.from(
+    new Set(
+      (products || [])
+        .map((row: any) =>
+          row?.configuration?.supplier?.provider === "sanmar"
+            ? String(row.configuration.supplier.styleId || "")
+            : ""
+        )
+        .filter(Boolean)
+    )
+  );
 
   return (
     <>
@@ -45,7 +62,10 @@ export default async function SupplierCatalogPage() {
         </div>
       </header>
 
-      <SupplierCatalogBrowser suppliers={suppliers} />
+      <SupplierCatalogBrowser
+        suppliers={suppliers}
+        importedSanMarStyleIds={importedSanMarStyleIds}
+      />
     </>
   );
 }

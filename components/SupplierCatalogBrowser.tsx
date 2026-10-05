@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { readApiResponse } from "@/lib/client-api-response";
+import SanMarCatalogImporter from "@/components/SanMarCatalogImporter";
 
 type SupplierKey = "ss" | "sanmar";
 
@@ -15,6 +16,7 @@ type SupplierState = {
 type Props = {
   suppliers: Record<SupplierKey, SupplierState>;
   targetBusiness?: "print" | "brand";
+  importedSanMarStyleIds?: string[];
 };
 
 type Style = {
@@ -85,7 +87,8 @@ const supplierLabel = (supplier: SupplierKey) =>
 
 export default function SupplierCatalogBrowser({
   suppliers,
-  targetBusiness = "print"
+  targetBusiness = "print",
+  importedSanMarStyleIds = []
 }: Props) {
   const [supplier, setSupplier] = useState<SupplierKey>(
     suppliers.sanmar.connected ? "sanmar" : "ss"
@@ -206,8 +209,12 @@ export default function SupplierCatalogBrowser({
   }
 
   useEffect(() => {
-    if (connected) void load({ search: "" });
-  }, [supplier, connected]);
+    // Print-product imports from SanMar use the multi-step wizard below.
+    // Keep this shared browser's legacy detail/import flow for S&S and Brand sourcing.
+    if (connected && (supplier === "ss" || targetBusiness === "brand")) {
+      void load({ search: "" });
+    }
+  }, [supplier, connected, targetBusiness]);
 
   async function choose(style: Style) {
     setSelected(style);
@@ -353,6 +360,24 @@ export default function SupplierCatalogBrowser({
     } finally {
       setImportBusy(false);
     }
+  }
+
+  if (supplier === "sanmar" && connected && targetBusiness === "print") {
+    return (
+      <div className="supplier-dual-workspace supplier-catalog-layout sanmar-supplier-wizard-route">
+        <SupplierPicker
+          supplier={supplier}
+          setSupplier={switchSupplier}
+          suppliers={suppliers}
+        />
+        <SanMarCatalogImporter
+          connected={connected}
+          accountHint={suppliers.sanmar.accountHint || undefined}
+          importedStyleIds={importedSanMarStyleIds}
+        />
+        <CatalogLayoutStyles />
+      </div>
+    );
   }
 
   if (!connectedSuppliers.length) {
@@ -896,6 +921,10 @@ function CatalogLayoutStyles() {
           minmax(360px, 420px) !important;
         gap: 20px !important;
         align-items: start;
+      }
+
+      .sanmar-supplier-wizard-route {
+        grid-template-columns: minmax(0, 1fr) !important;
       }
 
       .supplier-catalog-layout > .supplier-picker-tabs {
