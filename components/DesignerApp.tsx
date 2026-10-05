@@ -60,6 +60,22 @@ function assetUrl(url?: string) {
   }
 }
 
+function contrastTextColor(background: string | undefined, fallback: string) {
+  if (!background) return fallback;
+  const value = background.trim();
+  const match = value.match(/^#([\da-f]{3}|[\da-f]{6})$/i);
+  if (!match) return fallback;
+  const hex = match[1].length === 3
+    ? match[1].split("").map((digit) => `${digit}${digit}`).join("")
+    : match[1];
+  const channels = [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const linear = channels.map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  const darkContrast = (luminance + 0.05) / 0.05;
+  return whiteContrast >= darkContrast ? "#ffffff" : "#111827";
+}
+
 function activeColors(product?: CatalogProduct) {
   if (!product) return [];
   return product.configuration.colors.filter((item) => item.active !== false);
@@ -318,11 +334,22 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const productBrands = useMemo(() => Array.from(new Set(products.map((item) => item.configuration.supplier?.brandName).filter((value): value is string => Boolean(value)))).sort(), [products]);
   const [productBrand, setProductBrand] = useState("All brands");
   const visibleProducts = useMemo(() => products.filter((item) => {
-    const matchesCategory = productCategory === "All categories" || item.configuration.customization.category === productCategory;
+    const matchesCategory = productCategory === "All categories" || String(item.configuration.customization.category || "").trim() === productCategory;
     const matchesBrand = productBrand === "All brands" || item.configuration.supplier?.brandName === productBrand;
     const searchable = `${item.name} ${item.description || ""} ${item.configuration.customization.category} ${item.configuration.supplier?.brandName || ""} ${item.configuration.supplier?.styleId || ""}`.toLowerCase();
     return matchesCategory && matchesBrand && searchable.includes(productQuery.trim().toLowerCase());
   }), [products, productCategory, productBrand, productQuery]);
+  const visibleProductGroups = useMemo(() => {
+    const groups = new Map<string, CatalogProduct[]>();
+    for (const item of visibleProducts) {
+      const category = String(item.configuration.customization.category || "Other products").trim() || "Other products";
+      groups.set(category, [...(groups.get(category) || []), item]);
+    }
+    return Array.from(groups, ([category, items]) => ({
+      category,
+      items: items.sort((left, right) => customerProductName(left).localeCompare(customerProductName(right)))
+    })).sort((left, right) => left.category.localeCompare(right.category));
+  }, [visibleProducts]);
   const availableModes = useMemo(() => {
     if (!product) return [];
     return product.configuration.customization.designModes.filter((value) => {
@@ -730,7 +757,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     <main
       className="designer-shell modern-customer-shell"
       data-flow-step={step}
-      style={{ "--brand": shop.settings.brand.primaryColor, "--brand-text": shop.settings.brand.textColor, "--brand-accent": shop.settings.brand.accentColor || "#d8ff5f", "--brand-surface": shop.settings.brand.surfaceColor || "#f4f4ef" } as React.CSSProperties}
+      style={{ "--brand": shop.settings.brand.primaryColor, "--brand-text": contrastTextColor(shop.settings.brand.primaryColor, shop.settings.brand.textColor || "#ffffff"), "--sf-ink": contrastTextColor(shop.settings.brand.surfaceColor || "#f4f4ef", "#151515"), "--brand-accent": shop.settings.brand.accentColor || "#d8ff5f", "--brand-surface": shop.settings.brand.surfaceColor || "#f4f4ef" } as React.CSSProperties}
     >
       {previewMode && <div className="storefront-preview-banner"><div><strong>Storefront preview</strong><span>This is visible only to your shop account. Checkout is disabled until you open the live storefront.</span></div><a href="/dashboard/settings">Back to Shop setup</a></div>}
       {!embedMode && <header className="customer-header modern">
@@ -777,41 +804,37 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             <p>{shop.settings.customerExperience?.introduction || "Browse the catalog and choose a product to begin a custom order."}</p>
             <div className="customer-trust-row">{(shop.settings.customerExperience?.trustMessage || "Secure checkout · Artwork review · Order confirmation").split("·").map((item)=><span key={item}>✓ {item.trim()}</span>)}</div>
           </div>
-          <div className="customer-product-grid modern" style={{ gridTemplateColumns: "repeat(4,minmax(0,1fr))" }}>
-            {visibleProducts.map((item) => {
-              const firstColor = defaultColorFor(item);
-              const brand = item.configuration.supplier?.brandName;
-              return (
-                <button className="customer-product-card modern" key={item.id} onClick={() => chooseProduct(item)}>
-                  <div className="customer-product-image">
-                    {firstColor?.frontImageUrl ? (
-                      <img src={assetUrl(firstColor.frontImageUrl)} alt={`${item.name} — ${firstColor.name}`} />
-                    ) : (
-                      <div className="product-placeholder">T</div>
-                    )}
-                    <span className="product-card-arrow">→</span>
-                  </div>
-                  <div>
-                    <span>{item.configuration.customization.category}</span>
-                    <h2>{customerProductName(item)}</h2>
-                    {brand && <small className="product-brand-name">{brand}</small>}
-                    <p>{item.description}</p>
-                    <div className="product-card-meta">
-                      <small>{item.configuration.colors.filter((candidate) => candidate.active !== false && (!item.configuration.supplier || Boolean(candidate.frontImageUrl))).length} colors</small>
-                      <small>{item.configuration.sizes.length} sizes</small>
+          <nav className="customer-category-tabs catalog-category-nav" aria-label="Browse product categories">
+            {productCategories.map((category) => <button type="button" key={category} className={productCategory === category ? "active" : ""} onClick={() => setProductCategory(category)}>{category === "All categories" ? "All products" : category}</button>)}
+          </nav>
+          <div className="customer-product-groups">
+            {visibleProductGroups.map(({ category, items }) => <section className="catalog-category-section" key={category}>
+              <header className="catalog-category-heading"><h2>{category}</h2><span>{items.length} {items.length === 1 ? "style" : "styles"}</span></header>
+              <div className="customer-product-grid modern" style={{ gridTemplateColumns: "repeat(4,minmax(0,1fr))" }}>
+                {items.map((item) => {
+                  const firstColor = defaultColorFor(item);
+                  const brand = item.configuration.supplier?.brandName;
+                  return <button type="button" className="customer-product-card modern" key={item.id} onClick={() => chooseProduct(item)} aria-label={`Choose ${customerProductName(item)}`}>
+                    <div className="customer-product-image">{firstColor?.frontImageUrl ? <img src={assetUrl(firstColor.frontImageUrl)} alt={`${customerProductName(item)} in ${firstColor.name}`} /> : <div className="product-placeholder">T</div>}</div>
+                    <div className="product-card-info">
+                      <span className="product-card-category">{category}</span>
+                      <h2>{customerProductName(item)}</h2>
+                      {brand && <small className="product-brand-name">{brand}</small>}
+                      {item.description && <p>{item.description}</p>}
+                      <div className="product-card-meta"><small>{item.configuration.colors.filter((candidate) => candidate.active !== false && (!item.configuration.supplier || Boolean(candidate.frontImageUrl))).length} colors</small><small>{item.configuration.sizes.length} sizes</small></div>
+                      <span className="product-card-cta">View details</span>
                     </div>
-                    <span className="product-card-cta">View product <b>→</b></span>
-                  </div>
-                </button>
-              );
-            })}
+                  </button>;
+                })}
+              </div>
+            </section>)}
             {!visibleProducts.length && <div className="catalog-empty-state"><h2>No matching products</h2><p>Try a different search or category.</p></div>}
           </div>
         </section>
       ) : step === "color" ? (
         <section className="flow-step customer-guided-step">
           <div className="customer-guided-layout">
-            <aside className="guided-product-preview"><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div><p className="eyebrow">{product.configuration.customization.category}</p><h1>{customerProductName(product)}</h1><p className="product-brand-name">{product.configuration.supplier?.brandName}</p><p>{product.description}</p><div className="guided-product-meta"><span>{color.name}</span><span>{product.configuration.sizes.length} sizes</span></div></aside>
+            <aside className="guided-product-preview" aria-label={`${customerProductName(product)} product preview`}><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div></aside>
             <div className="guided-options-scroll"><button className="flow-back-link" onClick={() => setStep("products")}>← Back to products</button><h1>Color & quantity</h1><p className="flow-lede">Choose a garment color and enter quantities for each size.</p>
               <h2>Color</h2><label className="guided-field"><span>Garment color</span><select value={color.id} onChange={(event)=>{const nextColor=activeColors(product).find((item)=>item.id===event.target.value);if(!nextColor)return;setColor(nextColor);if((mode==="back"||mode==="front-back")&&!nextColor.backImageUrl){setMode("front");setSide("front");}}}>{activeColors(product).filter((item)=>!product.configuration.supplier||Boolean(item.frontImageUrl)).map((item)=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
               <h2 className="flow-subheading">Quantity by size <small>Minimum {minimum} pieces</small></h2><div className="modern-size-grid">{sizes.map((item)=><label key={item.size}><span>{item.size}</span><div><button aria-label={`Decrease ${item.size}`} onClick={()=>updateSize(item.size,item.quantity-1)}>−</button><input type="number" min="0" inputMode="numeric" value={item.quantity||""} onChange={(event)=>updateSize(item.size,Number(event.target.value))}/><button aria-label={`Increase ${item.size}`} onClick={()=>updateSize(item.size,item.quantity+1)}>+</button></div></label>)}</div><div className={totalAssigned>=minimum?"modern-quantity-status good":"modern-quantity-status"}><span>Total quantity</span><b>{totalAssigned}</b><small>{totalAssigned>=minimum?"Minimum reached":`${minimum-totalAssigned} more needed`}</small></div><button className="designer-primary" disabled={totalAssigned<minimum} onClick={()=>{setError("");setStep("decoration");}}>{totalAssigned<minimum?`Add ${minimum-totalAssigned} more items`:"Continue to decoration"}</button>
@@ -821,7 +844,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       ) : step === "decoration" ? (
         <section className="flow-step customer-guided-step">
           <div className="customer-guided-layout">
-            <aside className="guided-product-preview"><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div><p className="eyebrow">{product.configuration.customization.category}</p><h1>{customerProductName(product)}</h1><p className="product-brand-name">{product.configuration.supplier?.brandName}</p><div className="guided-product-meta"><span>{color.name}</span><span>{totalAssigned} pieces</span></div><p>{sizes.filter((item)=>item.quantity>0).map((item)=>`${item.size} × ${item.quantity}`).join(" · ")}</p></aside>
+            <aside className="guided-product-preview" aria-label={`${customerProductName(product)} product preview`}><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div></aside>
             <div className="guided-options-scroll"><button className="flow-back-link" onClick={()=>setStep("color")}>← Color & quantity</button><h1>Decoration</h1><p className="flow-lede">Choose where and how your product will be customized.</p>
           <WizardSection number="1" title="Print location">{availableModes.length ? <div className="radio-card-grid">{availableModes.map((value)=><label key={value} className={mode===value?"radio-card selected":"radio-card"}><input type="radio" name="mode" checked={mode===value} onChange={()=>chooseMode(value)}/><span><b>{modeLabel(value)}</b><small>{value==="front-back"?"Add a design to both sides.":`Design the ${value} only.`}</small></span><i/></label>)}</div> : <p>This product has no configured decoration locations. Contact the shop for help.</p>}</WizardSection>
           {hasPrintSizeChoice && <WizardSection number="2" title="Decoration size"><div className="side-print-size-stack">{neededSides.map((target)=><div className="side-print-size-group" key={target}><span>{target==="front"?"Front":"Back"}</span><div className="print-size-choice-grid">{printSizeOptions.map((value)=>{const area=printAreaFor(product.configuration,target,value);return <label key={value} className={printSizes[target]===value?"print-size-choice selected":"print-size-choice"}><input type="radio" name={`${target}-print-size`} checked={printSizes[target]===value} onChange={()=>choosePrintSize(target,value)}/><span><b>{printSizeLabel(value)}</b><small>{area.widthInches}″ × {area.heightInches}″ max</small></span></label>;})}</div></div>)}</div></WizardSection>}
@@ -1065,7 +1088,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
         </section>
       ) : (
         <section className="flow-step quote-review-step">
-          <div className="customer-guided-layout quote-guided-layout"><aside className="guided-product-preview"><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div><p className="eyebrow">{product.configuration.customization.category}</p><h1>{customerProductName(product)}</h1><p className="product-brand-name">{product.configuration.supplier?.brandName}</p><div className="guided-product-meta"><span>{color.name}</span><span>{totalAssigned} pieces</span></div></aside>
+          <div className="customer-guided-layout quote-guided-layout"><aside className="guided-product-preview" aria-label={`${customerProductName(product)} product preview`}><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div></aside>
           <div className="guided-options-scroll quote-options-scroll"><button className="flow-back-link" onClick={()=>setStep("artwork")}>← Artwork</button><h1>Quote & order</h1><p className="flow-lede">Check your order details and contact information before continuing to secure payment.</p>
           <div className="quote-review-grid"><div className="quote-summary-card"><h2>Order summary</h2><dl><div><dt>Product</dt><dd>{customerProductName(product)}</dd></div><div><dt>Brand</dt><dd>{product.configuration.supplier?.brandName || "—"}</dd></div><div><dt>Color</dt><dd>{color.name}</dd></div><div><dt>Quantity</dt><dd>{totalAssigned} pieces · {sizes.filter((item)=>item.quantity>0).map((item)=>`${item.size} × ${item.quantity}`).join(", ")}</dd></div><div><dt>Decoration</dt><dd>{decoration}</dd></div><div><dt>Location</dt><dd>{modeLabel(mode)}{neededSides.map((target)=>` · ${target}: ${printSizeLabel(printSizes[target])}`).join("")}</dd></div><div><dt>Artwork</dt><dd>{neededSides.map((target)=>`${target}: ${(target==="front"?front:back).file ? "Uploaded ✓" : "Missing"}`).join(" · ")}</dd></div></dl>
             <div className="quote-lines"><div><span>Garments</span><b>${pricing.garmentSubtotal.toFixed(2)}</b></div><div><span>Decoration</span><b>${pricing.printSubtotal.toFixed(2)}</b></div>{pricing.setupFee>0&&<div><span>Setup</span><b>${pricing.setupFee.toFixed(2)}</b></div>}{pricing.designOptimizationFee>0&&<div><span>Design service</span><b>${pricing.designOptimizationFee.toFixed(2)}</b></div>}{pricing.addOnTotal>0&&<div><span>Optional services</span><b>${pricing.addOnTotal.toFixed(2)}</b></div>}<div className="quote-total"><span>Order total</span><b>${totalPrice.toFixed(2)}</b></div><small>Calculated using this shop’s current pricing rules. Final production details are subject to shop review.</small></div>
