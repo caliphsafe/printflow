@@ -419,7 +419,6 @@ export default function SanMarCatalogImporter({
                 <SanMarPrintZoneEditor
                   area={activeZone}
                   imageUrl={zoneImage}
-                  fallbackColor={representative?.colorHex}
                   onChange={(area) => updateSetupItem(item.style.styleId, (current) => ({ ...current, printAreas: { ...current.printAreas, [activeZoneKey]: area } }))}
                 />
               </section>}
