@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { printAreaFor } from "@/lib/catalog";
 import { availableAddOns, calculateResolvedOrderPricing, resolveDesignOptimizationFee } from "@/lib/pricing-settings";
 import type {
@@ -247,10 +247,11 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       : true
   ));
   const firstProduct = products[0];
-  const [step, setStep] = useState<"products" | "product" | "color" | "decoration" | "artwork" | "review">("products");
+  const [step, setStep] = useState<"products" | "color" | "decoration" | "artwork" | "review">("products");
   const [productQuery, setProductQuery] = useState("");
   const [productCategory, setProductCategory] = useState("All categories");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [hasSelectedProduct, setHasSelectedProduct] = useState(false);
   const [product, setProduct] = useState<CatalogProduct>(firstProduct);
   const [color, setColor] = useState<ShirtColor>(defaultColorFor(firstProduct) as ShirtColor);
   const [mode, setMode] = useState<DesignMode>(firstProduct?.configuration.customization.designModes[0] || "front");
@@ -382,6 +383,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     releaseSide(front);
     releaseSide(back);
     setProduct(next);
+    setHasSelectedProduct(true);
     setColor(defaultColorFor(next) as ShirtColor);
     const nextMode = next.configuration.customization.designModes.includes("front") ? "front" : (next.configuration.customization.designModes[0] || "front");
     setMode(nextMode);
@@ -397,7 +399,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     setBack(freshSide());
     setError("");
     setCompleted(null);
-    setStep("product");
+    setStep("color");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -751,15 +753,16 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
           <small>Custom order studio</small>
           <b>{step === "products" ? "Browse catalog" : product.name}</b>
         </div>
-        {step !== "products" && <button onClick={() => setStep("products")}>← Catalog</button>}
+        {step !== "products" && <button onClick={() => setStep(step === "review" ? "artwork" : step === "artwork" ? "decoration" : step === "decoration" ? "color" : "products")}>← {step === "color" ? "Catalog" : step === "decoration" ? "Color & quantity" : step === "artwork" ? "Decoration" : "Artwork"}</button>}
       </header>}
-      {step !== "products" && <div className="customer-progress-strip" aria-label="Order progress">
+      <nav className="customer-progress-strip" aria-label="Order progress">
         {["Product", "Color & quantity", "Decoration", "Artwork", "Quote & order"].map((label, index) => {
-          const order = ["product", "color", "decoration", "artwork", "review"] as const;
-          const current = order.indexOf(step as typeof order[number]);
-          return <span key={label} className={index === current ? "active" : index < current ? "complete" : ""} onClick={() => index < current && setStep(order[index])}>{index > 0 && <i/>}{index + 1} · {label}</span>;
+          const order = ["products", "color", "decoration", "artwork", "review"] as const;
+          const current = order.indexOf(step);
+          const enabled = index === 0 || hasSelectedProduct;
+          return <Fragment key={label}>{index > 0 && <i aria-hidden="true"/>}<button type="button" className={index === current ? "active" : index < current ? "complete" : ""} aria-current={index === current ? "step" : undefined} disabled={!enabled} onClick={() => enabled && setStep(order[index] || "products")}><b>{index + 1}</b><span>{label}</span></button></Fragment>;
         })}
-      </div>}
+      </nav>
 
       {step === "products" ? (
         <section className="product-first-flow modern">
@@ -779,7 +782,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
               const firstColor = defaultColorFor(item);
               const brand = item.configuration.supplier?.brandName;
               return (
-                <button className="customer-product-card modern" key={item.id} onClick={() => { chooseProduct(item); setStep("product"); }}>
+                <button className="customer-product-card modern" key={item.id} onClick={() => chooseProduct(item)}>
                   <div className="customer-product-image">
                     {firstColor?.frontImageUrl ? (
                       <img src={assetUrl(firstColor.frontImageUrl)} alt={`${item.name} — ${firstColor.name}`} />
@@ -805,51 +808,36 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             {!visibleProducts.length && <div className="catalog-empty-state"><h2>No matching products</h2><p>Try a different search or category.</p></div>}
           </div>
         </section>
-      ) : step === "product" ? (
-        <section className="flow-step product-detail-step">
-          <button className="flow-back-link" onClick={() => setStep("products")}>← Back to catalog</button>
-          <div className="product-detail-grid">
-            <div className="product-detail-image">{defaultColorFor(product)?.frontImageUrl && <img src={assetUrl(defaultColorFor(product)?.frontImageUrl)} alt={product.name}/>}</div>
-            <div className="product-detail-copy"><p className="eyebrow">{product.configuration.customization.category}</p><h1>{customerProductName(product)}</h1><p className="product-brand-name">{product.configuration.supplier?.brandName}</p><p>{product.description}</p><p className="product-detail-facts">{activeColors(product).filter((item) => !product.configuration.supplier || Boolean(item.frontImageUrl)).length} colors · {product.configuration.sizes.length} sizes</p><button className="designer-primary" onClick={() => setStep("color")}>Customize this product</button></div>
+      ) : step === "color" ? (
+        <section className="flow-step customer-guided-step">
+          <div className="customer-guided-layout">
+            <aside className="guided-product-preview"><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div><p className="eyebrow">{product.configuration.customization.category}</p><h1>{customerProductName(product)}</h1><p className="product-brand-name">{product.configuration.supplier?.brandName}</p><p>{product.description}</p><div className="guided-product-meta"><span>{color.name}</span><span>{product.configuration.sizes.length} sizes</span></div></aside>
+            <div className="guided-options-scroll"><button className="flow-back-link" onClick={() => setStep("products")}>← Back to products</button><h1>Color & quantity</h1><p className="flow-lede">Choose a garment color and enter quantities for each size.</p>
+              <h2>Color</h2><label className="guided-field"><span>Garment color</span><select value={color.id} onChange={(event)=>{const nextColor=activeColors(product).find((item)=>item.id===event.target.value);if(!nextColor)return;setColor(nextColor);if((mode==="back"||mode==="front-back")&&!nextColor.backImageUrl){setMode("front");setSide("front");}}}>{activeColors(product).filter((item)=>!product.configuration.supplier||Boolean(item.frontImageUrl)).map((item)=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+              <h2 className="flow-subheading">Quantity by size <small>Minimum {minimum} pieces</small></h2><div className="modern-size-grid">{sizes.map((item)=><label key={item.size}><span>{item.size}</span><div><button aria-label={`Decrease ${item.size}`} onClick={()=>updateSize(item.size,item.quantity-1)}>−</button><input type="number" min="0" inputMode="numeric" value={item.quantity||""} onChange={(event)=>updateSize(item.size,Number(event.target.value))}/><button aria-label={`Increase ${item.size}`} onClick={()=>updateSize(item.size,item.quantity+1)}>+</button></div></label>)}</div><div className={totalAssigned>=minimum?"modern-quantity-status good":"modern-quantity-status"}><span>Total quantity</span><b>{totalAssigned}</b><small>{totalAssigned>=minimum?"Minimum reached":`${minimum-totalAssigned} more needed`}</small></div><button className="designer-primary" disabled={totalAssigned<minimum} onClick={()=>{setError("");setStep("decoration");}}>{totalAssigned<minimum?`Add ${minimum-totalAssigned} more items`:"Continue to decoration"}</button>
+            </div>
           </div>
         </section>
-      ) : step === "color" ? (
-        <section className="flow-step">
-          <button className="flow-back-link" onClick={() => setStep("product")}>← Product</button><h1>Choose color and quantities</h1><p className="flow-lede">Select the garment color, then enter how many you need in each size.</p>
-          <div className="color-quantity-layout"><div className="color-step-preview">{garmentUrl ? <img src={garmentUrl} alt={`${product.name}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div><div><h2>Color</h2><div className="modern-color-picker">{activeColors(product).filter((item) => !product.configuration.supplier || Boolean(item.frontImageUrl)).map((item) => { const swatchUrl = assetUrl(item.swatchImageUrl || item.frontImageUrl); return <button key={item.id} className={color.id === item.id ? "selected" : ""} onClick={() => { setColor(item); if ((mode === "back" || mode === "front-back") && !item.backImageUrl) { setMode("front"); setSide("front"); } }} title={item.name}><i className="garment-color-swatch" style={swatchUrl ? undefined : {background: garmentColorFallback(item)}}>{swatchUrl && <img src={swatchUrl} alt="" aria-hidden="true"/>}</i><span>{item.name}</span></button>; })}</div><h2 className="flow-subheading">Quantity by size <small>Minimum {minimum} pieces</small></h2><div className="modern-size-grid">{sizes.map((item) => <label key={item.size}><span>{item.size}</span><div><button aria-label={`Decrease ${item.size}`} onClick={() => updateSize(item.size,item.quantity-1)}>−</button><input type="number" min="0" inputMode="numeric" value={item.quantity || ""} onChange={(event)=>updateSize(item.size,Number(event.target.value))}/><button aria-label={`Increase ${item.size}`} onClick={()=>updateSize(item.size,item.quantity+1)}>+</button></div></label>)}</div><div className={totalAssigned >= minimum ? "modern-quantity-status good" : "modern-quantity-status"}><span>Total quantity</span><b>{totalAssigned}</b><small>{totalAssigned >= minimum ? "Minimum reached" : `${minimum-totalAssigned} more needed`}</small></div><button className="designer-primary" disabled={totalAssigned < minimum} onClick={()=>{setError(""); setStep("decoration");}}>{totalAssigned < minimum ? `Add ${minimum-totalAssigned} more items` : "Continue to decoration"}</button></div></div>
-        </section>
       ) : step === "decoration" ? (
-        <section className="flow-step"><button className="flow-back-link" onClick={()=>setStep("color")}>← Color & quantity</button><h1>Choose your decoration</h1><p className="flow-lede">Choose where and how your product will be customized.</p>
+        <section className="flow-step customer-guided-step">
+          <div className="customer-guided-layout">
+            <aside className="guided-product-preview"><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div><p className="eyebrow">{product.configuration.customization.category}</p><h1>{customerProductName(product)}</h1><p className="product-brand-name">{product.configuration.supplier?.brandName}</p><div className="guided-product-meta"><span>{color.name}</span><span>{totalAssigned} pieces</span></div><p>{sizes.filter((item)=>item.quantity>0).map((item)=>`${item.size} × ${item.quantity}`).join(" · ")}</p></aside>
+            <div className="guided-options-scroll"><button className="flow-back-link" onClick={()=>setStep("color")}>← Color & quantity</button><h1>Decoration</h1><p className="flow-lede">Choose where and how your product will be customized.</p>
           <WizardSection number="1" title="Print location">{availableModes.length ? <div className="radio-card-grid">{availableModes.map((value)=><label key={value} className={mode===value?"radio-card selected":"radio-card"}><input type="radio" name="mode" checked={mode===value} onChange={()=>chooseMode(value)}/><span><b>{modeLabel(value)}</b><small>{value==="front-back"?"Add a design to both sides.":`Design the ${value} only.`}</small></span><i/></label>)}</div> : <p>This product has no configured decoration locations. Contact the shop for help.</p>}</WizardSection>
           {hasPrintSizeChoice && <WizardSection number="2" title="Decoration size"><div className="side-print-size-stack">{neededSides.map((target)=><div className="side-print-size-group" key={target}><span>{target==="front"?"Front":"Back"}</span><div className="print-size-choice-grid">{printSizeOptions.map((value)=>{const area=printAreaFor(product.configuration,target,value);return <label key={value} className={printSizes[target]===value?"print-size-choice selected":"print-size-choice"}><input type="radio" name={`${target}-print-size`} checked={printSizes[target]===value} onChange={()=>choosePrintSize(target,value)}/><span><b>{printSizeLabel(value)}</b><small>{area.widthInches}″ × {area.heightInches}″ max</small></span></label>;})}</div></div>)}</div></WizardSection>}
-          <WizardSection number={hasPrintSizeChoice?"3":"2"} title="Decoration method"><div className="decoration-method-grid">{product.configuration.customization.decorationMethods.map((item)=><button type="button" className={decoration===item?"decoration-method-card selected":"decoration-method-card"} key={item} onClick={()=>setDecoration(item)}><b>{item.toUpperCase()}</b><span>{item.toLowerCase().includes("screen")?"A great choice for larger runs and designs with a few colors.":item.toLowerCase().includes("dtf")?"Detailed, full-color designs with flexible order sizes.":item.toLowerCase().includes("embroider")?"A durable stitched finish for polos, hats, jackets, and logos.":"Select this decoration method."}</span></button>)}</div>
+          <WizardSection number={hasPrintSizeChoice?"3":"2"} title="Decoration method"><label className="guided-field"><span>How should we decorate it?</span><select value={decoration} onChange={(event)=>setDecoration(event.target.value)}>{product.configuration.customization.decorationMethods.map((item)=><option key={item}>{item}</option>)}</select></label>
             {decoration.toLowerCase().includes("screen")&&<div className="ink-color-estimator"><div><strong>Ink colors</strong><small>More colors and locations can affect the quote.</small></div>{neededSides.map((target)=><label key={target}><span>{target==="front"?"Front":"Back"}</span><select value={inkColors[target]} onChange={(event)=>setInkColors((current)=>({...current,[target]:Number(event.target.value)}))}>{Array.from({length:shop.pricing.screenPrinting.maximumColors},(_,index)=>index+1).map((count)=><option key={count} value={count}>{count} color{count===1?"":"s"}</option>)}</select></label>)}</div>}
             {decoration.toLowerCase().includes("dtf")&&<p className="method-explainer">DTF pricing uses the artwork dimensions you set in the next step.</p>}{decoration.toLowerCase().includes("embroider")&&<p className="method-explainer">Embroidery pricing uses an estimated stitch tier. The shop will confirm production details.</p>}
           </WizardSection>
           <WizardSection number={hasPrintSizeChoice?"4":"3"} title="Optional services"><div className="customer-service-stack">{designOptimizationAmount>0&&<label className={designOptimizationRequested?"service-choice selected":"service-choice"}><input type="checkbox" checked={designOptimizationRequested} onChange={(event)=>setDesignOptimizationRequested(event.target.checked)}/><span className="fake-check">✓</span><span><b>{shop.pricing.designOptimizationFee.label}</b><small>{shop.pricing.designOptimizationFee.description}</small></span></label>}{customerAddOns.map((item)=><label key={item.id} className={selectedAddOnIds.includes(item.id)?"service-choice selected":"service-choice"}><input type="checkbox" checked={selectedAddOnIds.includes(item.id)} onChange={(event)=>setSelectedAddOnIds((current)=>event.target.checked?[...new Set([...current,item.id])]:current.filter((id)=>id!==item.id))}/><span className="fake-check">✓</span><span><b>{item.name}</b><small>{item.description}</small></span></label>)}</div></WizardSection>
           <button className="designer-primary" onClick={()=>{setSide(neededSides[0]);setStep("artwork");}}>Continue to artwork</button>
+            </div>
+          </div>
         </section>
       ) : step === "artwork" ? (
-        <section className="modern-designer-layout artwork-flow-step">
+        <section className="modern-designer-layout artwork-flow-step customer-guided-step">
+          <div className="customer-guided-layout artwork-guided-layout">
           <div className="modern-stage-column">
-            <div className="stage-topbar">
-              <div className="side-tabs modern">
-                {neededSides.map((target) => (
-                  <button key={target} className={side === target ? "selected" : ""} onClick={() => setSide(target)}>
-                    {target === "front" ? "Front" : "Back"}
-                    {(target === "front" ? front.file : back.file) ? <i>✓</i> : null}
-                  </button>
-                ))}
-              </div>
-              <div className="stage-topbar-actions">
-                <span>
-                  {hasPrintSizeChoice ? `${printSizeLabel(currentPrintSize)} · ` : "Print area · "}{printArea.widthInches?.toFixed(1)}″ × {printArea.heightInches?.toFixed(1)}″ max
-                </span>
-                <button className="save-mockup-button" disabled={!sideState.file || mockupBusy !== null} onClick={() => downloadMockup(side)}>
-                  {mockupBusy === side ? "Saving…" : "Save mockup"}
-                </button>
-              </div>
-            </div>
             <div className="design-stage modern">
               <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
                 <rect width={W} height={H} fill="#f6f6f3" />
@@ -918,29 +906,16 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                   </g>
                 )}
               </svg>
-              <div className="stage-upload modern">
-                <label>
-                  <input
-                    type="file"
-                    accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
-                    onChange={(event) => {
-                      const input = event.currentTarget;
-                      void handleArtwork(side, input.files?.[0]).finally(() => {
-                        input.value = "";
-                      });
-                    }}
-                  />
-                  {sideState.file ? `Replace ${side} artwork` : `Upload ${side} artwork`}
-                </label>
-                {sideState.file && <button onClick={() => clearSide(side)}>Remove</button>}
-              </div>
             </div>
-            <div className="stage-guidance">
-              <p>{product.configuration.customization.customerInstructions}</p>
-              <small>
-                {hasPrintSizeChoice ? `${printSizeLabel(currentPrintSize)} is` : "This print area is"} limited to {printArea.widthInches}″ × {printArea.heightInches}″. The green box is the print itself: drag the artwork to place it and use the green handle to resize it up to the configured maximum. PNG, JPG, WEBP, or SVG · up to {uploadLimitMb} MB.
-              </small>
-            </div>
+          </div>
+
+          <aside className="artwork-options-scroll">
+            <button className="flow-back-link" onClick={()=>setStep("decoration")}>← Decoration</button><h1>Add your artwork</h1><p className="flow-lede">Choose each print side, upload a design, and adjust it on the garment.</p>
+            <div className="stage-topbar"><div className="side-tabs modern">{neededSides.map((target)=><button type="button" key={target} className={side===target?"selected":""} onClick={()=>setSide(target)}>{target==="front"?"Front":"Back"}{(target==="front"?front.file:back.file)?<i>✓</i>:null}</button>)}</div><div className="stage-topbar-actions"><span>{hasPrintSizeChoice?`${printSizeLabel(currentPrintSize)} · `:"Print area · "}{printArea.widthInches?.toFixed(1)}″ × {printArea.heightInches?.toFixed(1)}″ max</span><button className="save-mockup-button" disabled={!sideState.file||mockupBusy!==null} onClick={()=>downloadMockup(side)}>{mockupBusy===side?"Saving…":"Save mockup"}</button></div></div>
+            <div className="stage-upload modern"><label><input type="file" accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event)=>{const input=event.currentTarget;void handleArtwork(side,input.files?.[0]).finally(()=>{input.value="";});}}/>{sideState.file?`Replace ${side} artwork`:`Upload ${side} artwork`}</label>{sideState.file&&<button type="button" onClick={()=>clearSide(side)}>Remove artwork</button>}</div>
+            <div className="stage-guidance"><p>{product.configuration.customization.customerInstructions}</p><small>{hasPrintSizeChoice?`${printSizeLabel(currentPrintSize)} is`:"This print area is"} limited to {printArea.widthInches}″ × {printArea.heightInches}″. Drag artwork to place it and use the handle to resize. PNG, JPG, WEBP, or SVG · up to {uploadLimitMb} MB.</small></div>
+            <div className="artwork-step-actions"><p>{neededSides.every((target)=>(target==="front"?front:back).file)?"Artwork added for every selected location.":`Artwork is optional to continue. Missing: ${neededSides.filter((target)=>!(target==="front"?front:back).file).join(" and ")}.`}</p><button className="designer-primary" onClick={()=>setStep("review")}>Continue to Quote & order</button></div>
+          </aside>
           </div>
 
           <div className="modern-config-column artwork-config-hidden">
@@ -1087,20 +1062,21 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             <small className="disclaimer">{shop.settings.customerExperience?.artworkDisclaimer}</small>
           </aside>
           </div>
-          <div className="artwork-step-actions"><p>{neededSides.every((target) => (target === "front" ? front : back).file) ? "Artwork added for every selected location." : `Upload artwork for ${neededSides.filter((target) => !(target === "front" ? front : back).file).join(" and ")}.`}</p><button className="designer-primary" disabled={neededSides.some((target) => !(target === "front" ? front : back).file)} onClick={()=>setStep("review")}>Review quote</button></div>
         </section>
       ) : (
         <section className="flow-step quote-review-step">
-          <button className="flow-back-link" onClick={()=>setStep("artwork")}>← Artwork</button><h1>Review your quote</h1><p className="flow-lede">Check your order details and contact information before continuing to secure payment.</p>
+          <div className="customer-guided-layout quote-guided-layout"><aside className="guided-product-preview"><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div><p className="eyebrow">{product.configuration.customization.category}</p><h1>{customerProductName(product)}</h1><p className="product-brand-name">{product.configuration.supplier?.brandName}</p><div className="guided-product-meta"><span>{color.name}</span><span>{totalAssigned} pieces</span></div></aside>
+          <div className="guided-options-scroll quote-options-scroll"><button className="flow-back-link" onClick={()=>setStep("artwork")}>← Artwork</button><h1>Quote & order</h1><p className="flow-lede">Check your order details and contact information before continuing to secure payment.</p>
           <div className="quote-review-grid"><div className="quote-summary-card"><h2>Order summary</h2><dl><div><dt>Product</dt><dd>{customerProductName(product)}</dd></div><div><dt>Brand</dt><dd>{product.configuration.supplier?.brandName || "—"}</dd></div><div><dt>Color</dt><dd>{color.name}</dd></div><div><dt>Quantity</dt><dd>{totalAssigned} pieces · {sizes.filter((item)=>item.quantity>0).map((item)=>`${item.size} × ${item.quantity}`).join(", ")}</dd></div><div><dt>Decoration</dt><dd>{decoration}</dd></div><div><dt>Location</dt><dd>{modeLabel(mode)}{neededSides.map((target)=>` · ${target}: ${printSizeLabel(printSizes[target])}`).join("")}</dd></div><div><dt>Artwork</dt><dd>{neededSides.map((target)=>`${target}: ${(target==="front"?front:back).file ? "Uploaded ✓" : "Missing"}`).join(" · ")}</dd></div></dl>
             <div className="quote-lines"><div><span>Garments</span><b>${pricing.garmentSubtotal.toFixed(2)}</b></div><div><span>Decoration</span><b>${pricing.printSubtotal.toFixed(2)}</b></div>{pricing.setupFee>0&&<div><span>Setup</span><b>${pricing.setupFee.toFixed(2)}</b></div>}{pricing.designOptimizationFee>0&&<div><span>Design service</span><b>${pricing.designOptimizationFee.toFixed(2)}</b></div>}{pricing.addOnTotal>0&&<div><span>Optional services</span><b>${pricing.addOnTotal.toFixed(2)}</b></div>}<div className="quote-total"><span>Order total</span><b>${totalPrice.toFixed(2)}</b></div><small>Calculated using this shop’s current pricing rules. Final production details are subject to shop review.</small></div>
           </div><div className="quote-contact-card"><h2>Contact & order notes</h2><label>Full name<input autoComplete="name" placeholder="Your name" value={customer.name} onChange={(event)=>setCustomer({...customer,name:event.target.value})}/></label><label>Email<input type="email" autoComplete="email" placeholder="you@example.com" value={customer.email} onChange={(event)=>setCustomer({...customer,email:event.target.value})}/></label><label>Phone <span>Optional</span><input type="tel" autoComplete="tel" placeholder="Phone number" value={customer.phone} onChange={(event)=>setCustomer({...customer,phone:event.target.value})}/></label><label>Order notes<textarea rows={4} placeholder="Anything the shop should know?" value={notes} onChange={(event)=>setNotes(event.target.value)}/></label>
-            {previewMode ? <div className="customer-payment-warning preview"><b>Preview mode</b><span>Checkout is disabled in preview.</span></div> : !shop.paymentReady && <div className="customer-payment-warning"><b>Checkout is temporarily unavailable.</b><span>This shop has not connected a live payment provider yet.</span></div>}{error&&<div className="error-message">{error}</div>}{submissionStatus&&<div className="submission-status"><i/><span>{submissionStatus}</span></div>}<button className="designer-primary full modern" disabled={previewMode||!shop.paymentReady||submitting||!customer.name.trim()||!customer.email.trim()} onClick={submit}>{previewMode?"Preview mode · checkout disabled":submitting?"Preparing order…":`Continue to payment · $${totalPrice.toFixed(2)}`}</button><small className="disclaimer">{shop.settings.customerExperience?.artworkDisclaimer}</small>
+            {!neededSides.every((target)=>(target==="front"?front:back).file)&&<div className="artwork-needed-note"><b>Artwork still needed</b><span>Continue to the Artwork step to add a file before placing your order.</span><button type="button" onClick={()=>setStep("artwork")}>Add artwork</button></div>}{totalAssigned<minimum&&<div className="artwork-needed-note"><b>Quantity minimum not met</b><span>Select at least {minimum} pieces in Color & quantity before placing your order.</span><button type="button" onClick={()=>setStep("color")}>Edit quantities</button></div>}{previewMode ? <div className="customer-payment-warning preview"><b>Preview mode</b><span>Checkout is disabled in preview.</span></div> : !shop.paymentReady && <div className="customer-payment-warning"><b>Checkout is temporarily unavailable.</b><span>This shop has not connected a live payment provider yet.</span></div>}{error&&<div className="error-message">{error}</div>}{submissionStatus&&<div className="submission-status"><i/><span>{submissionStatus}</span></div>}<button className="designer-primary full modern" disabled={previewMode||!shop.paymentReady||submitting||totalAssigned<minimum||!customer.name.trim()||!customer.email.trim()||!neededSides.every((target)=>(target==="front"?front:back).file)} onClick={submit}>{previewMode?"Preview mode · checkout disabled":submitting?"Preparing order…":!neededSides.every((target)=>(target==="front"?front:back).file)?"Add artwork to continue":totalAssigned<minimum?"Meet the quantity minimum to continue":`Continue to payment · $${totalPrice.toFixed(2)}`}</button><small className="disclaimer">{shop.settings.customerExperience?.artworkDisclaimer}</small>
+          </div></div>
           </div></div>
         </section>
       )}
       <div className={helpOpen ? "storefront-help open" : "storefront-help"}>
-        {helpOpen && <aside><header><div><small>ORDER HELP</small><h2>Build your order step by step</h2></div><button type="button" onClick={() => setHelpOpen(false)}>×</button></header><ol><li><span>1</span><p>Choose the garment and color you want.</p></li><li><span>2</span><p>Select Front, Back, or both. Full Size Front is selected first.</p></li><li><span>3</span><p>Upload artwork, then move and resize the green print box directly on the garment.</p></li><li><span>4</span><p>Enter quantities by size and review the simple final price.</p></li></ol><p>{shop.settings.customerExperience?.turnaroundTime}</p></aside>}
+        {helpOpen && <aside><header><div><small>ORDER HELP</small><h2>Build your order step by step</h2></div><button type="button" onClick={() => setHelpOpen(false)}>×</button></header><ol><li><span>1</span><p>Choose a product from the catalog.</p></li><li><span>2</span><p>Choose its color and quantity by size.</p></li><li><span>3</span><p>Choose print locations, print size, and decoration options.</p></li><li><span>4</span><p>Upload and position your artwork on the garment.</p></li><li><span>5</span><p>Review the quote and enter your order details.</p></li></ol><p>{shop.settings.customerExperience?.turnaroundTime}</p></aside>}
         <button type="button" className="storefront-help-trigger" onClick={() => setHelpOpen((value) => !value)}><span>?</span><b>{helpOpen ? "Close" : "Order help"}</b></button>
       </div>
     </main>
