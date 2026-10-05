@@ -37,6 +37,7 @@ export async function POST(request: Request) {
   const requestedCustomization = body.customization && typeof body.customization === "object" ? body.customization : {};
   const availableMethods = ["Screen Print", "DTF", "Embroidery", "Heat Transfer", "Sublimation"];
   const availablePrintSizes = ["heart", "full"];
+  const availablePrintLocations = ["Front", "Back", "Left Chest", "Right Chest", "Left Sleeve", "Right Sleeve", "Hat Front", "Hat Side", "Hat Back"];
   const requestedMethods = Array.isArray(requestedCustomization.decorationMethods)
     ? requestedCustomization.decorationMethods.map((value: unknown) => String(value)).filter((value: string) => availableMethods.includes(value))
     : [];
@@ -47,7 +48,16 @@ export async function POST(request: Request) {
   const minimumQuantity = Math.min(100000, Math.max(1, Math.floor(Number(requestedCustomization.minimumQuantity) || (headwear ? 1 : 12))));
   const finalMethods = requestedMethods.length ? requestedMethods : (headwear ? ["Embroidery"] : ["Screen Print", "DTF", "Embroidery"]);
   const finalPrintSizes = requestedPrintSizes.length ? requestedPrintSizes : (headwear ? ["full"] : ["heart", "full"]);
-  const backEnabled = typeof requestedCustomization.backEnabled === "boolean" ? requestedCustomization.backEnabled : !headwear;
+  const requestedLocations = Array.isArray(requestedCustomization.printLocations)
+    ? requestedCustomization.printLocations.map((value: unknown) => String(value)).filter((value: string) => availablePrintLocations.includes(value))
+    : [];
+  if (Array.isArray(requestedCustomization.printLocations) && requestedLocations.length === 0) {
+    return NextResponse.json({ error: "Choose at least one print zone before importing this product." }, { status: 400 });
+  }
+  const printLocations = requestedLocations.length
+    ? requestedLocations
+    : (headwear ? ["Hat Front"] : ["Front", "Back"]);
+  const backEnabled = printLocations.some((location: string) => ["Back", "Left Sleeve", "Right Sleeve", "Hat Side", "Hat Back"].includes(location));
 
   const requestedColors: string[] =
     Array.isArray(body.selectedColors)
@@ -247,7 +257,7 @@ export async function POST(request: Request) {
       defaultColorId: colors[0]?.id,
       mockupImageUrl:
         colors[0]?.frontImageUrl,
-      printLocations: backEnabled ? ["Front", "Back"] : ["Front"],
+      printLocations,
       supplier: {
         provider: "sanmar",
         supplierName: "SanMar",

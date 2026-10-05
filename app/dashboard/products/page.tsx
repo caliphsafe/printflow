@@ -24,6 +24,7 @@ const PRODUCT_TABS: ProductEditorTab[] = [
   "Basics",
   "Options",
   "Colors",
+  "Images",
   "Print zones",
   "Cost basis"
 ];

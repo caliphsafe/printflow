@@ -22,7 +22,7 @@ import {
 } from "@/lib/catalog";
 
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
-const TABS = ["Basics", "Options", "Colors", "Print zones", "Cost basis"] as const;
+const TABS = ["Basics", "Options", "Colors", "Images", "Print zones", "Cost basis"] as const;
 export type ProductEditorTab = (typeof TABS)[number];
 type Tab = ProductEditorTab;
 type UploadState = { busy: boolean; error?: string; success?: string };
@@ -68,6 +68,16 @@ function assetUrl(url?: string) {
   } catch {
     return url;
   }
+}
+
+type ProductImageChoice = NonNullable<ShirtColor["imageChoices"]>[number];
+
+function productImageChoiceKey(choice: ProductImageChoice) {
+  return choice.classTypeId?.trim() || choice.label.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function productImageIsBack(choice: ProductImageChoice) {
+  return choice.classTypeId?.trim() === "1008" || /back|rear|reverse/i.test(choice.label);
 }
 
 function zoneKey(side: DesignSide, size: PrintSize): ZoneKey {
@@ -572,6 +582,20 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                 </Panel>
               )}
 
+              {tab === "Images" && (
+                <Panel title="Product images" description="Choose image views visually. A selected SanMar image type is matched across colors when that color has the same view available.">
+                  <ProductImagesEditor
+                    values={draft.configuration.colors}
+                    supplier={draft.configuration.supplier}
+                    onChange={(colors) => {
+                      const currentDefault = draft.configuration.defaultColorId;
+                      const nextDefault = colors.find((item) => item.id === currentDefault && item.active !== false) || colors.find((item) => item.active !== false) || colors[0];
+                      updateConfiguration({ colors, mockupImageUrl: nextDefault?.frontImageUrl || undefined });
+                    }}
+                  />
+                </Panel>
+              )}
+
               {tab === "Print zones" && activeZone && (
                 <Panel
                   title="Visual print-zone setup"
@@ -769,7 +793,72 @@ function TagEditor({ values, placeholder, onChange }: { values: string[]; placeh
 }
 
 function ColorImageEditor({ values, onChange }: { values: ShirtColor[]; onChange: (values: ShirtColor[]) => void }) {
+  return <div className="modern-color-list">
+    {values.map((color, index) => <article key={color.id} className="modern-color-card">
+      <div className="color-card-header">
+        <input type="color" value={color.hex} aria-label={`${color.name} color`} onChange={(event) => onChange(values.map((item, itemIndex) => itemIndex === index ? { ...item, hex: event.target.value } : item))}/>
+        <input value={color.name} aria-label="Color name" onChange={(event) => onChange(values.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value, id: slugify(event.target.value) } : item))}/>
+        <label className="modern-switch small"><input type="checkbox" checked={color.active !== false} onChange={(event) => onChange(values.map((item, itemIndex) => itemIndex === index ? { ...item, active: event.target.checked } : item))}/><span/><b>Visible</b></label>
+        <button className="icon-delete" aria-label={`Delete ${color.name}`} onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))}>×</button>
+      </div>
+      <div className="color-card-swatch-preview">{color.swatchImageUrl && <img src={assetUrl(color.swatchImageUrl)} alt={`${color.name} swatch`}/>}<span>{color.name}</span></div>
+    </article>)}
+    <button className="add-outline-button" onClick={() => onChange([...values, { id: `color-${Date.now()}`, name: "New color", hex: "#888888", active: true }])}>+ Add color</button>
+  </div>;
+}
+
+function ProductImagesEditor({
+  values,
+  supplier,
+  onChange
+}: {
+  values: ShirtColor[];
+  supplier?: ProductConfiguration["supplier"];
+  onChange: (values: ShirtColor[]) => void;
+}) {
   const [states, setStates] = useState<Record<string, UploadState>>({});
+  const [imagesBusy, setImagesBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const primary = values.find((color) => color.active !== false) || values[0];
+  const choices = primary ? Array.from(new Map([
+    ...(primary.imageChoices || []),
+    ...(primary.frontImageUrl ? [{ url: primary.frontImageUrl, label: "Current front" }] : []),
+    ...(primary.backImageUrl ? [{ url: primary.backImageUrl, label: "Current back" }] : [])
+  ].filter((choice) => choice.url).map((choice) => [choice.url, choice] as const)).values()) : [];
+  const frontChoices = choices.filter((choice) => !productImageIsBack(choice));
+  const backChoices = choices.filter(productImageIsBack);
+
+  function applyChoice(side: DesignSide, choice: ProductImageChoice) {
+    const key = side === "front" ? "frontImageUrl" : "backImageUrl";
+    const role = productImageChoiceKey(choice);
+    onChange(values.map((color) => {
+      const match = (color.imageChoices || []).find((option) => productImageChoiceKey(option) === role);
+      const selected = match?.url || (color.id === primary?.id ? choice.url : "");
+      return selected ? { ...color, [key]: selected } : color;
+    }));
+  }
+
+  async function loadSanMarImages() {
+    if (!supplier?.styleId) return;
+    setImagesBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/suppliers/sanmar/style?style=${encodeURIComponent(supplier.styleId)}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to load SanMar photos.");
+      const media = data.style?.media || {};
+      onChange(values.map((color) => {
+        const found = media[color.name] || {};
+        const imageChoices = Array.from(new Map([...(color.imageChoices || []), ...(found.imageChoices || [])].filter((choice: ProductImageChoice) => choice.url).map((choice: ProductImageChoice) => [choice.url, choice] as const)).values());
+        return { ...color, imageChoices, frontImageUrl: color.frontImageUrl || found.frontImageUrl || undefined, backImageUrl: color.backImageUrl || found.backImageUrl || undefined };
+      }));
+      setMessage("SanMar image options loaded.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to load SanMar photos.");
+    } finally {
+      setImagesBusy(false);
+    }
+  }
 
   async function upload(index: number, side: DesignSide, file?: File) {
     if (!file) return;
@@ -779,115 +868,35 @@ function ColorImageEditor({ values, onChange }: { values: ShirtColor[]; onChange
       setStates((current) => ({ ...current, [key]: { busy: false, error: "Use PNG, JPG, WEBP, or SVG." } }));
       return;
     }
-
     setStates((current) => ({ ...current, [key]: { busy: true } }));
     try {
-      const prepare = await fetch("/api/admin/products/images", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, mimeType: contentType, sizeBytes: file.size })
-      });
+      const prepare = await fetch("/api/admin/products/images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, mimeType: contentType, sizeBytes: file.size }) });
       const prepared = await prepare.json();
       if (!prepare.ok) throw new Error(prepared.error || "Unable to prepare the image upload.");
-
       const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
       const keyValue = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
       if (!url || !keyValue) throw new Error("Public Supabase settings are missing.");
       const supabase = createClient(url, keyValue, { auth: { persistSession: false } });
-      const result = await supabase.storage
-        .from(prepared.bucket)
-        .uploadToSignedUrl(prepared.path, prepared.token, file, { contentType: prepared.contentType || contentType });
+      const result = await supabase.storage.from(prepared.bucket).uploadToSignedUrl(prepared.path, prepared.token, file, { contentType: prepared.contentType || contentType });
       if (result.error) throw result.error;
-
-      onChange(
-        values.map((item, itemIndex) =>
-          itemIndex === index ? { ...item, [side === "front" ? "frontImageUrl" : "backImageUrl"]: prepared.publicUrl } : item
-        )
-      );
+      const imageKey = side === "front" ? "frontImageUrl" : "backImageUrl";
+      onChange(values.map((color, colorIndex) => colorIndex === index ? { ...color, [imageKey]: prepared.publicUrl } : color));
       setStates((current) => ({ ...current, [key]: { busy: false, success: "Uploaded. Save product to publish." } }));
     } catch (error) {
-      setStates((current) => ({
-        ...current,
-        [key]: { busy: false, error: error instanceof Error ? error.message : "Unable to upload image." }
-      }));
+      setStates((current) => ({ ...current, [key]: { busy: false, error: error instanceof Error ? error.message : "Unable to upload image." } }));
     }
   }
 
-  return (
-    <div className="modern-color-list">
-      {values.map((color, index) => (
-        <article key={color.id} className="modern-color-card">
-          <div className="color-card-header">
-            <input
-              type="color"
-              value={color.hex}
-              aria-label={`${color.name} color`}
-              onChange={(event) => onChange(values.map((item, itemIndex) => (itemIndex === index ? { ...item, hex: event.target.value } : item)))}
-            />
-            <input
-              value={color.name}
-              aria-label="Color name"
-              onChange={(event) =>
-                onChange(values.map((item, itemIndex) => (itemIndex === index ? { ...item, name: event.target.value, id: slugify(event.target.value) } : item)))
-              }
-            />
-            <label className="modern-switch small">
-              <input
-                type="checkbox"
-                checked={color.active !== false}
-                onChange={(event) => onChange(values.map((item, itemIndex) => (itemIndex === index ? { ...item, active: event.target.checked } : item)))}
-              />
-              <span />
-              <b>Visible</b>
-            </label>
-            <button className="icon-delete" aria-label={`Delete ${color.name}`} onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))}>
-              ×
-            </button>
-          </div>
-          <div className="side-photo-grid">
-            {color.imageChoices?.length ? (
-              <div className="supplier-image-choice-row">
-                {(["front", "back"] as const).map((side) => {
-                  const key = side === "front" ? "frontImageUrl" : "backImageUrl";
-                  const currentUrl = color[key] || "";
-                  const choices = Array.from(new Map([
-                    ...color.imageChoices!,
-                    ...(currentUrl ? [{ url: currentUrl, label: "Current image" }] : [])
-                  ].map((choice) => [choice.url, choice] as const)).values());
-                  return <label key={side}>
-                    <span>Choose {side} product image</span>
-                    <select value={currentUrl} onChange={(event) => onChange(values.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: event.target.value || undefined } : item))}>
-                      <option value="">No {side} image</option>
-                      {choices.map((choice) => <option key={choice.url} value={choice.url}>{choice.label}</option>)}
-                    </select>
-                  </label>;
-                })}
-              </div>
-            ) : null}
-            <PhotoField
-              title="Front image"
-              url={color.frontImageUrl}
-              state={states[`${color.id}-front`]}
-              onUrl={(url) => onChange(values.map((item, itemIndex) => (itemIndex === index ? { ...item, frontImageUrl: url } : item)))}
-              onFile={(file) => upload(index, "front", file)}
-              onRemove={() => onChange(values.map((item, itemIndex) => (itemIndex === index ? { ...item, frontImageUrl: undefined } : item)))}
-            />
-            <PhotoField
-              title="Back image"
-              url={color.backImageUrl}
-              state={states[`${color.id}-back`]}
-              onUrl={(url) => onChange(values.map((item, itemIndex) => (itemIndex === index ? { ...item, backImageUrl: url } : item)))}
-              onFile={(file) => upload(index, "back", file)}
-              onRemove={() => onChange(values.map((item, itemIndex) => (itemIndex === index ? { ...item, backImageUrl: undefined } : item)))}
-            />
-          </div>
-        </article>
-      ))}
-      <button className="add-outline-button" onClick={() => onChange([...values, { id: `color-${Date.now()}`, name: "New color", hex: "#888888", active: true }])}>
-        + Add color
-      </button>
-    </div>
-  );
+  return <div className="product-images-editor">
+    <div className="product-image-choice-help"><strong>Choose a garment image style</strong><span>Select a front or back view below. PrintFlow will use the matching image view for each color when SanMar provides one.</span>{supplier?.provider === "sanmar" && <button type="button" className="secondary-button compact" disabled={imagesBusy} onClick={() => void loadSanMarImages()}>{imagesBusy ? "Loading images…" : "Load latest SanMar images"}</button>}</div>
+    {primary && <div className="product-image-galleries">{(["front", "back"] as const).map((side) => {
+      const options = side === "front" ? frontChoices : backChoices;
+      const selectedUrl = primary[side === "front" ? "frontImageUrl" : "backImageUrl"];
+      return <section className="product-image-gallery" key={side}><h3>{side === "front" ? "Front view" : "Back view"}</h3>{options.length ? <div className="product-image-gallery-grid">{options.map((choice) => <button type="button" key={choice.url} className={choice.url === selectedUrl ? "selected" : ""} onClick={() => applyChoice(side, choice)}><span>{choice.url === selectedUrl && <i>✓</i>}<img src={assetUrl(choice.url)} alt={`${side} garment view option`}/></span><b>{choice.label}</b><small>{choice.url === selectedUrl ? "Current selection" : "Choose this image style"}</small></button>)}</div> : <p>No {side} view options are available. Add an image below.</p>}</section>;
+    })}</div>}
+    {message && <p className="product-image-editor-message">{message}</p>}
+    <div className="product-image-color-list">{values.map((color, index) => <section className="product-image-color" key={color.id}><header><div><strong>{color.name}</strong><small>Image preview for this color</small></div><div>{color.frontImageUrl && <img src={assetUrl(color.frontImageUrl)} alt={`${color.name} front`}/>} {color.backImageUrl && <img src={assetUrl(color.backImageUrl)} alt={`${color.name} back`}/>}</div></header><div className="side-photo-grid"><PhotoField title="Front image" url={color.frontImageUrl} state={states[`${color.id}-front`]} onUrl={(url) => onChange(values.map((item, colorIndex) => colorIndex === index ? { ...item, frontImageUrl: url } : item))} onFile={(file) => upload(index, "front", file)} onRemove={() => onChange(values.map((item, colorIndex) => colorIndex === index ? { ...item, frontImageUrl: undefined } : item))}/><PhotoField title="Back image" url={color.backImageUrl} state={states[`${color.id}-back`]} onUrl={(url) => onChange(values.map((item, colorIndex) => colorIndex === index ? { ...item, backImageUrl: url } : item))} onFile={(file) => upload(index, "back", file)} onRemove={() => onChange(values.map((item, colorIndex) => colorIndex === index ? { ...item, backImageUrl: undefined } : item))}/></div></section>)}</div>
+  </div>;
 }
 
 function PhotoField({
