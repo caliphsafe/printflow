@@ -564,3 +564,145 @@
   .modern-customer-shell .customer-product-card.modern > .product-card-info { min-height:195px; padding:8px; }
   .modern-customer-shell .customer-product-card .product-card-cta { font-size:10px; }
 }
+
+/* Keep foreground text readable against every theme surface and selected state. */
+.modern-customer-shell {
+  --sf-on-primary:#fff;
+  --sf-on-primary:oklch(from var(--sf-primary) clamp(.12,calc(1.15 - l),.96) 0 0);
+}
+.modern-customer-shell .customer-hero-badge {
+  color:var(--sf-on-primary)!important;
+  border-color:var(--sf-primary)!important;
+  background:var(--sf-primary)!important;
+}
+.modern-customer-shell .customer-trust-row span {
+  padding:6px 9px;
+  border:1px solid var(--sf-line);
+  border-radius:999px;
+  color:var(--sf-ink)!important;
+  background:var(--sf-panel);
+}
+.modern-customer-shell .customer-category-nav button.active,
+.modern-customer-shell .quote-preview-side-tabs button.active {
+  color:var(--sf-on-primary)!important;
+}
+.modern-customer-shell .customer-progress-strip > button.active,
+.modern-customer-shell .customer-progress-strip > button.active b { color:#fff!important; }
+.modern-customer-shell .radio-card.selected,
+.modern-customer-shell .radio-card.selected *,
+.modern-customer-shell .print-size-choice.selected,
+.modern-customer-shell .print-size-choice.selected *,
+.modern-customer-shell .modern-color-picker button.selected,
+.modern-customer-shell .modern-color-picker button.selected *,
+.modern-customer-shell .service-choice.selected,
+.modern-customer-shell .service-choice.selected * {
+  color:#fff!important;
+}
+
+/* Catalog images occupy the card; product details float above them on a half-opaque panel. */
+.modern-customer-shell .customer-product-card.modern {
+  position:relative;
+  min-height:clamp(250px,30vw,360px);
+  overflow:hidden;
+  isolation:isolate;
+}
+.modern-customer-shell .customer-product-card.modern > .customer-product-image {
+  position:absolute;
+  inset:0;
+  z-index:0;
+  width:100%;
+  height:100%;
+  min-height:0;
+  aspect-ratio:auto;
+}
+.modern-customer-shell .customer-product-card.modern .customer-product-image img,
+.modern-customer-shell .guided-product-image img,
+.modern-customer-shell .product-detail-image img,
+.modern-customer-shell .color-step-preview img {
+  box-sizing:border-box;
+  display:block;
+  max-width:100%;
+  max-height:100%;
+  object-fit:contain;
+  object-position:center;
+}
+.modern-customer-shell .customer-product-card.modern .customer-product-image img {
+  width:100%;
+  height:100%;
+  padding:14px;
+}
+.modern-customer-shell .customer-product-card.modern > .product-card-info {
+  position:absolute;
+  z-index:1;
+  right:8px;
+  bottom:8px;
+  left:8px;
+  max-height:78%;
+  min-height:0;
+  overflow:auto;
+  padding:12px 13px;
+  border:1px solid var(--sf-line-strong);
+  border-radius:14px;
+  color:var(--sf-ink);
+  background:rgba(255,255,255,.5);
+  background:color-mix(in srgb,var(--sf-panel) 50%,transparent);
+  box-shadow:0 5px 18px rgba(0,0,0,.08);
+  backdrop-filter:blur(12px) saturate(.8);
+  -webkit-backdrop-filter:blur(12px) saturate(.8);
+}
+.modern-customer-shell .customer-product-card .product-card-category,
+.modern-customer-shell .customer-product-card h2,
+.modern-customer-shell .customer-product-card .product-brand-name,
+.modern-customer-shell .customer-product-card p,
+.modern-customer-shell .customer-product-card .product-card-cta,
+.modern-customer-shell .customer-product-card .product-card-meta small {
+  color:var(--sf-ink)!important;
+  text-shadow:0 1px 2px color-mix(in srgb,var(--sf-panel) 80%,transparent);
+}
+.modern-customer-shell .customer-product-card .product-card-meta small { background:var(--sf-panel); }
+
+/* The order review reuses the artwork placement on top of the selected garment. */
+.modern-customer-shell .quote-mockup-preview { gap:10px; }
+.modern-customer-shell .quote-mockup-image {
+  flex:1 1 auto;
+  min-height:0;
+  padding:0;
+}
+.modern-customer-shell .quote-mockup-canvas {
+  display:block;
+  width:100%;
+  height:100%;
+  max-width:100%;
+  max-height:100%;
+  object-fit:contain;
+  object-position:center;
+}
+.modern-customer-shell .quote-preview-side-tabs {
+  display:flex;
+  justify-content:center;
+  gap:8px;
+  flex:0 0 auto;
+}
+.modern-customer-shell .quote-preview-side-tabs button {
+  min-height:34px;
+  padding:6px 13px;
+  border:1px solid var(--sf-line-strong);
+  border-radius:999px;
+  color:var(--sf-ink);
+  background:var(--sf-panel);
+  font:inherit;
+  font-size:12px;
+  font-weight:750;
+  cursor:pointer;
+}
+.modern-customer-shell .quote-preview-side-tabs button.active {
+  border-color:var(--sf-primary);
+  color:var(--sf-on-primary);
+  background:var(--sf-primary);
+}
+
+@media(max-width:760px) {
+  .modern-customer-shell .customer-product-card.modern { min-height:250px; }
+  .modern-customer-shell .customer-product-card.modern > .customer-product-image { height:100%; }
+  .modern-customer-shell .customer-product-card.modern > .product-card-info { min-height:0; padding:8px; }
+}

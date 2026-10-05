@@ -317,6 +317,9 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const printArea = printAreaFor(product.configuration, side, currentPrintSize);
   const printZone = printZoneBounds(printArea);
   const garmentUrl = assetUrl(garmentImageFor(product, color, side));
+  const quoteSide: DesignSide = neededSides.includes(side) ? side : neededSides[0];
+  const quoteSideState = quoteSide === "front" ? front : back;
+  const quoteGarmentUrl = assetUrl(garmentImageFor(product, color, quoteSide));
   const totalAssigned = useMemo(() => sizes.reduce((sum, item) => sum + item.quantity, 0), [sizes]);
   const minimum = product?.configuration.customization.minimumQuantity || 12;
   const selectedPrints = {
@@ -1102,7 +1105,11 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
         </section>
       ) : (
         <section className="flow-step quote-review-step">
-          <div className="customer-guided-layout quote-guided-layout"><aside className="guided-product-preview" aria-label={`${customerProductName(product)} product preview`}><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div></aside>
+          <div className="customer-guided-layout quote-guided-layout"><aside className="guided-product-preview quote-mockup-preview" aria-label={`${customerProductName(product)} design mockup`}><div className="guided-product-image quote-mockup-image"><svg className="quote-mockup-canvas" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${customerProductName(product)} in ${color.name}, ${quoteSide} mockup`}>
+            <rect width={W} height={H} fill="#f6f6f3" />
+            {quoteGarmentUrl ? <image href={quoteGarmentUrl} x="32" y="32" width="736" height="736" preserveAspectRatio="xMidYMid meet" /> : <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={garmentColorFallback(color)} stroke="#bbb" strokeWidth="3" />}
+            {quoteSideState.dataUrl && <image href={quoteSideState.dataUrl} x={quoteSideState.placement.x} y={quoteSideState.placement.y} width={quoteSideState.placement.width} height={quoteSideState.placement.height} />}
+          </svg></div>{neededSides.length > 1 && <div className="quote-preview-side-tabs" aria-label="Mockup side">{neededSides.map((target) => <button type="button" key={target} className={quoteSide === target ? "active" : ""} onClick={() => setSide(target)}>{target === "front" ? "Front" : "Back"}</button>)}</div>}</aside>
           <div className="guided-options-scroll quote-options-scroll"><button className="flow-back-link" onClick={()=>setStep("artwork")}>← Artwork</button><h1>Quote & order</h1><p className="flow-lede">Check your order details and contact information before continuing to secure payment.</p>
           <div className="quote-review-grid"><div className="quote-summary-card"><h2>Order summary</h2><dl><div><dt>Product</dt><dd>{customerProductName(product)}</dd></div><div><dt>Brand</dt><dd>{product.configuration.supplier?.brandName || "—"}</dd></div><div><dt>Color</dt><dd>{color.name}</dd></div><div><dt>Quantity</dt><dd>{totalAssigned} pieces · {sizes.filter((item)=>item.quantity>0).map((item)=>`${item.size} × ${item.quantity}`).join(", ")}</dd></div><div><dt>Decoration</dt><dd>{decoration}</dd></div><div><dt>Location</dt><dd>{modeLabel(mode)}{neededSides.map((target)=>` · ${target}: ${printSizeLabel(printSizes[target])}`).join("")}</dd></div><div><dt>Artwork</dt><dd>{neededSides.map((target)=>`${target}: ${(target==="front"?front:back).file ? "Uploaded ✓" : "Missing"}`).join(" · ")}</dd></div></dl>
             <div className="quote-lines"><div><span>Garments</span><b>${pricing.garmentSubtotal.toFixed(2)}</b></div><div><span>Decoration</span><b>${pricing.printSubtotal.toFixed(2)}</b></div>{pricing.setupFee>0&&<div><span>Setup</span><b>${pricing.setupFee.toFixed(2)}</b></div>}{pricing.designOptimizationFee>0&&<div><span>Design service</span><b>${pricing.designOptimizationFee.toFixed(2)}</b></div>}{pricing.addOnTotal>0&&<div><span>Optional services</span><b>${pricing.addOnTotal.toFixed(2)}</b></div>}<div className="quote-total"><span>Order total</span><b>${totalPrice.toFixed(2)}</b></div><small>Calculated using this shop’s current pricing rules. Final production details are subject to shop review.</small></div>
