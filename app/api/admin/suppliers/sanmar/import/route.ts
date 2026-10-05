@@ -35,6 +35,9 @@ export async function POST(request: Request) {
     `${category} ${displayName}`
   );
   const requestedCustomization = body.customization && typeof body.customization === "object" ? body.customization : {};
+  const requestedPrintAreas = requestedCustomization.printAreas && typeof requestedCustomization.printAreas === "object"
+    ? requestedCustomization.printAreas
+    : {};
   const availableMethods = ["Screen Print", "DTF", "Embroidery", "Heat Transfer", "Sublimation"];
   const availablePrintSizes = ["heart", "full"];
   const availablePrintLocations = ["Front", "Back", "Left Chest", "Right Chest", "Left Sleeve", "Right Sleeve", "Hat Front", "Hat Side", "Hat Back"];
@@ -278,6 +281,10 @@ export async function POST(request: Request) {
         minimumQuantity,
         decorationMethods: finalMethods,
         printSizes: finalPrintSizes,
+        frontHeartArea: requestedPrintAreas.frontHeartArea,
+        frontFullArea: requestedPrintAreas.frontFullArea,
+        backHeartArea: requestedPrintAreas.backHeartArea,
+        backFullArea: requestedPrintAreas.backFullArea,
         designModes: backEnabled ? ["front", "back", "front-back"] : ["front"],
         backEnabled
       }
