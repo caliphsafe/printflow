@@ -870,7 +870,13 @@ function ProductImagesEditor({
       const media = data.style?.media || {};
       onChange(values.map((color) => {
       const found = media[color.name] || {};
-        const imageChoices = uniqueProductImageChoices(color.imageChoices || [], found.imageChoices || []);
+        const imageChoices: NonNullable<ShirtColor["imageChoices"]> = uniqueProductImageChoices(
+          color.imageChoices || [],
+          found.imageChoices || []
+        ).map((choice) => ({
+          ...choice,
+          label: typeof choice.label === "string" && choice.label.trim() ? choice.label : "Product image"
+        }));
         return {
           ...color,
           imageChoices,
