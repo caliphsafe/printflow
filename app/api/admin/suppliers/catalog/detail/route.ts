@@ -3,6 +3,7 @@ import { getAdminContext } from "@/lib/admin-data";
 import { sanmarCompleteStyle } from "@/lib/sanmar-complete-style";
 import { withPreferredSanMarFlatMedia } from "@/lib/sanmar-flat-media";
 import { asNumber, field, safeImageUrl, ssRequest } from "@/lib/ss-activewear";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 function supplierFrom(value: string) {
   if (value === "ss" || value === "ss-activewear") return "ss" as const;
@@ -115,10 +116,10 @@ export async function GET(request: Request) {
               field(row, "styleID", "styleId") ||
                 styleId
             ),
-            brandName: String(
+            brandName: decodeHtmlEntities(
               field(row, "brandName") || ""
             ),
-            styleName: String(
+            styleName: decodeHtmlEntities(
               field(row, "styleName") || ""
             ),
             colorName: String(

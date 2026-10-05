@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 import type { PaymentProvider } from "@/lib/types";
 
 const SQUARE_VERSION = "2026-05-20";
@@ -103,7 +104,7 @@ async function createStripeCheckout(design: PaymentDesign, connection: Connectio
   body.set("line_items[0][quantity]", "1");
   body.set("line_items[0][price_data][currency]", String(connection.configuration?.currency || "usd"));
   body.set("line_items[0][price_data][unit_amount]", String(cents(design.package_price)));
-  body.set("line_items[0][price_data][product_data][name]", `${shop?.name || "Print shop"} · ${design.product_name}`);
+  body.set("line_items[0][price_data][product_data][name]", `${shop?.name || "Print shop"} · ${decodeHtmlEntities(design.product_name)}`);
   body.set("line_items[0][price_data][product_data][description]", `${design.package_quantity} custom garments · Order ${design.display_id}`);
   body.set("metadata[design_id]", design.id);
   body.set("metadata[display_id]", design.display_id);
@@ -144,7 +145,7 @@ async function createSquareCheckout(design: PaymentDesign, connection: Connectio
       idempotency_key: crypto.randomUUID(),
       description: `PrintFlow order ${design.display_id}`,
       quick_pay: {
-        name: `${design.product_name} · ${design.package_quantity} garments`,
+        name: `${decodeHtmlEntities(design.product_name)} · ${design.package_quantity} garments`,
         price_money: { amount: cents(design.package_price), currency: String(connection.configuration?.currency || "USD").toUpperCase() },
         location_id: locationId
       },

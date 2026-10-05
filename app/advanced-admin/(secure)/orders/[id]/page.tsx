@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AdvancedAdminOrderStatus from "@/components/AdvancedAdminOrderStatus";
 import { getAdvancedAdminContext } from "@/lib/advanced-admin";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 function cash(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value || 0); }
 function pretty(value: string) { return String(value || "").replaceAll("_", " "); }
@@ -59,7 +60,7 @@ export default async function AdvancedOrderDetail({ params }: { params: Promise<
           {(items || []).map((item: any) => {
             const sizes = (quantities || []).filter((q: any) => q.order_item_id === item.id);
             return <div className="ae-line-item" key={item.id}>
-              <div><strong>{item.product_name_snapshot}</strong><span>{item.color_name || "Preset color"}</span></div>
+              <div><strong>{decodeHtmlEntities(item.product_name_snapshot)}</strong><span>{item.color_name || "Preset color"}</span></div>
               <span>{item.decoration_method || "Preset"} · {item.decoration_location || "Preset location"}</span>
               <span>{sizes.map((q: any) => `${q.size_name} × ${q.quantity}`).join(" · ") || `${item.quantity} total`}</span>
               <b>{cash(Number(item.line_total || 0))}</b>

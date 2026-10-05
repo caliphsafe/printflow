@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import { DEFAULT_CONFIGURATION, normalizeConfiguration, slugify } from "@/lib/catalog";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 import { defaultBrandGarmentSetup } from "@/lib/brand-commerce";
 import type { CatalogProduct, ShirtColor, SupplierVariant } from "@/lib/types";
 
@@ -86,8 +87,8 @@ export async function POST(request: Request) {
   }));
 
   const sizes = Array.from(new Set(variants.map((row) => row.sizeName)));
-  const brandName = String(style.brandName || first.brandName || "S&S");
-  const styleName = String(style.styleName || first.styleName || "Blank");
+  const brandName = decodeHtmlEntities(style.brandName || first.brandName || "S&S");
+  const styleName = decodeHtmlEntities(style.styleName || first.styleName || "Blank");
   const name = `${brandName} ${styleName}`.trim();
 
   const baseSlug = slugify(`${name}${targetBusiness === "brand" ? "-brand-source" : ""}`);

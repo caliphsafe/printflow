@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import FloatingSaveBar from "@/components/FloatingSaveBar";
 import { useUnsavedChanges } from "@/components/useUnsavedChanges";
 import { useRouter } from "next/navigation";
+import { decodeProductNameFields } from "@/lib/html-entities";
 import type {
   CatalogProduct,
   DesignSide,
@@ -126,8 +127,9 @@ function singlePrintZone(value: PrintArea) {
 
 export default function ProductCatalogManager({ initialProducts, pricingProfile, initialSelectedId, initialTab }: { initialProducts: CatalogProduct[]; pricingProfile: ShopPricingProfile; initialSelectedId?: string; initialTab?: Tab }) {
   const router = useRouter();
-  const startingProduct = initialProducts.find((item) => item.id === initialSelectedId) || initialProducts[0];
-  const [products, setProducts] = useState(initialProducts);
+  const decodedProducts = initialProducts.map((item) => decodeProductNameFields(item));
+  const startingProduct = decodedProducts.find((item) => item.id === initialSelectedId) || decodedProducts[0];
+  const [products, setProducts] = useState(decodedProducts);
   const [selectedId, setSelectedId] = useState(startingProduct?.id || "");
   const [draft, setDraft] = useState<CatalogProduct | null>(startingProduct ? copy(startingProduct) : null);
   const [savedSnapshot, setSavedSnapshot] = useState(startingProduct ? JSON.stringify(startingProduct) : "");

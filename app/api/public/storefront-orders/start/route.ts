@@ -1,5 +1,6 @@
 import { publicCors } from "@/lib/public-cors";
 import { NextResponse } from "next/server";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { createSquareCheckoutForOrder } from "@/lib/commerce-payments";
 import { makeOrderDisplayId } from "@/lib/commerce-orders";
@@ -117,7 +118,7 @@ export async function POST(request: Request) {
           shop_id: shop.id,
           order_id: order.id,
           catalog_product_id: normalizedItem.product.id,
-          product_name_snapshot: normalizedItem.link.name_override || normalizedItem.product.name,
+          product_name_snapshot: decodeHtmlEntities(normalizedItem.link.name_override || normalizedItem.product.name),
           color_name: normalizedItem.product.configuration?.colors?.[0]?.name || null,
           decoration_method: normalizedItem.product.configuration?.customization?.decorationMethods?.[0] || "Preset",
           decoration_location: "Left Chest",

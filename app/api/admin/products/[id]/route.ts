@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import { normalizeConfiguration, slugify } from "@/lib/catalog";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -9,7 +10,7 @@ export async function PATCH(request: Request, { params }: Props) {
   const { supabase, shop } = await getAdminContext();
   if (!shop) return NextResponse.json({ error: "No shop configured." }, { status: 403 });
   const body = await request.json();
-  const name = String(body.name || "").trim();
+  const name = decodeHtmlEntities(String(body.name || "").trim());
   if (!name) return NextResponse.json({ error: "Product name is required." }, { status: 400 });
 
   const { data, error } = await supabase

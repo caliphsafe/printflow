@@ -1,4 +1,5 @@
 import { decryptSecret } from "@/lib/crypto";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 import { parse } from "csv-parse/sync";
 import { sanmarNormalizedStyle, type SanMarNormalizedStyle } from "@/lib/sanmar";
 
@@ -321,7 +322,7 @@ export async function sanmarFilterOptions(supabase: any, shopId: string) {
 
     if (error) throw error;
     for (const row of data || []) {
-      const brand = String(row.brand_name || "").trim();
+      const brand = decodeHtmlEntities(row.brand_name).trim();
       const category = String(row.category || "").trim();
       if (brand) brands.add(brand);
       if (category) categories.add(category);
@@ -370,7 +371,7 @@ export async function listSanMarCatalogStyles({ supabase, shopId, category, q, b
   const brands: string[] = Array.from(
     new Set<string>(
       (brandRows || [])
-        .map((row: any) => String(row.brand_name || ""))
+        .map((row: any) => decodeHtmlEntities(row.brand_name).trim())
         .filter((name: string) => name.length > 0)
     )
   ).sort((a: string, b: string) => a.localeCompare(b));
@@ -378,9 +379,9 @@ export async function listSanMarCatalogStyles({ supabase, shopId, category, q, b
   return {
     styles: (data || []).map((row: any) => ({
       styleId: row.style_id,
-      brandName: row.brand_name,
+      brandName: decodeHtmlEntities(row.brand_name),
       styleName: row.style_id,
-      title: row.title,
+      title: decodeHtmlEntities(row.title),
       description: row.description || "",
       category: row.category,
       imageUrl: row.image_url || "",

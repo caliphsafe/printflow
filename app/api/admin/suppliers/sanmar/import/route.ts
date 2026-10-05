@@ -7,6 +7,7 @@ import {
 } from "@/lib/catalog";
 import { sanmarCompleteStyle } from "@/lib/sanmar-complete-style";
 import { withPreferredSanMarFlatMedia } from "@/lib/sanmar-flat-media";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
   const styleId = String(body.styleId || "")
     .trim()
     .toUpperCase();
-  const displayName = String(
+  const displayName = decodeHtmlEntities(
     body.displayName || ""
   ).trim();
 
@@ -265,9 +266,9 @@ export async function POST(request: Request) {
         provider: "sanmar",
         supplierName: "SanMar",
         styleId: style.styleId,
-        brandName: style.brandName,
+        brandName: decodeHtmlEntities(style.brandName),
         styleName:
-          style.name || style.styleId,
+          decodeHtmlEntities(style.name || style.styleId),
         partNumber: style.styleId,
         importedAt:
           new Date().toISOString(),
@@ -324,8 +325,8 @@ export async function POST(request: Request) {
 
     const name =
       displayName ||
-      existing?.name ||
-      `${style.brandName} ${style.styleId}`;
+      decodeHtmlEntities(existing?.name ||
+      `${style.brandName} ${style.styleId}`);
 
     const slug =
       existing?.slug || slugify(name);

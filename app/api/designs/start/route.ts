@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { makeDesignDisplayId } from "@/lib/design-id";
 import { normalizeConfiguration } from "@/lib/catalog";
+import { decodeProductNameFields } from "@/lib/html-entities";
 import { DEFAULT_PRICING_PROFILE, calculateResolvedOrderPricing, normalizePricingProfile } from "@/lib/pricing-settings";
 import { normalizeShopSettings } from "@/lib/shop-settings";
 import type { CatalogProduct, DesignMode, DesignSide, PrintSize, SizeQuantity } from "@/lib/types";
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
       supabase.from("shop_pricing_profiles").select("configuration").eq("shop_id", shop.id).maybeSingle()
     ]);
     const profile = normalizePricingProfile(pricingRow?.configuration || DEFAULT_PRICING_PROFILE);
-    const products: CatalogProduct[] = (rows || []).map((row: any) => ({ ...row, configuration: normalizeConfiguration(row.configuration) })).filter((item) => item.configuration.supplier?.sourceMode !== "demo");
+    const products: CatalogProduct[] = (rows || []).map((row: any) => { const decoded = decodeProductNameFields(row); return { ...decoded, configuration: normalizeConfiguration(decoded.configuration) }; }).filter((item) => item.configuration.supplier?.sourceMode !== "demo");
 
     const product = products.find((item) => item.id === payload.configuration.productId);
     if (!product) return jsonError("Product is unavailable.");

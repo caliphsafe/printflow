@@ -1,4 +1,5 @@
 import { decryptSecret } from "@/lib/crypto";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 import {
   fetchSanMarInventory,
   fetchSanMarMedia,
@@ -63,13 +64,7 @@ const escapeXml = (value: unknown) =>
     .replace(/'/g, "&apos;");
 
 function decode(value: string) {
-  return String(value || "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&")
-    .trim();
+  return decodeHtmlEntities(String(value || "").replace(/<[^>]+>/g, "")).trim();
 }
 
 function tag(xml: string, name: string) {

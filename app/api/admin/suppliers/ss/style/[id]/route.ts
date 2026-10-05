@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import { asNumber, field, safeImageUrl, ssRequest } from "@/lib/ss-activewear";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -35,8 +36,9 @@ export async function GET(_request: Request, { params }: Props) {
         skuId: String(field(row, "skuID", "skuID_Master", "skuId") || ""),
         gtin: String(field(row, "gtin") || ""),
         styleId: String(field(row, "styleID", "styleId") || id),
-        brandName: String(field(row, "brandName") || ""),
-        styleName: String(field(row, "styleName") || ""),
+        brandName: decodeHtmlEntities(field(row, "brandName")),
+        styleName: decodeHtmlEntities(field(row, "styleName")),
+        title: decodeHtmlEntities(field(row, "title")),
         colorName: String(field(row, "colorName") || "Unspecified"),
         sizeName: String(field(row, "sizeName") || "One Size"),
         sizeOrder: String(field(row, "sizeOrder") || ""),

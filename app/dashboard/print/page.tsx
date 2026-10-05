@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getAdminContext } from "@/lib/admin-data";
 import { DEFAULT_PRICING_PROFILE, normalizePricingProfile } from "@/lib/pricing-settings";
 import { platformShopAccess } from "@/lib/shop-mode";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 function money(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -91,7 +92,7 @@ export default async function PrintOverviewPage() {
               <Link key={item.id} href={`/dashboard/orders/${item.id}`} className="dashboard-table-row">
                 <span><strong>{item.display_id}</strong><small>{item.package_quantity} pcs</small></span>
                 <span>{item.customer_name}</span>
-                <span>{item.product_name}</span>
+                <span>{decodeHtmlEntities(item.product_name)}</span>
                 <span>{money(Number(item.paid_amount ?? item.package_price ?? 0))}</span>
                 <span><em className={`status-badge status-${item.status}`}>{String(item.payment_status === "paid" ? "paid" : item.status).replaceAll("_", " ")}</em></span>
                 <span>{date(item.created_at)}</span>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 type Item = {
   sku?: string;
@@ -104,7 +105,7 @@ export default function SupplierCartManager({ initialJobs, providerStates }: { i
       const ready = supported && state?.connected && state?.orderingEnabled !== false;
       return <article className="admin-card supplier-cart-job" key={job.id}>
         <header><div className="supplier-cart-product-summary"><div className="supplier-cart-product-image">{job.imageUrl ? <img src={imageSrc(job.imageUrl)} alt={job.productName} /> : <span>PF</span>}</div><div><p className="section-kicker">{job.displayId}</p><h3>{job.productName}</h3><p>{job.customerName} · {job.paymentStatus === "paid" ? "Paid" : "Payment pending"}</p></div></div><div className="supplier-cart-job-total"><span>{job.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)} pieces</span><strong>${job.estimatedTotal.toFixed(2)}</strong></div></header>
-        <div className="supplier-cart-lines">{job.items.map((item) => <div key={`${item.sku}-${item.sizeName}`}><span><strong>{item.brandName} {item.styleName}</strong><small>{item.colorName} · {item.sizeName} · {item.sku}</small></span><span><strong>{item.quantity} pcs</strong><small>${Number(item.unitCost || 0).toFixed(2)} each</small></span></div>)}</div>
+        <div className="supplier-cart-lines">{job.items.map((item) => <div key={`${item.sku}-${item.sizeName}`}><span><strong>{decodeHtmlEntities(item.brandName)} {decodeHtmlEntities(item.styleName)}</strong><small>{item.colorName} · {item.sizeName} · {item.sku}</small></span><span><strong>{item.quantity} pcs</strong><small>${Number(item.unitCost || 0).toFixed(2)} each</small></span></div>)}</div>
         <footer><Link className="ghost-button" href={`/dashboard/orders/${job.designId}`}>Order details</Link>{!job.ordered && <button type="button" className="text-button supplier-cart-remove" disabled={busyId === job.id} onClick={() => remove(job)}>Remove</button>}{job.ordered ? <div className="supplier-cart-ordered"><span>Submitted</span><strong>{job.orderNumbers.join(", ") || "Supplier order created"}</strong></div> : supported ? <button type="button" className="primary-button" disabled={!ready || busyId === job.id} onClick={() => place(job)}>{busyId === job.id ? "Submitting…" : job.provider === "ss-activewear" ? (state?.testMode ? "Create S&S test order" : "Order from S&S") : "Order from SanMar"}</button> : <button type="button" className="secondary-button" disabled>Ordering coming soon</button>}</footer>
         {!state?.connected && supported && <p className="supplier-cart-inline-note">Connect {providerName(job.provider)} before submitting this cart.</p>}
         {job.provider === "sanmar" && state?.connected && state?.orderingEnabled === false && <p className="supplier-cart-inline-note">SanMar product data is connected. Complete SanMar PO onboarding/testing, then enable production PO submission under Suppliers.</p>}

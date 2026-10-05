@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getAdminContext } from "@/lib/admin-data";
 import OrderBlanksButton from "@/components/OrderBlanksButton";
 import BlankOrderDraftButton from "@/components/BlankOrderDraftButton";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +92,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     </header>
 
     <section className="order-detail-summary">
-      <div><span>Product</span><strong>{o.product_name}</strong></div>
+      <div><span>Product</span><strong>{decodeHtmlEntities(o.product_name)}</strong></div>
       <div><span>Color</span><strong>{o.shirt_color_name}</strong></div>
       <div><span>Decoration</span><strong>{config.decorationMethod || "—"}</strong></div>
       <div><span>Design</span><strong>{title(config.designMode || o.print_location)}</strong></div>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 import { getAdvancedAdminApiContext } from "@/lib/advanced-admin";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -33,7 +34,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   };
 
   const update = {
-    name: String(body.name || product.name).trim() || product.name,
+    name: decodeHtmlEntities(String(body.name || product.name).trim() || product.name),
     active: body.active !== false,
     configuration,
     updated_at: new Date().toISOString()

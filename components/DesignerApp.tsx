@@ -15,6 +15,7 @@ import type {
   ShirtColor,
   SizeQuantity
 } from "@/lib/types";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 const W = 800;
 const H = 800;
@@ -76,11 +77,11 @@ function defaultColorFor(product?: CatalogProduct) {
 
 function customerProductName(product: CatalogProduct) {
   const supplier = product.configuration.supplier;
-  if (!supplier) return product.name;
-  const brand = String(supplier.brandName || "").trim();
+  if (!supplier) return decodeHtmlEntities(product.name);
+  const brand = decodeHtmlEntities(supplier.brandName).trim();
   const styleId = String(supplier.styleId || "").trim();
-  let title = String(supplier.styleName || "").trim();
-  if (!title || title.toLowerCase() === styleId.toLowerCase()) title = product.name;
+  let title = decodeHtmlEntities(supplier.styleName).trim();
+  if (!title || title.toLowerCase() === styleId.toLowerCase()) title = decodeHtmlEntities(product.name);
   if (styleId && title.toLowerCase().endsWith(styleId.toLowerCase())) title = title.slice(0, -styleId.length).trim();
   if (brand) {
     const brandLower = brand.toLowerCase();
@@ -226,7 +227,21 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const previewMode = Boolean(shop.previewMode);
   const embedMode = Boolean(shop.embedMode);
   const shopHomeUrl = shop.slug === ADVANCED_SHOP_SLUG ? ADVANCED_SITE_URL : "";
-  const products = shop.products.filter((item) => item.active && !isSchoolStoreProduct(item) && (
+  const normalizedProducts = shop.products.map((item) => ({
+    ...item,
+    name: decodeHtmlEntities(item.name),
+    configuration: {
+      ...item.configuration,
+      colors: item.configuration.colors.map((color) => ({ ...color, name: decodeHtmlEntities(color.name) })),
+      supplier: item.configuration.supplier ? {
+        ...item.configuration.supplier,
+        brandName: decodeHtmlEntities(item.configuration.supplier.brandName),
+        styleName: decodeHtmlEntities(item.configuration.supplier.styleName),
+        supplierName: decodeHtmlEntities(item.configuration.supplier.supplierName)
+      } : undefined
+    }
+  }));
+  const products = normalizedProducts.filter((item) => item.active && !isSchoolStoreProduct(item) && (
     item.configuration.supplier
       ? item.configuration.colors.some((color) => color.active !== false && Boolean(color.frontImageUrl))
       : true

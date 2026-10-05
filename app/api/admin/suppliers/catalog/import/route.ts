@@ -13,6 +13,7 @@ import type {
 } from "@/lib/types";
 import { sanmarCompleteStyle } from "@/lib/sanmar-complete-style";
 import { withPreferredSanMarFlatMedia } from "@/lib/sanmar-flat-media";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 function supplierFrom(value: string) {
   if (value === "ss" || value === "ss-activewear")
@@ -360,20 +361,20 @@ export async function POST(request: Request) {
     )
   );
 
-  const brandName = String(
+  const brandName = decodeHtmlEntities(
     style.brandName ||
       first.brandName ||
       (supplier === "sanmar"
         ? "SanMar"
         : "S&S Activewear")
-  );
+  ).trim();
 
-  const styleName = String(
+  const styleName = decodeHtmlEntities(
     style.styleName ||
       first.styleName ||
       style.styleId ||
       "Blank"
-  );
+  ).trim();
 
   const name =
     `${brandName} ${styleName}`.trim();
@@ -382,7 +383,7 @@ export async function POST(request: Request) {
     `${String(
       style.category || ""
     )} ${String(
-      style.title || ""
+      decodeHtmlEntities(style.title || "")
     )} ${styleName}`.toLowerCase();
 
   const oneSizeAccessory =

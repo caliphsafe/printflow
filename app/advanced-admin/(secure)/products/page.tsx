@@ -2,6 +2,7 @@ import Link from "next/link";
 import AdvancedAdminProductManager from "@/components/AdvancedAdminProductManager";
 import { getAdvancedAdminContext } from "@/lib/advanced-admin";
 import { hydrateSanMarProductRowsWithFlatMedia } from "@/lib/sanmar-flat-media";
+import { decodeProductNameFields } from "@/lib/html-entities";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export default async function AdvancedProducts() {
     persist: true,
     allowLiveSanMarLookups: false
   });
+  const displayItems = items.map((product: any) => decodeProductNameFields(product));
 
   return <>
     <header className="ae-page-head">
@@ -45,9 +47,9 @@ export default async function AdvancedProducts() {
       </div>
     </header>
 
-    {items.length
+    {displayItems.length
       ? <section className="ae-product-grid">
-          {items.map((product: any) => (
+          {displayItems.map((product: any) => (
             <AdvancedAdminProductManager key={product.id} product={product} />
           ))}
         </section>

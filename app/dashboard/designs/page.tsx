@@ -7,6 +7,7 @@ import { applyBrandGarmentConfiguration } from "@/lib/brand-commerce";
 import { platformShopAccess } from "@/lib/shop-mode";
 import type { BrandDesign } from "@/lib/brand-types";
 import type { CatalogProduct } from "@/lib/types";
+import { decodeProductNameFields } from "@/lib/html-entities";
 
 export const dynamic="force-dynamic";
 
@@ -25,7 +26,7 @@ export default async function DesignsPage(){
   ]);
 
   const bySource=new Map((garmentRows||[]).map((r:any)=>[r.source_catalog_product_id,r]));
-  const products:CatalogProduct[]=(sourceRows||[]).map((r:any)=>({...r,configuration:normalizeConfiguration(r.configuration)} as CatalogProduct)).map((source)=>{const row:any=bySource.get(source.id);if(!row)return null;return applyBrandGarmentConfiguration(source,row.configuration)}).filter((x):x is CatalogProduct=>Boolean(x));
+  const products:CatalogProduct[]=(sourceRows||[]).map((r:any)=>{const decoded=decodeProductNameFields(r);return {...decoded,configuration:normalizeConfiguration(decoded.configuration)} as CatalogProduct}).map((source)=>{const row:any=bySource.get(source.id);if(!row)return null;return applyBrandGarmentConfiguration(source,row.configuration)}).filter((x):x is CatalogProduct=>Boolean(x));
 
   const designs:BrandDesign[]=(designRows||[]).map((d:any)=>({...d,variants:(variants||[]).filter((v:any)=>v.brand_design_id===d.id),productIds:(rules||[]).filter((r:any)=>r.brand_design_id===d.id&&r.active!==false).map((r:any)=>r.catalog_product_id),productRules:(rules||[]).filter((r:any)=>r.brand_design_id===d.id&&r.active!==false).map((r:any)=>({productId:r.catalog_product_id,placements:r.configuration?.placements||{}}))}));
 

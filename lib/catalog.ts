@@ -1,3 +1,4 @@
+import { decodeHtmlEntities } from "@/lib/html-entities";
 import type {
   CatalogProduct,
   DesignSide,
@@ -298,7 +299,7 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
   const colors = Array.isArray(raw.colors) && raw.colors.length
     ? raw.colors.map((item, index) => ({
         id: String(item?.id || `color-${index + 1}`),
-        name: String(item?.name || `Color ${index + 1}`),
+        name: decodeHtmlEntities(item?.name || `Color ${index + 1}`),
         hex: String(item?.hex || "#111111"),
         swatchImageUrl: item?.swatchImageUrl ? String(item.swatchImageUrl) : undefined,
         frontImageUrl: item?.frontImageUrl ? String(item.frontImageUrl) : undefined,
@@ -410,10 +411,10 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
     supplier: supplierRaw?.provider
       ? {
           provider: String(supplierRaw.provider),
-          supplierName: supplierRaw.supplierName ? String(supplierRaw.supplierName) : undefined,
+          supplierName: supplierRaw.supplierName ? decodeHtmlEntities(supplierRaw.supplierName) : undefined,
           styleId: String(supplierRaw.styleId),
-          brandName: String(supplierRaw.brandName),
-          styleName: String(supplierRaw.styleName),
+          brandName: decodeHtmlEntities(supplierRaw.brandName),
+          styleName: decodeHtmlEntities(supplierRaw.styleName),
           partNumber: supplierRaw.partNumber ? String(supplierRaw.partNumber) : undefined,
           importedAt: String(supplierRaw.importedAt || new Date().toISOString()),
           sourceMode: supplierRaw.sourceMode === "demo" || supplierRaw.sourceMode === "manual" ? supplierRaw.sourceMode : "live",
@@ -422,7 +423,7 @@ export function normalizeConfiguration(value: unknown): ProductConfiguration {
                 sku: String(item.sku),
                 skuId: item.skuId ? String(item.skuId) : undefined,
                 gtin: item.gtin ? String(item.gtin) : undefined,
-                colorName: String(item.colorName),
+                colorName: decodeHtmlEntities(item.colorName),
                 sizeName: String(item.sizeName),
                 customerPrice: Math.max(0, Number(item.customerPrice || 0)),
                 quantity: Math.max(0, Number(item.quantity || 0)),

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { makeDesignDisplayId } from "@/lib/design-id";
 import { normalizeConfiguration } from "@/lib/catalog";
+import { decodeProductNameFields } from "@/lib/html-entities";
 import { applyBrandGarmentConfiguration } from "@/lib/brand-commerce";
 import {
   builderUnitPrice,
@@ -112,7 +113,8 @@ export async function POST(request: Request) {
 
     const source: CatalogProduct = {
       ...sourceRow,
-      configuration: normalizeConfiguration(sourceRow.configuration)
+      ...decodeProductNameFields(sourceRow),
+      configuration: normalizeConfiguration(decodeProductNameFields(sourceRow).configuration)
     };
 
     const configured = applyBrandGarmentConfiguration(

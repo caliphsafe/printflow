@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import { asNumber, field, safeImageUrl, ssRequest } from "@/lib/ss-activewear";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 let cache: { shopId: string; expiresAt: number; payload: any } | null = null;
 const CACHE_MS = 20 * 60 * 1000;
@@ -13,9 +14,9 @@ function firstProductImage(configuration: any) {
 function styleSummary(row: Record<string, unknown>) {
   return {
     styleId: String(field(row, "styleID", "styleId") || ""),
-    brandName: String(field(row, "brandName") || ""),
-    styleName: String(field(row, "styleName", "name") || ""),
-    title: String(field(row, "title") || ""),
+    brandName: decodeHtmlEntities(field(row, "brandName")),
+    styleName: decodeHtmlEntities(field(row, "styleName", "name")),
+    title: decodeHtmlEntities(field(row, "title")),
     category: String(field(row, "baseCategory", "baseCateogry") || "Apparel"),
     partNumber: String(field(row, "partNumber") || ""),
     imageUrl: safeImageUrl(field(row, "styleImage"), "large"),
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
   const imported = (products || []).filter((item: any) => item.configuration?.supplier?.provider === "ss-activewear");
   const counts = new Map<string, { orders: number; pieces: number }>();
   for (const order of orders || []) {
-    const key = String((order as any).product_name || "");
+    const key = decodeHtmlEntities((order as any).product_name || "");
     if (!key) continue;
     const current = counts.get(key) || { orders: 0, pieces: 0 };
     current.orders += 1;
@@ -49,12 +50,12 @@ export async function GET(request: Request) {
   const topItems = imported
     .map((item: any) => ({
       id: item.id,
-      name: item.name,
-      brandName: item.configuration?.supplier?.brandName || "S&S",
-      styleName: item.configuration?.supplier?.styleName || "",
+      name: decodeHtmlEntities(item.name),
+      brandName: decodeHtmlEntities(item.configuration?.supplier?.brandName || "S&S"),
+      styleName: decodeHtmlEntities(item.configuration?.supplier?.styleName || ""),
       imageUrl: firstProductImage(item.configuration),
-      orders: counts.get(item.name)?.orders || 0,
-      pieces: counts.get(item.name)?.pieces || 0,
+      orders: counts.get(decodeHtmlEntities(item.name))?.orders || 0,
+      pieces: counts.get(decodeHtmlEntities(item.name))?.pieces || 0,
       colors: (item.configuration?.colors || []).filter((color: any) => color.active !== false).length
     }))
     .sort((a: any, b: any) => b.orders - a.orders || b.pieces - a.pieces || a.name.localeCompare(b.name))
@@ -85,8 +86,8 @@ export async function GET(request: Request) {
         const accountPrice = asNumber(field(row, "customerPrice"));
         const candidate = {
           styleId,
-          brandName: String(field(row, "brandName") || "S&S"),
-          styleName: String(field(row, "styleName") || ""),
+          brandName: decodeHtmlEntities(field(row, "brandName") || "S&S"),
+          styleName: decodeHtmlEntities(field(row, "styleName")),
           colorName: String(field(row, "colorName") || ""),
           sizeName: String(field(row, "sizeName") || ""),
           imageUrl: safeImageUrl(field(row, "colorFrontImage"), "large"),

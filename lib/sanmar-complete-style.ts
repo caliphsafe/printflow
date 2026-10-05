@@ -1,4 +1,5 @@
 import { getSanMarCachedStyle } from "@/lib/sanmar-catalog";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 import {
   fetchSanMarInventory,
   fetchSanMarMedia,
@@ -239,21 +240,24 @@ function sourceMetadata(
   styleId: string
 ) {
   return {
-    name:
+    name: decodeHtmlEntities(
       cached?.title ||
       standard?.name ||
       promo?.name ||
-      styleId,
-    description:
+      styleId
+    ),
+    description: decodeHtmlEntities(
       cached?.description ||
       standard?.description ||
       promo?.description ||
-      `SanMar style ${styleId}`,
-    brandName:
+      `SanMar style ${styleId}`
+    ),
+    brandName: decodeHtmlEntities(
       cached?.brand_name ||
       standard?.brandName ||
       promo?.brandName ||
       "SanMar"
+    )
   };
 }
 

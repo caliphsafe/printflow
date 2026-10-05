@@ -1,10 +1,12 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { decodeProductNameFields } from "@/lib/html-entities";
 
 const methods = ["Screen Printing", "DTF", "Embroidery"];
 
 export default function AdvancedAdminProductManager({ product }: { product: any }) {
+  product = decodeProductNameFields(product);
   const router = useRouter();
   const [name, setName] = useState(product.name || "");
   const [active, setActive] = useState(product.active !== false);

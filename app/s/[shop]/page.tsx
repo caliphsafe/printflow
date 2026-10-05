@@ -14,6 +14,7 @@ import type {
 import { normalizeShopSettings } from "@/lib/shop-settings";
 import { platformShopAccess } from "@/lib/shop-mode";
 import { hydrateSanMarProductRowsWithFlatMedia } from "@/lib/sanmar-flat-media";
+import { decodeProductNameFields } from "@/lib/html-entities";
 
 type Props = {
   params: Promise<{ shop: string }>;
@@ -191,13 +192,13 @@ export default async function ShopDesignerPage({
 
   const products: CatalogProduct[] =
     flatRows
-      .map((row) => ({
-        ...row,
-        configuration:
-          normalizeConfiguration(
-            row.configuration
-          )
-      }))
+      .map((row) => {
+        const decoded = decodeProductNameFields(row);
+        return {
+          ...decoded,
+          configuration: normalizeConfiguration(decoded.configuration)
+        };
+      })
       .filter((item) =>
         isLiveCustomProduct(item, slug)
       );

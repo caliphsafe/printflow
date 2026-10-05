@@ -5,6 +5,7 @@ import { normalizeBrandRetailProfile, supplierUnitCost } from "@/lib/brand-retai
 import { platformShopAccess } from "@/lib/shop-mode";
 import BrandRetailManager from "@/components/BrandRetailManager";
 import BrandWorkflowRail from "@/components/BrandWorkflowRail";
+import { decodeHtmlEntities, decodeProductNameFields } from "@/lib/html-entities";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +26,10 @@ export default async function BrandRetailPage() {
 
   for (const row of productRows || []) {
     if (!enabled.has((row as any).id)) continue;
-    const product: any = { ...row, configuration: normalizeConfiguration((row as any).configuration) };
+    const decoded = decodeProductNameFields(row as any);
+    const product: any = { ...decoded, configuration: normalizeConfiguration(decoded.configuration) };
     sampleCost = supplierUnitCost(product) || sampleCost;
-    sampleName = (row as any).name;
+    sampleName = decodeHtmlEntities((row as any).name);
     break;
   }
 

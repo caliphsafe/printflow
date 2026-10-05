@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import { DEFAULT_CONFIGURATION, normalizeConfiguration, slugify } from "@/lib/catalog";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 export async function POST(request: Request) {
   const { supabase, membership, shop } = await getAdminContext();
   if (!membership || !shop) return NextResponse.json({ error: "No shop configured." }, { status: 403 });
 
   const body = await request.json();
-  const name = String(body.name || "").trim();
+  const name = decodeHtmlEntities(String(body.name || "").trim());
   if (!name) return NextResponse.json({ error: "Product name is required." }, { status: 400 });
 
   const baseSlug = slugify(String(body.slug || name));

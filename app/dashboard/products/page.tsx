@@ -10,6 +10,7 @@ import {
 } from "@/lib/pricing-settings";
 import type { CatalogProduct } from "@/lib/types";
 import { hydrateSanMarProductRowsWithFlatMedia } from "@/lib/sanmar-flat-media";
+import { decodeProductNameFields } from "@/lib/html-entities";
 
 export const dynamic = "force-dynamic";
 
@@ -84,13 +85,13 @@ export default async function ProductsPage({
             ?.businessScope !==
           "brand-source"
       )
-      .map((row: any) => ({
-        ...row,
-        configuration:
-          normalizeConfiguration(
-            row.configuration
-          )
-      }));
+      .map((row: any) => {
+        const decoded = decodeProductNameFields(row);
+        return {
+          ...decoded,
+          configuration: normalizeConfiguration(decoded.configuration)
+        };
+      });
 
   const initialTab =
     PRODUCT_TABS.includes(

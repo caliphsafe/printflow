@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import { listSanMarCatalogStyles, sanmarFilterOptions, sanmarSftpConfigured } from "@/lib/sanmar-catalog";
 import { field, safeImageUrl, ssRequest } from "@/lib/ss-activewear";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 type SupplierKey = "ss" | "sanmar";
 const CACHE_MS = 15 * 60 * 1000;
@@ -16,9 +17,9 @@ function supplierFrom(value: string): SupplierKey | null {
 function normalizeSS(row: Record<string, unknown>) {
   return {
     styleId: String(field(row, "styleID", "styleId") || ""),
-    brandName: String(field(row, "brandName") || "").trim(),
-    styleName: String(field(row, "styleName", "name") || "").trim(),
-    title: String(field(row, "title") || "").trim(),
+    brandName: decodeHtmlEntities(field(row, "brandName")).trim(),
+    styleName: decodeHtmlEntities(field(row, "styleName", "name")).trim(),
+    title: decodeHtmlEntities(field(row, "title")).trim(),
     description: String(field(row, "description") || "")
       .replace(/<[^>]*>/g, " ")
       .replace(/\s+/g, " ")

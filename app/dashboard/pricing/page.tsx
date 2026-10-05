@@ -3,6 +3,7 @@ import PricingSettingsManager from "@/components/PricingSettingsManager";
 import { getAdminContext } from "@/lib/admin-data";
 import { DEFAULT_PRICING_PROFILE, normalizePricingProfile } from "@/lib/pricing-settings";
 import { normalizeConfiguration } from "@/lib/catalog";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function PricingPage({ searchParams }: Props) {
     const cost = Number(liveVariant?.customerPrice || configuration.manualUnitCost || 0);
     if (cost > 0) {
       sampleBlankCost = cost;
-      sampleBlankLabel = `${row.name} blank`;
+      sampleBlankLabel = `${decodeHtmlEntities(row.name)} blank`;
       break;
     }
   }

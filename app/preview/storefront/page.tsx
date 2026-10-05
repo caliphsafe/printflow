@@ -1,6 +1,7 @@
 import DesignerApp from "@/components/DesignerApp";
 import { getAdminContext } from "@/lib/admin-data";
 import { DEFAULT_CONFIGURATION, normalizeConfiguration } from "@/lib/catalog";
+import { decodeProductNameFields } from "@/lib/html-entities";
 import { DEFAULT_PRICING_PROFILE, normalizePricingProfile } from "@/lib/pricing-settings";
 import { normalizeShopSettings } from "@/lib/shop-settings";
 import type { CatalogProduct, PublicShop, ShopSettings } from "@/lib/types";
@@ -80,7 +81,7 @@ export default async function StorefrontPreviewPage() {
   ]);
 
   const liveProducts: CatalogProduct[] = (rows || [])
-    .map((row: any) => ({ ...row, configuration: normalizeConfiguration(row.configuration) }))
+    .map((row: any) => { const decoded = decodeProductNameFields(row); return { ...decoded, configuration: normalizeConfiguration(decoded.configuration) }; })
     .filter((item) => item.configuration.supplier?.sourceMode !== "demo");
 
   const previewShop: PublicShop = {

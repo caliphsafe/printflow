@@ -7,6 +7,7 @@ import { normalizeConfiguration } from "@/lib/catalog";
 import { platformShopAccess } from "@/lib/shop-mode";
 import type { CatalogProduct } from "@/lib/types";
 import type { BrandGarmentSetup } from "@/lib/brand-commerce";
+import { decodeProductNameFields } from "@/lib/html-entities";
 
 export const dynamic="force-dynamic";
 
@@ -19,7 +20,7 @@ export default async function BrandGarmentsPage(){
     supabase.from("catalog_products").select("id,slug,name,description,active,configuration").eq("shop_id",shop.id).order("created_at"),
     supabase.from("brand_garments").select("id,source_catalog_product_id,active,configuration").eq("shop_id",shop.id).order("created_at")
   ]);
-  const sourceProducts:CatalogProduct[]=(productRows||[]).map((r:any)=>({...r,configuration:normalizeConfiguration(r.configuration)})).filter((item)=>item.configuration.supplier?.sourceMode!=="demo");
+  const sourceProducts:CatalogProduct[]=(productRows||[]).map((r:any)=>{const decoded=decodeProductNameFields(r);return {...decoded,configuration:normalizeConfiguration(decoded.configuration)}}).filter((item)=>item.configuration.supplier?.sourceMode!=="demo");
   const ids=new Set((brandRows||[]).map((r:any)=>r.source_catalog_product_id));
   const brandProducts=sourceProducts.filter(x=>ids.has(x.id));
   const available=sourceProducts.filter(x=>!ids.has(x.id));

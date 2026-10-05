@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { readApiResponse } from "@/lib/client-api-response";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 import { DEFAULT_CONFIGURATION, normalizeConfiguration, normalizePrintArea } from "@/lib/catalog";
 import type { DesignSide, PrintArea, PrintSize } from "@/lib/types";
 
@@ -209,7 +210,13 @@ export default function SanMarCatalogImporter({
       const data = await readApiResponse(response);
       if (!response.ok) throw new Error(data.error || "Unable to load the live SanMar catalog.");
       setCategory(nextCategory);
-      setStyles((current) => append ? [...current, ...(data.styles || [])] : data.styles || []);
+      const decodedStyles = (data.styles || []).map((style: BrowseStyle) => ({
+        ...style,
+        brandName: decodeHtmlEntities(style.brandName),
+        title: decodeHtmlEntities(style.title),
+        description: decodeHtmlEntities(style.description)
+      }));
+      setStyles((current) => append ? [...current, ...decodedStyles] : decodedStyles);
       setBrands(data.brands || []);
       setCategories(data.categories || []);
       setTotal(Number(data.total || 0));

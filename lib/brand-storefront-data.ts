@@ -7,6 +7,7 @@ import { normalizeBrandBusinessProfile, normalizeBrandRetailProfile } from "@/li
 import { platformShopAccess } from "@/lib/shop-mode";
 import type { BrandDesign, BrandStoreProduct, PublicBrandShop } from "@/lib/brand-types";
 import type { CatalogProduct } from "@/lib/types";
+import { decodeProductNameFields } from "@/lib/html-entities";
 
 export async function getPublicBrandShop(
   slug: string,
@@ -53,7 +54,10 @@ export async function getPublicBrandShop(
 
   const garmentRowsBySource = new Map((garmentRows || []).map((row: any) => [row.source_catalog_product_id, row]));
   const garments: BrandStoreProduct[] = (sourceRows || [])
-    .map((row: any) => ({ ...row, configuration: normalizeConfiguration(row.configuration) } as CatalogProduct))
+    .map((row: any) => {
+      const decoded = decodeProductNameFields(row);
+      return { ...decoded, configuration: normalizeConfiguration(decoded.configuration) } as CatalogProduct;
+    })
     .map((source) => {
       const row: any = garmentRowsBySource.get(source.id);
       if (!row) return null;

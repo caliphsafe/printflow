@@ -1,6 +1,7 @@
 import PageBackLink from "@/components/PageBackLink";
 import SupplierCartManager from "@/components/SupplierCartManager";
 import { getAdminContext } from "@/lib/admin-data";
+import { decodeHtmlEntities } from "@/lib/html-entities";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ export default async function SupplierCartPage() {
       imageUrl,
       displayId: design.display_id || "Order",
       customerName: design.customer_name || "Customer",
-      productName: design.product_name || "Garment order",
+      productName: decodeHtmlEntities(design.product_name || "Garment order"),
       paymentStatus: design.payment_status || (design.status === "paid" ? "paid" : "pending"),
       createdAt: design.created_at || draft.created_at,
       ordered: Boolean(supplierOrder) || draft.status === "submitted",
