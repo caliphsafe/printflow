@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { readApiResponse } from "@/lib/client-api-response";
 import SanMarCatalogImporter from "@/components/SanMarCatalogImporter";
 import { AVAILABLE_DECORATION_METHODS } from "@/lib/catalog";
+import { defaultProductImage, isBackProductImage, isSwatchProductImage, productImageChoiceKey, uniqueProductImageChoices } from "@/lib/product-images";
 
 type SupplierKey = "ss" | "sanmar";
 
@@ -56,13 +57,23 @@ type Product = {
   supplier: SupplierKey;
 };
 
+type ImageChoice = { url: string; label: string; classTypeId?: string };
+type ColorImageSelection = {
+  frontImageUrl: string;
+  backImageUrl: string;
+  frontChoiceKey?: string;
+  backChoiceKey?: string;
+  frontManual?: boolean;
+  backManual?: boolean;
+};
+
 type ColorSummary = {
   name: string;
   colorHex: string;
   frontImageUrl?: string;
   backImageUrl?: string;
   swatchImageUrl?: string;
-  imageChoices: Array<{ url: string; label: string; classTypeId?: string }>;
+  imageChoices: ImageChoice[];
   sizeCount: number;
   inventory: number;
   priceMin: number;
@@ -83,6 +94,26 @@ const money = (value: number) =>
     currency: "USD"
   }).format(value || 0);
 
+function choicesForRows(rows: Product[]): ImageChoice[] {
+  return uniqueProductImageChoices(...rows.map((row) => [
+    ...(row.imageChoices || []),
+    ...(row.frontImageUrl ? [{ url: row.frontImageUrl, label: "Front image" }] : []),
+    ...(row.backImageUrl ? [{ url: row.backImageUrl, label: "Back image", classTypeId: "1008" }] : []),
+    ...(row.swatchImageUrl ? [{ url: row.swatchImageUrl, label: "Color swatch", classTypeId: "1004" }] : [])
+  ])).filter((choice) => !isSwatchProductImage(choice));
+}
+
+function choicesForSide(choices: ImageChoice[], side: "front" | "back") {
+  return choices.filter((choice) => isBackProductImage(choice) === (side === "back"));
+}
+
+function withColorImageChoice(selection: ColorImageSelection, side: "front" | "back", choice: ImageChoice, manual: boolean): ColorImageSelection {
+  const key = productImageChoiceKey(choice);
+  return side === "front"
+    ? { ...selection, frontImageUrl: choice.url, frontChoiceKey: key, frontManual: manual }
+    : { ...selection, backImageUrl: choice.url, backChoiceKey: key, backManual: manual };
+}
+
 const supplierLabel = (supplier: SupplierKey) =>
   supplier === "sanmar" ? "SanMar" : "S&S Activewear";
 
@@ -99,7 +130,7 @@ export default function SupplierCatalogBrowser({
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [decorationMethods, setDecorationMethods] = useState<string[]>([...AVAILABLE_DECORATION_METHODS]);
-  const [imageSelections, setImageSelections] = useState<Record<string, { frontImageUrl: string; backImageUrl: string }>>({});
+  const [imageSelections, setImageSelections] = useState<Record<string, ColorImageSelection>>({});
   const [q, setQ] = useState("");
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("");
@@ -246,15 +277,45 @@ export default function SupplierCatalogBrowser({
 
       const rows: Product[] = data.products || [];
       setProducts(rows);
-      setSelectedColors(
-        Array.from(new Set(rows.map((item) => item.colorName)))
-      );
+      const selectedColorNames = Array.from(new Set(rows.map((item) => item.colorName))).sort((a, b) => a.localeCompare(b));
+      setSelectedColors(selectedColorNames);
       const byColor = new Map<string, Product[]>();
       rows.forEach((row) => byColor.set(row.colorName, [...(byColor.get(row.colorName) || []), row]));
-      setImageSelections(Object.fromEntries(Array.from(byColor.entries()).map(([name, colorRows]) => {
-        const sample = colorRows.find((row) => row.frontImageUrl || row.backImageUrl) || colorRows[0];
-        return [name, { frontImageUrl: sample.frontImageUrl || "", backImageUrl: sample.backImageUrl || "" }];
-      })));
+      if (supplier === "sanmar") {
+        const initialImages: Record<string, ColorImageSelection> = Object.fromEntries(selectedColorNames.map((name) => {
+          const colorRows = byColor.get(name) || [];
+          const sample = colorRows.find((row) => row.frontImageUrl || row.backImageUrl) || colorRows[0];
+          const choices = choicesForRows(colorRows);
+          const frontImageUrl = defaultProductImage(choices, "front") || sample?.frontImageUrl || "";
+          const backImageUrl = defaultProductImage(choices, "back") || sample?.backImageUrl || "";
+          const frontChoice = choices.find((choice) => choice.url === frontImageUrl);
+          const backChoice = choices.find((choice) => choice.url === backImageUrl);
+          return [name, {
+            frontImageUrl,
+            backImageUrl,
+            frontChoiceKey: frontChoice ? productImageChoiceKey(frontChoice) : "",
+            backChoiceKey: backChoice ? productImageChoiceKey(backChoice) : ""
+          }];
+        }));
+        const primary = initialImages[selectedColorNames[0]];
+        for (const name of selectedColorNames.slice(1)) {
+          const choices = choicesForRows(byColor.get(name) || []);
+          const current = initialImages[name];
+          const matchingFront = choices.find((choice) => productImageChoiceKey(choice) === primary?.frontChoiceKey);
+          const matchingBack = choices.find((choice) => productImageChoiceKey(choice) === primary?.backChoiceKey);
+          initialImages[name] = {
+            ...current,
+            ...(matchingFront ? { frontImageUrl: matchingFront.url, frontChoiceKey: productImageChoiceKey(matchingFront) } : {}),
+            ...(matchingBack ? { backImageUrl: matchingBack.url, backChoiceKey: productImageChoiceKey(matchingBack) } : {})
+          };
+        }
+        setImageSelections(initialImages);
+      } else {
+        setImageSelections(Object.fromEntries(Array.from(byColor.entries()).map(([name, colorRows]) => {
+          const sample = colorRows.find((row) => row.frontImageUrl || row.backImageUrl) || colorRows[0];
+          return [name, { frontImageUrl: sample?.frontImageUrl || "", backImageUrl: sample?.backImageUrl || "" }];
+        })));
+      }
 
       if (!rows.length) {
         setMessageType("info");
@@ -322,6 +383,57 @@ export default function SupplierCatalogBrowser({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [products]);
 
+  function toggleColorSelection(colorName: string, checked: boolean) {
+    setSelectedColors((current) => checked
+      ? Array.from(new Set([...current, colorName])).sort((a, b) => a.localeCompare(b))
+      : current.filter((name) => name !== colorName));
+    if (!checked || supplier !== "sanmar") return;
+
+    setImageSelections((current) => {
+      if (current[colorName]) return current;
+      const color = colors.find((item) => item.name === colorName);
+      const choices = color?.imageChoices.filter((choice) => !isSwatchProductImage(choice)) || [];
+      const primary = current[selectedColors[0]];
+      const front = choices.find((choice) => productImageChoiceKey(choice) === primary?.frontChoiceKey);
+      const back = choices.find((choice) => productImageChoiceKey(choice) === primary?.backChoiceKey);
+      return {
+        ...current,
+        [colorName]: {
+          frontImageUrl: front?.url || defaultProductImage(choices, "front") || color?.frontImageUrl || "",
+          backImageUrl: back?.url || defaultProductImage(choices, "back") || color?.backImageUrl || "",
+          frontChoiceKey: front ? productImageChoiceKey(front) : "",
+          backChoiceKey: back ? productImageChoiceKey(back) : ""
+        }
+      };
+    });
+  }
+
+  function selectSanMarImage(colorName: string, side: "front" | "back", choice: ImageChoice) {
+    const primaryColor = selectedColors[0];
+    const key = productImageChoiceKey(choice);
+    setImageSelections((current) => {
+      const next = { ...current };
+      for (const name of selectedColors) {
+        const color = colors.find((item) => item.name === name);
+        const choices = color?.imageChoices.filter((option) => !isSwatchProductImage(option)) || [];
+        const previous = next[name] || {
+          frontImageUrl: color?.frontImageUrl || "",
+          backImageUrl: color?.backImageUrl || ""
+        };
+        const manual = side === "front" ? previous.frontManual : previous.backManual;
+        const selectedHere = name === colorName;
+        const followsPrimary = colorName === primaryColor && name !== primaryColor;
+        if (!selectedHere && (!followsPrimary || manual)) continue;
+
+        const matched = selectedHere
+          ? choice
+          : choices.find((option) => productImageChoiceKey(option) === key);
+        if (matched) next[name] = withColorImageChoice(previous, side, matched, selectedHere && name !== primaryColor);
+      }
+      return next;
+    });
+  }
+
   async function importProduct() {
     if (!selected || !products.length || !selectedColors.length) return;
 
@@ -337,7 +449,15 @@ export default function SupplierCatalogBrowser({
           products,
           selectedColors,
           decorationMethods,
-          imageSelections,
+          imageSelections: supplier === "sanmar"
+            ? Object.fromEntries(selectedColors.map((colorName) => {
+                const selection = imageSelections[colorName];
+                return [colorName, {
+                  frontImageUrl: selection?.frontImageUrl || "",
+                  backImageUrl: selection?.backImageUrl || ""
+                }];
+              }))
+            : imageSelections,
           style: selected,
           targetBusiness
         })
@@ -727,32 +847,15 @@ export default function SupplierCatalogBrowser({
                         <input
                           type="checkbox"
                           checked={selectedColors.includes(color.name)}
-                          onChange={(event) =>
-                            setSelectedColors(
-                              event.target.checked
-                                ? [...selectedColors, color.name]
-                                : selectedColors.filter((value) => value !== color.name)
-                            )
-                          }
+                          onChange={(event) => toggleColorSelection(color.name, event.target.checked)}
                         />
 
-                      <div className="supplier-live-color-images">
-                        {color.frontImageUrl ? (
-                          <img
-                            src={color.frontImageUrl}
-                            alt={`${color.name} front`}
-                          />
-                        ) : (
-                          <span style={{ background: color.colorHex }} />
-                        )}
-
-                        {color.backImageUrl && (
-                          <img
-                            src={color.backImageUrl}
-                            alt={`${color.name} back`}
-                          />
-                        )}
-                      </div>
+                      {supplier === "sanmar" ? <div className="supplier-live-color-images supplier-live-color-swatch">
+                        {color.swatchImageUrl ? <img src={color.swatchImageUrl} alt={`${color.name} swatch`}/> : <span style={{ background: color.colorHex }} />}
+                      </div> : <div className="supplier-live-color-images">
+                        {color.frontImageUrl ? <img src={color.frontImageUrl} alt={`${color.name} front`}/> : <span style={{ background: color.colorHex }} />}
+                        {color.backImageUrl && <img src={color.backImageUrl} alt={`${color.name} back`}/>}
+                      </div>}
 
                       <div className="supplier-live-color-copy">
                         <div>
@@ -776,7 +879,7 @@ export default function SupplierCatalogBrowser({
                         </small>
                       </div>
                       </label>
-                      <div className="supplier-live-image-selectors">
+                      {supplier !== "sanmar" && <div className="supplier-live-image-selectors">
                         {(["frontImageUrl", "backImageUrl"] as const).map((side) => {
                           const current = imageSelections[color.name] || { frontImageUrl: color.frontImageUrl || "", backImageUrl: color.backImageUrl || "" };
                           const selectedUrl = current[side] || "";
@@ -790,10 +893,35 @@ export default function SupplierCatalogBrowser({
                             [color.name]: { ...current, [side]: event.target.value }
                           }))}><option value="">No image</option>{choices.map((choice) => <option key={choice.url} value={choice.url}>{choice.label}</option>)}</select></label>;
                         })}
-                      </div>
+                      </div>}
                     </div>
                   ))}
                 </div>
+
+                {supplier === "sanmar" && <section className="supplier-color-image-options">
+                  <header><div><h3>Product images by selected color</h3><p>Choose images for the first color to set matching views across the other selected colors. You can override any color below.</p></div><span>{selectedColors.length} selected</span></header>
+                  <div className="supplier-color-image-groups">{selectedColors.map((colorName, colorIndex) => {
+                    const color = colors.find((item) => item.name === colorName);
+                    const selection = imageSelections[colorName];
+                    const choices = color?.imageChoices.filter((choice) => !isSwatchProductImage(choice)) || [];
+                    return <article className="supplier-color-image-group" key={colorName}>
+                      <div className="supplier-color-image-group-heading"><div><strong>{colorName}</strong><small>{colorIndex === 0 ? "Primary image choices · matching selections carry to other colors" : selection?.frontManual || selection?.backManual ? "Custom image selections for this color" : "Following matching views from the first color"}</small></div><span className="color-dot" style={{ background: color?.colorHex || "#777" }}/></div>
+                      <div className="supplier-color-side-galleries">{(["front", "back"] as const).map((side) => {
+                        const imageChoices = choicesForSide(choices, side);
+                        const selectedUrl = side === "front" ? selection?.frontImageUrl : selection?.backImageUrl;
+                        return <section className="supplier-color-side-gallery" key={side}>
+                          <h4>{side === "front" ? "Front images" : "Back images"}</h4>
+                          {imageChoices.length ? <div className="supplier-color-image-choice-grid">{imageChoices.map((choice) => {
+                            const active = choice.url === selectedUrl;
+                            return <button type="button" className={active ? "selected" : ""} key={`${productImageChoiceKey(choice)}-${choice.url}`} onClick={() => selectSanMarImage(colorName, side, choice)}>
+                              <span><img src={choice.url} alt={`${colorName} ${side} product view`}/>{active && <i>✓</i>}</span><b>{choice.label}</b><small>{active ? "Selected for this color" : colorIndex === 0 ? "Select and apply matching views to others" : `Use this image for ${colorName}`}</small>
+                            </button>;
+                          })}</div> : <p>No {side} images were provided for {colorName}.</p>}
+                        </section>;
+                      })}</div>
+                    </article>;
+                  })}</div>
+                </section>}
 
                 <section className="selection-panel" style={{ marginTop: 18 }}>
                   <header><h3>Available decoration methods</h3><p>Choose at least one method customers may use for this product.</p></header>
@@ -1132,6 +1260,66 @@ function CatalogLayoutStyles() {
         grid-column: 1 / -1;
       }
 
+      .supplier-live-color-swatch {
+        display: grid;
+        place-items: center;
+        grid-template-columns: 1fr;
+      }
+
+      .supplier-live-color-swatch img,
+      .supplier-live-color-swatch > span {
+        width: 46px;
+        height: 46px;
+        border: 1px solid #e2e6e8;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+
+      .supplier-color-image-options {
+        display: grid;
+        gap: 13px;
+        margin-top: 16px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        background: #f8fafb;
+      }
+
+      .supplier-color-image-options > header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .supplier-color-image-options > header h3,
+      .supplier-color-image-options > header p { margin: 0; }
+      .supplier-color-image-options > header h3 { font-size: 15px; }
+      .supplier-color-image-options > header p { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+      .supplier-color-image-options > header > span { flex: 0 0 auto; padding: 6px 9px; border-radius: 99px; background: #e9eef1; color: #405669; font-size: 10px; font-weight: 800; }
+
+      .supplier-color-image-groups { display: grid; gap: 11px; }
+      .supplier-color-image-group { min-width: 0; padding: 13px; border: 1px solid #e0e6e9; border-radius: 12px; background: #fff; }
+      .supplier-color-image-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
+      .supplier-color-image-group-heading > div { display: grid; gap: 3px; }
+      .supplier-color-image-group-heading strong { font-size: 12px; }
+      .supplier-color-image-group-heading small { color: var(--muted); font-size: 10px; }
+      .supplier-color-image-group-heading .color-dot { width: 16px; height: 16px; border: 1px solid #d7dce0; }
+      .supplier-color-side-galleries { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .supplier-color-side-gallery { min-width: 0; }
+      .supplier-color-side-gallery h4 { margin: 0 0 7px; font-size: 11px; }
+      .supplier-color-side-gallery > p { color: var(--muted); font-size: 10px; }
+      .supplier-color-image-choice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); gap: 7px; }
+      .supplier-color-image-choice-grid button { min-width: 0; padding: 6px; border: 1px solid #dfe4e7; border-radius: 9px; background: #fff; color: var(--ink, #1d2b35); text-align: left; cursor: pointer; }
+      .supplier-color-image-choice-grid button.selected { border-color: #315d7d; box-shadow: 0 0 0 2px #315d7d22; }
+      .supplier-color-image-choice-grid button > span { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 1; border-radius: 7px; background: #f3f5f6; overflow: hidden; }
+      .supplier-color-image-choice-grid button img { width: 100%; height: 100%; object-fit: contain; }
+      .supplier-color-image-choice-grid button i { position: absolute; top: 5px; right: 5px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #214e6d; color: #fff; font-style: normal; font-size: 11px; }
+      .supplier-color-image-choice-grid button b,
+      .supplier-color-image-choice-grid button small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .supplier-color-image-choice-grid button b { margin-top: 6px; font-size: 10px; }
+      .supplier-color-image-choice-grid button small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+
       @media (max-width: 1180px) {
         .supplier-catalog-layout {
           grid-template-columns: 1fr !important;
@@ -1213,6 +1401,11 @@ function CatalogLayoutStyles() {
           min-height: 150px;
           aspect-ratio: auto;
         }
+
+        .supplier-color-side-galleries { grid-template-columns: 1fr; }
+        .supplier-color-image-options { padding: 12px; }
+        .supplier-color-image-group { padding: 10px; }
+        .supplier-color-image-choice-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
       }
     `}</style>
   );

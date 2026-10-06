@@ -606,6 +606,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
               {tab === "Images" && (
                 <Panel title="Product images" description="Choose image views visually. A selected SanMar image type is matched across colors when that color has the same view available.">
                   <ProductImagesEditor
+                    productId={draft.id}
                     values={draft.configuration.colors}
                     supplier={draft.configuration.supplier}
                     onChange={(colors) => {
@@ -829,34 +830,71 @@ function ColorImageEditor({ values, onChange }: { values: ShirtColor[]; onChange
 }
 
 function ProductImagesEditor({
+  productId,
   values,
   supplier,
   onChange
 }: {
+  productId: string;
   values: ShirtColor[];
   supplier?: ProductConfiguration["supplier"];
   onChange: (values: ShirtColor[]) => void;
 }) {
   const [states, setStates] = useState<Record<string, UploadState>>({});
+  const [manualOverrides, setManualOverrides] = useState<Record<string, boolean>>({});
   const [imagesBusy, setImagesBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const primary = values.find((color) => color.active !== false) || values[0];
-  const choices = uniqueProductImageChoices(...values.map((color) => [
-    ...(color.imageChoices || []).map((choice) => ({ ...choice, colorName: color.name, label: `${color.name} · ${choice.label}` })),
-    ...(color.frontImageUrl ? [{ url: color.frontImageUrl, label: `${color.name} · ${isModelProductImage({ url: color.frontImageUrl }) ? "Front model" : "Current front"}`, colorName: color.name }] : []),
-    ...(color.backImageUrl ? [{ url: color.backImageUrl, label: `${color.name} · ${isModelProductImage({ url: color.backImageUrl }) ? "Back model" : "Current back"}`, classTypeId: "1008", colorName: color.name }] : [])
-  ])) as ProductImageChoice[];
-  const frontChoices = choices.filter((choice) => !productImageIsBack(choice) && !isSwatchProductImage(choice));
-  const backChoices = choices.filter((choice) => productImageIsBack(choice) && !isSwatchProductImage(choice));
+  const activeColors = values.filter((color) => color.active !== false);
+  const primary = activeColors[0];
 
-  function applyChoice(side: DesignSide, choice: ProductImageChoice) {
-    const key = side === "front" ? "frontImageUrl" : "backImageUrl";
+  useEffect(() => {
+    const initialOverrides: Record<string, boolean> = {};
+    for (const color of activeColors) {
+      if (color.id === primary?.id) continue;
+      for (const side of ["front", "back"] as const) {
+        const imageKey = side === "front" ? "frontImageUrl" : "backImageUrl";
+        const primaryUrl = primary?.[imageKey];
+        const colorUrl = color[imageKey];
+        if (!primaryUrl || !colorUrl) continue;
+        const primaryChoice = choicesForColor(primary, side).find((choice) => choice.url === primaryUrl);
+        const colorChoice = choicesForColor(color, side).find((choice) => choice.url === colorUrl);
+        if (primaryChoice && colorChoice && productImageChoiceKey(primaryChoice) !== productImageChoiceKey(colorChoice)) {
+          initialOverrides[`${color.id}:${side}`] = true;
+        }
+      }
+    }
+    setManualOverrides(initialOverrides);
+  }, [productId]);
+
+  function choicesForColor(color: ShirtColor, side: DesignSide): ProductImageChoice[] {
+    const choices = uniqueProductImageChoices(
+      color.imageChoices || [],
+      color.frontImageUrl ? [{ url: color.frontImageUrl, label: isModelProductImage({ url: color.frontImageUrl }) ? "Front model" : "Current front" }] : [],
+      color.backImageUrl ? [{ url: color.backImageUrl, label: isModelProductImage({ url: color.backImageUrl }) ? "Back model" : "Current back", classTypeId: "1008" }] : []
+    );
+    return choices.filter((choice) => !isSwatchProductImage(choice) && productImageIsBack(choice) === (side === "back"));
+  }
+
+  function applyChoice(colorIndex: number, color: ShirtColor, side: DesignSide, choice: ProductImageChoice) {
+    const imageKey = side === "front" ? "frontImageUrl" : "backImageUrl";
     const role = productImageChoiceKey(choice);
-    onChange(values.map((color) => {
-      const match = (color.imageChoices || []).find((option) => productImageChoiceKey(option) === role);
-      const selected = match?.url || (color.id === primary?.id ? choice.url : "");
-      return selected ? { ...color, [key]: selected } : color;
+    const isPrimary = color.id === primary?.id;
+    if (!isPrimary) setManualOverrides((current) => ({ ...current, [`${color.id}:${side}`]: true }));
+
+    onChange(values.map((candidate, index) => {
+      if (candidate.active === false) return candidate;
+      if (index === colorIndex) return { ...candidate, [imageKey]: choice.url };
+      if (!isPrimary || manualOverrides[`${candidate.id}:${side}`]) return candidate;
+      const match = choicesForColor(candidate, side).find((option) => productImageChoiceKey(option) === role);
+      return match ? { ...candidate, [imageKey]: match.url } : candidate;
     }));
+  }
+
+  function updateColorImage(colorIndex: number, side: DesignSide, url?: string) {
+    const color = values[colorIndex];
+    const imageKey = side === "front" ? "frontImageUrl" : "backImageUrl";
+    setManualOverrides((current) => ({ ...current, [`${color?.id || colorIndex}:${side}`]: true }));
+    onChange(values.map((item, index) => index === colorIndex ? { ...item, [imageKey]: url } : item));
   }
 
   async function loadSanMarImages() {
@@ -913,6 +951,7 @@ function ProductImagesEditor({
       if (result.error) throw result.error;
       const imageKey = side === "front" ? "frontImageUrl" : "backImageUrl";
       onChange(values.map((color, colorIndex) => colorIndex === index ? { ...color, [imageKey]: prepared.publicUrl } : color));
+      setManualOverrides((current) => ({ ...current, [`${values[index]?.id || index}:${side}`]: true }));
       setStates((current) => ({ ...current, [key]: { busy: false, success: "Uploaded. Save product to publish." } }));
     } catch (error) {
       setStates((current) => ({ ...current, [key]: { busy: false, error: error instanceof Error ? error.message : "Unable to upload image." } }));
@@ -920,14 +959,21 @@ function ProductImagesEditor({
   }
 
   return <div className="product-images-editor">
-    <div className="product-image-choice-help"><strong>Choose a garment image style</strong><span>Select a front or back view below. PrintFlow will use the matching image view for each color when SanMar provides one.</span>{supplier?.provider === "sanmar" && <button type="button" className="secondary-button compact" disabled={imagesBusy} onClick={() => void loadSanMarImages()}>{imagesBusy ? "Loading images…" : "Load latest SanMar images"}</button>}</div>
-    {primary && <div className="product-image-galleries">{(["front", "back"] as const).map((side) => {
-      const options = side === "front" ? frontChoices : backChoices;
-      const selectedUrl = primary[side === "front" ? "frontImageUrl" : "backImageUrl"];
-      return <section className="product-image-gallery" key={side}><h3>{side === "front" ? "Front view" : "Back view"}</h3>{options.length ? <div className="product-image-gallery-grid">{options.map((choice) => <button type="button" key={choice.url} className={choice.url === selectedUrl ? "selected" : ""} onClick={() => applyChoice(side, choice)}><span>{choice.url === selectedUrl && <i>✓</i>}<img src={assetUrl(choice.url)} alt={`${side} garment view option`}/></span><b>{choice.label}</b><small>{choice.url === selectedUrl ? "Current selection" : "Choose this image style"}</small></button>)}</div> : <p>No {side} view options are available. Add an image below.</p>}</section>;
-    })}</div>}
+    <div className="product-image-choice-help"><strong>Choose images by color</strong><span>Each active color has its own front and back gallery. The first color sets matching views for the others; choosing an image in another color keeps that color’s override.</span>{supplier?.provider === "sanmar" && <button type="button" className="secondary-button compact" disabled={imagesBusy} onClick={() => void loadSanMarImages()}>{imagesBusy ? "Loading images…" : "Load latest SanMar images"}</button>}</div>
     {message && <p className="product-image-editor-message">{message}</p>}
-    <div className="product-image-color-list">{values.map((color, index) => <section className="product-image-color" key={color.id}><header><div><strong>{color.name}</strong><small>Image preview for this color</small></div><div>{color.frontImageUrl && <img src={assetUrl(color.frontImageUrl)} alt={`${color.name} front`}/>} {color.backImageUrl && <img src={assetUrl(color.backImageUrl)} alt={`${color.name} back`}/>}</div></header><div className="side-photo-grid"><PhotoField title="Front image" url={color.frontImageUrl} state={states[`${color.id}-front`]} onUrl={(url) => onChange(values.map((item, colorIndex) => colorIndex === index ? { ...item, frontImageUrl: url } : item))} onFile={(file) => upload(index, "front", file)} onRemove={() => onChange(values.map((item, colorIndex) => colorIndex === index ? { ...item, frontImageUrl: undefined } : item))}/><PhotoField title="Back image" url={color.backImageUrl} state={states[`${color.id}-back`]} onUrl={(url) => onChange(values.map((item, colorIndex) => colorIndex === index ? { ...item, backImageUrl: url } : item))} onFile={(file) => upload(index, "back", file)} onRemove={() => onChange(values.map((item, colorIndex) => colorIndex === index ? { ...item, backImageUrl: undefined } : item))}/></div></section>)}</div>
+    {!activeColors.length && <p className="product-image-editor-message">Turn on at least one color in the Colors tab to choose its images.</p>}
+    <div className="product-image-color-list">{activeColors.map((color) => {
+      const index = values.findIndex((item) => item.id === color.id);
+      return <section className="product-image-color" key={color.id}>
+        <header><div><strong>{color.name}</strong><small>{color.id === primary?.id ? "Primary color · matching views update other colors" : manualOverrides[`${color.id}:front`] || manualOverrides[`${color.id}:back`] ? "Custom view selected for this color" : "Following matching views from the primary color"}</small></div><div>{color.frontImageUrl && <img src={assetUrl(color.frontImageUrl)} alt={`${color.name} front`}/>} {color.backImageUrl && <img src={assetUrl(color.backImageUrl)} alt={`${color.name} back`}/>}</div></header>
+        <div className="product-image-galleries">{(["front", "back"] as const).map((side) => {
+          const options = choicesForColor(color, side);
+          const selectedUrl = side === "front" ? color.frontImageUrl : color.backImageUrl;
+          return <section className="product-image-gallery" key={side}><h3>{side === "front" ? "Front view" : "Back view"}</h3>{options.length ? <div className="product-image-gallery-grid">{options.map((choice) => <button type="button" key={choice.url} className={choice.url === selectedUrl ? "selected" : ""} onClick={() => applyChoice(index, color, side, choice)}><span>{choice.url === selectedUrl && <i>✓</i>}<img src={assetUrl(choice.url)} alt={`${color.name} ${side} garment view option`}/></span><b>{choice.label}</b><small>{choice.url === selectedUrl ? "Selected for this color" : color.id === primary?.id ? "Choose and apply matching views to others" : `Choose this image for ${color.name}`}</small></button>)}</div> : <p>No {side} view options are available. Add an image below.</p>}</section>;
+        })}</div>
+        <div className="side-photo-grid"><PhotoField title="Upload or enter front image" url={color.frontImageUrl} state={states[`${color.id}-front`]} onUrl={(url) => updateColorImage(index, "front", url)} onFile={(file) => upload(index, "front", file)} onRemove={() => updateColorImage(index, "front")}/><PhotoField title="Upload or enter back image" url={color.backImageUrl} state={states[`${color.id}-back`]} onUrl={(url) => updateColorImage(index, "back", url)} onFile={(file) => upload(index, "back", file)} onRemove={() => updateColorImage(index, "back")}/></div>
+      </section>;
+    })}</div>
   </div>;
 }
 
