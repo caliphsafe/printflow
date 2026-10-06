@@ -188,6 +188,27 @@ function garmentColorFallback(color?: ShirtColor) {
   return named.find(([pattern]) => pattern.test(name))?.[1] || stored || "#d8d8d8";
 }
 
+/** Keep the product garment framed the same way in every customer flow step. */
+function GarmentCanvasLayer({ src, color }: { src: string; color?: ShirtColor }) {
+  return src ? (
+    <image
+      href={src}
+      x="32"
+      y="32"
+      width="736"
+      height="736"
+      preserveAspectRatio="xMidYMid meet"
+    />
+  ) : (
+    <path
+      d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z"
+      fill={garmentColorFallback(color)}
+      stroke="#bbb"
+      strokeWidth="3"
+    />
+  );
+}
+
 function extension(filename: string) {
   return filename.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "";
 }
@@ -861,7 +882,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       ) : step === "color" ? (
         <section className="flow-step customer-guided-step">
           <div className="customer-guided-layout">
-            <aside className="guided-product-preview" aria-label={`${customerProductName(product)} product preview`}><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div></aside>
+            <aside className="guided-product-preview" aria-label={`${customerProductName(product)} product preview`}><div className="guided-product-image"><svg className="guided-product-preview-canvas" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${customerProductName(product)}, ${color.name}`}><rect width={W} height={H} fill="#f6f6f3"/><GarmentCanvasLayer src={garmentUrl} color={color}/></svg></div></aside>
             <div className="guided-options-scroll"><button className="flow-back-link" onClick={() => setStep("products")}>← Back to products</button><h1>Color & quantity</h1><p className="flow-lede">Choose a garment color and enter quantities for each size.</p>
               <h2>Color</h2><label className="guided-field"><span>Garment color</span><select value={color.id} onChange={(event)=>{const nextColor=activeColors(product).find((item)=>item.id===event.target.value);if(!nextColor)return;setColor(nextColor);if((mode==="back"||mode==="front-back")&&!nextColor.backImageUrl){setMode("front");setSide("front");}}}>{activeColors(product).filter((item)=>!product.configuration.supplier||Boolean(item.frontImageUrl)).map((item)=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
               <h2 className="flow-subheading">Quantity by size <small>Minimum {minimum} pieces</small></h2><div className="modern-size-grid">{sizes.map((item)=><label key={item.size}><span>{item.size}</span><div><button aria-label={`Decrease ${item.size}`} onClick={()=>updateSize(item.size,item.quantity-1)}>−</button><input type="number" min="0" inputMode="numeric" value={item.quantity||""} onChange={(event)=>updateSize(item.size,Number(event.target.value))}/><button aria-label={`Increase ${item.size}`} onClick={()=>updateSize(item.size,item.quantity+1)}>+</button></div></label>)}</div><div className={totalAssigned>=minimum?"modern-quantity-status good":"modern-quantity-status"}><span>Total quantity</span><b>{totalAssigned}</b><small>{totalAssigned>=minimum?"Minimum reached":`${minimum-totalAssigned} more needed`}</small></div><button className="designer-primary" disabled={totalAssigned<minimum} onClick={()=>{setError("");setStep("decoration");}}>{totalAssigned<minimum?`Add ${minimum-totalAssigned} more items`:"Continue to decoration"}</button>
@@ -871,7 +892,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       ) : step === "decoration" ? (
         <section className="flow-step customer-guided-step">
           <div className="customer-guided-layout">
-            <aside className="guided-product-preview" aria-label={`${customerProductName(product)} product preview`}><div className="guided-product-image">{garmentUrl ? <img src={garmentUrl} alt={`${customerProductName(product)}, ${color.name}`}/> : <div className="product-placeholder">{product.name.slice(0,1)}</div>}</div></aside>
+            <aside className="guided-product-preview" aria-label={`${customerProductName(product)} product preview`}><div className="guided-product-image"><svg className="guided-product-preview-canvas" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${customerProductName(product)}, ${color.name}`}><rect width={W} height={H} fill="#f6f6f3"/><GarmentCanvasLayer src={garmentUrl} color={color}/></svg></div></aside>
             <div className="guided-options-scroll"><button className="flow-back-link" onClick={()=>setStep("color")}>← Color & quantity</button><h1>Decoration</h1><p className="flow-lede">Choose where and how your product will be customized.</p>
           <WizardSection number="1" title="Print location">{availableModes.length ? <div className="radio-card-grid">{availableModes.map((value)=><label key={value} className={mode===value?"radio-card selected":"radio-card"}><input type="radio" name="mode" checked={mode===value} onChange={()=>chooseMode(value)}/><span><b>{modeLabel(value)}</b><small>{value==="front-back"?"Add a design to both sides.":`Design the ${value} only.`}</small></span><i/></label>)}</div> : <p>This product has no configured decoration locations. Contact the shop for help.</p>}</WizardSection>
           {hasPrintSizeChoice && <WizardSection number="2" title="Decoration size"><div className="side-print-size-stack">{neededSides.map((target)=><div className="side-print-size-group" key={target}><span>{target==="front"?"Front":"Back"}</span><div className="print-size-choice-grid">{printSizeOptions.map((value)=>{const area=printAreaFor(product.configuration,target,value);return <label key={value} className={printSizes[target]===value?"print-size-choice selected":"print-size-choice"}><input type="radio" name={`${target}-print-size`} checked={printSizes[target]===value} onChange={()=>choosePrintSize(target,value)}/><span><b>{printSizeLabel(value)}</b><small>{area.widthInches}″ × {area.heightInches}″ max</small></span></label>;})}</div></div>)}</div></WizardSection>}
@@ -891,11 +912,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             <div className="design-stage modern">
               <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
                 <rect width={W} height={H} fill="#f6f6f3" />
-                {garmentUrl ? (
-                  <image href={garmentUrl} x="32" y="32" width="736" height="736" preserveAspectRatio="xMidYMid meet" />
-                ) : (
-                  <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={garmentColorFallback(color)} stroke="#bbb" strokeWidth="3" />
-                )}
+                <GarmentCanvasLayer src={garmentUrl} color={color} />
                 {!sideState.dataUrl && (
                   <g pointerEvents="none">
                     <rect
