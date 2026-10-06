@@ -8,8 +8,8 @@
     PrintFlow releases.
   - Some of those rules use !important and some use viewport-height sizing.
   - /s/[shop] is a reusable tenant storefront and needs one final route-owned
-    layer that makes the saved shop theme authoritative and prevents an iframe
-    from changing its own content height.
+    layer that makes the saved shop theme authoritative and keeps embed content
+    in normal document flow for accurate height reporting.
 
   This is NOT Advanced-specific. It protects every /s/[shop] storefront.
 */
@@ -30,9 +30,8 @@
 }
 
 /*
-  Direct storefronts keep their existing sticky-stage behavior. This fixed
-  upper bound also prevents the old runaway-height behavior before the embed
-  bridge switches desktop customization into viewport mode.
+  Direct storefronts keep their existing sticky-stage behavior. Embed-mode
+  overrides below remove this cap and let the stage contribute its full height.
 */
 .modern-customer-shell .modern-stage-column {
   max-height: 900px !important;
@@ -41,7 +40,7 @@
 
 /*
   Older global CSS caps the SVG with 72vh. Width owns the normal direct-page
-  stage until the explicit embedded-customize rules later in this file apply.
+  stage; embedded mode removes viewport-based limits below.
 */
 .modern-customer-shell .design-stage.modern svg {
   width: 100%;
@@ -212,4 +211,92 @@
   .modern-customer-shell {
     scroll-behavior: auto;
   }
+}
+
+
+/* Embedded storefronts expand to the full content height reported by the
+   StorefrontEmbedBridge. Remove viewport-sized and nested-scroll regions so
+   the host page can place its footer after the complete current step. */
+html.printflow-embedded,
+html.printflow-embedded body {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  scroll-behavior: auto !important;
+}
+
+html.printflow-embedded .modern-customer-shell {
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+html.printflow-embedded .modern-customer-shell .modern-stage-column {
+  position: static !important;
+  top: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+html.printflow-embedded .modern-customer-shell .color-step-preview {
+  position: static !important;
+  top: auto !important;
+}
+
+/* Guided wizard steps normally constrain their panels to the viewport and
+   scroll inside them. In embed mode, each step must stay in document flow. */
+html.printflow-embedded .modern-customer-shell .customer-guided-layout,
+html.printflow-embedded .modern-customer-shell .artwork-guided-layout {
+  height: auto !important;
+  min-height: 0 !important;
+  grid-template-rows: auto !important;
+}
+
+html.printflow-embedded .modern-customer-shell .guided-product-preview {
+  position: static !important;
+  top: auto !important;
+  height: auto !important;
+  min-height: 280px !important;
+  overflow: visible !important;
+}
+
+html.printflow-embedded .modern-customer-shell .guided-product-image {
+  flex: 0 0 auto !important;
+  height: 260px !important;
+  min-height: 260px !important;
+}
+
+html.printflow-embedded .modern-customer-shell .guided-options-scroll,
+html.printflow-embedded .modern-customer-shell .artwork-options-scroll {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  overscroll-behavior: auto !important;
+  scrollbar-gutter: auto !important;
+}
+
+html.printflow-embedded .modern-customer-shell .artwork-guided-layout .modern-stage-column {
+  position: static !important;
+  top: auto !important;
+  grid-column: auto !important;
+  grid-row: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+html.printflow-embedded .modern-customer-shell .artwork-guided-layout .design-stage.modern {
+  width: 100% !important;
+  height: auto !important;
+  min-height: clamp(320px, 48vw, 620px) !important;
+  max-height: none !important;
+  aspect-ratio: 1 / 1 !important;
+}
+
+html.printflow-embedded .modern-customer-shell .artwork-guided-layout .design-stage.modern svg {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
 }

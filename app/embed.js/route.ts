@@ -1,6 +1,7 @@
 export async function GET(request: Request) {
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
+  const appUrl = (
+    process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin
+  ).replace(/\/+$/, "");
 
   const script = `(function(){
     var current=document.currentScript;
@@ -17,99 +18,85 @@ export async function GET(request: Request) {
 
     frame.src=src.toString();
     frame.title='Custom apparel designer';
+    frame.loading='eager';
+    frame.setAttribute('fetchpriority','high');
     frame.setAttribute('scrolling','no');
-    frame.style.cssText='display:block;width:100%;height:1200px;min-height:0;border:0;background:transparent;overflow:hidden;';
+    frame.style.cssText='display:block;width:100%;height:900px;min-height:0;border:0;background:transparent;overflow:hidden;';
+
+    if(!current.parentNode){
+      console.error('PrintFlow: embed script needs a parent element');
+      return;
+    }
 
     current.parentNode.insertBefore(frame,current.nextSibling);
 
-    var view='products';
-    var lastContentHeight=1200;
-    var lastAppliedHeight=1200;
-    var pendingHeight=0;
-    var raf=0;
-    var desktop=window.matchMedia('(min-width:1041px)');
+    var printflowOrigin=new URL('${appUrl}').origin;
+    var activePage='';
+    var lastAppliedHeight=900;
+    var resizeFrame=0;
 
-    function viewportHeight(){
-      var visual=window.visualViewport&&window.visualViewport.height;
-      var available=Number(visual||window.innerHeight||900);
-      return Math.max(640,Math.min(900,Math.floor(available-120)));
+    function normalizedHeight(value){
+      var next=Math.ceil(Number(value)||0);
+      if(!Number.isFinite(next)||next<=0)return 0;
+      return Math.max(1,Math.min(next,18000));
     }
 
-    function fixedCustomizer(){
-      return view==='customize'&&desktop.matches;
-    }
-
-    function setHeight(next){
-      next=Math.ceil(Number(next)||0);
-      if(!Number.isFinite(next)||next<=0)return;
-
-      next=Math.max(620,Math.min(next,16000));
-
-      if(Math.abs(next-lastAppliedHeight)<3)return;
-
+    function setHeight(value){
+      var next=normalizedHeight(value);
+      if(!next||Math.abs(next-lastAppliedHeight)<2)return;
       lastAppliedHeight=next;
       frame.style.height=next+'px';
     }
 
-    function applyMode(){
-      if(fixedCustomizer()){
-        frame.setAttribute('scrolling','no');
-        frame.style.overflow='hidden';
-        setHeight(viewportHeight());
-        return;
+    function stickyHeaderOffset(){
+      var configured=current.getAttribute('data-scroll-offset');
+      if(configured!==null&&configured!==''){
+        var explicit=Number(configured);
+        if(Number.isFinite(explicit))return Math.max(0,explicit);
       }
 
-      frame.setAttribute('scrolling','no');
-      frame.style.overflow='hidden';
-      setHeight(lastContentHeight||1200);
+      var offset=0;
+      var candidates=document.querySelectorAll('header,nav,[role="banner"],[data-printflow-sticky-header]');
+      candidates.forEach(function(element){
+        var style=window.getComputedStyle(element);
+        var rect=element.getBoundingClientRect();
+        if((style.position==='fixed'||style.position==='sticky')&&rect.top<=1&&rect.bottom>0){
+          offset=Math.max(offset,rect.bottom);
+        }
+      });
+      return offset?Math.ceil(offset+8):0;
     }
 
-    function commitHeight(){
-      raf=0;
-
-      if(fixedCustomizer())return;
-
-      var next=Math.ceil(Number(pendingHeight)||0);
-      if(!Number.isFinite(next)||next<=0)return;
-
-      lastContentHeight=Math.max(620,Math.min(next,16000));
-      applyMode();
+    function scrollFrameToTop(){
+      var offset=stickyHeaderOffset();
+      var top=window.scrollY+frame.getBoundingClientRect().top-offset;
+      window.scrollTo(0,Math.max(0,top));
     }
 
     window.addEventListener('message',function(event){
-      if(event.origin!=='${appUrl}'||event.source!==frame.contentWindow||!event.data)return;
+      if(event.origin!==printflowOrigin||event.source!==frame.contentWindow||!event.data)return;
 
-      if(event.data.type==='printflow:view'){
-        if(event.data.view==='products'||event.data.view==='customize'){
-          view=event.data.view;
+      var data=event.data;
+      if(data.type==='printflow:page'){
+        var nextPage=typeof data.page==='string'?data.page:'';
+        var changed=Boolean(nextPage&&activePage&&nextPage!==activePage);
+        if(nextPage)activePage=nextPage;
+        setHeight(data.height);
+
+        if(changed){
+          if(resizeFrame)cancelAnimationFrame(resizeFrame);
+          resizeFrame=requestAnimationFrame(function(){
+            resizeFrame=0;
+            scrollFrameToTop();
+          });
         }
-
-        var reported=Math.ceil(Number(event.data.height)||0);
-        if(reported>0&&!fixedCustomizer()){
-          lastContentHeight=Math.max(620,Math.min(reported,16000));
-        }
-
-        applyMode();
         return;
       }
 
-      if(event.data.type!=='printflow:resize')return;
-
-      pendingHeight=event.data.height;
-
-      if(fixedCustomizer())return;
-      if(raf)return;
-
-      raf=requestAnimationFrame(commitHeight);
+      if(data.type==='printflow:view'||data.type==='printflow:resize'){
+        setHeight(data.height);
+      }
     });
-
-    window.addEventListener('resize',applyMode);
-
-    if(desktop.addEventListener){
-      desktop.addEventListener('change',applyMode);
-    }else if(desktop.addListener){
-      desktop.addListener(applyMode);
-    }
   })();`;
 
   return new Response(script, {

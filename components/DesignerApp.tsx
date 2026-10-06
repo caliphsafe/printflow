@@ -393,7 +393,9 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   }, [shop.products, product?.id, color?.id]);
 
   useEffect(() => {
-    if (window.parent === window) return;
+    // The public embed bridge owns height updates for embed.js. Keep the legacy
+    // iframe reporter for direct iframe integrations that do not use embed mode.
+    if (window.parent === window || embedMode) return;
 
     const send = () => window.parent.postMessage(
       { type: "printflow:resize", height: document.documentElement.scrollHeight },
@@ -404,7 +406,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     const observer = new ResizeObserver(send);
     observer.observe(document.body);
     return () => observer.disconnect();
-  }, []);
+  }, [embedMode]);
 
   useEffect(
     () => () => {

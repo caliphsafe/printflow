@@ -4,18 +4,37 @@ import { useEffect } from "react";
 
 type StorefrontView = "products" | "customize";
 
-function storefrontView(): StorefrontView {
-  const step = document
-    .querySelector(".modern-customer-shell")
-    ?.getAttribute("data-flow-step");
-  return step && step !== "products" ? "customize" : "products";
+function storefrontState() {
+  const shell = document.querySelector(".modern-customer-shell");
+  const step = shell?.getAttribute("data-flow-step") || "products";
+  const view: StorefrontView = step === "products" ? "products" : "customize";
+  const page = window.location.pathname + "::" + step;
+
+  return { page, view };
 }
 
 function documentHeight() {
+  const shell = document.querySelector(".modern-customer-shell");
+
+  if (shell) {
+    const rect = shell.getBoundingClientRect();
+    return Math.ceil(
+      Math.max(
+        shell.scrollHeight || 0,
+        rect.height || 0,
+        rect.bottom + window.scrollY || 0
+      )
+    );
+  }
+
+  const body = document.body;
+  const root = document.documentElement;
   return Math.ceil(
     Math.max(
-      document.documentElement.scrollHeight || 0,
-      document.body?.scrollHeight || 0
+      body?.scrollHeight || 0,
+      body?.offsetHeight || 0,
+      root.scrollHeight || 0,
+      root.offsetHeight || 0
     )
   );
 }
@@ -31,54 +50,70 @@ export default function StorefrontEmbedBridge() {
     const root = document.documentElement;
     root.classList.add("printflow-embedded");
 
+    let lastPage = "";
     let lastView: StorefrontView | "" = "";
+    let lastHeight = 0;
     let frame = 0;
 
     const publish = () => {
       if (frame) cancelAnimationFrame(frame);
 
       frame = requestAnimationFrame(() => {
-        const view = storefrontView();
-        if (view !== lastView) {
-          lastView = view;
+        frame = 0;
+
+        const { page, view } = storefrontState();
+        const height = documentHeight();
+        const pageChanged = page !== lastPage;
+        const viewChanged = view !== lastView;
+
+        if (pageChanged) {
+          lastPage = page;
           window.parent.postMessage(
-            {
-              type: "printflow:view",
-              view,
-              height: documentHeight()
-            },
+            { type: "printflow:page", page, view, height },
             "*"
           );
         }
 
-        // Keep every wizard step in normal document flow so the host page
-        // can size its frame from content without trapping a second scroll area.
-        window.parent.postMessage(
-          {
-            type: "printflow:resize",
-            height: documentHeight()
-          },
-          "*"
-        );
+        if (viewChanged) {
+          lastView = view;
+          window.parent.postMessage(
+            { type: "printflow:view", view, height },
+            "*"
+          );
+        }
+
+        if (pageChanged || height !== lastHeight) {
+          lastHeight = height;
+          window.parent.postMessage(
+            { type: "printflow:resize", height, page },
+            "*"
+          );
+        }
       });
     };
 
-    publish();
-
-    const target =
+    const shell =
       document.querySelector(".modern-customer-shell") ||
-      document.body;
+      document.querySelector(".storefront-offline-shell");
 
-    const observer = new MutationObserver(publish);
-    observer.observe(target, {
+    const mutationObserver = new MutationObserver(publish);
+    mutationObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-flow-step"],
       childList: true,
       subtree: true
     });
 
+    const resizeObserver = new ResizeObserver(publish);
+    resizeObserver.observe(document.body);
+    if (shell) resizeObserver.observe(shell);
+
     window.addEventListener("resize", publish);
+    publish();
 
     return () => {
-      observer.disconnect();
+      mutationObserver.disconnect();
+      resizeObserver.disconnect();
       window.removeEventListener("resize", publish);
       if (frame) cancelAnimationFrame(frame);
 
