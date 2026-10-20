@@ -173,7 +173,7 @@ export function mergeAdvancedSanMarConfigurations(
     colors.find((color: any) => color.active !== false) ||
     colors[0];
 
-  const configuration = {
+  const configuration: any = {
     ...(existing || {}),
     ...(incoming || {}),
     colors,
