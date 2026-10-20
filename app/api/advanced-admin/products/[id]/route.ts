@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { decodeHtmlEntities } from "@/lib/html-entities";
 import { normalizeDecorationMethods } from "@/lib/catalog";
 import { getAdvancedAdminApiContext } from "@/lib/advanced-admin";
+import { applyAdvancedSanMarRules } from "@/lib/advanced-sanmar-catalog";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const context = await getAdvancedAdminApiContext();
@@ -42,7 +43,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const update = {
     name: decodeHtmlEntities(String(body.name || product.name).trim() || product.name),
     active: body.active !== false,
-    configuration,
+    configuration: applyAdvancedSanMarRules(configuration, String(body.name || product.name)),
     updated_at: new Date().toISOString()
   };
 
