@@ -3,17 +3,17 @@ import AdvancedAdminProductManager from "@/components/AdvancedAdminProductManage
 import { getAdvancedAdminContext } from "@/lib/advanced-admin";
 import { hydrateSanMarProductRowsWithFlatMedia } from "@/lib/sanmar-flat-media";
 import { decodeProductNameFields } from "@/lib/html-entities";
+import { consolidateAdvancedSanMarCatalog } from "@/lib/advanced-sanmar-catalog";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdvancedProducts() {
   const { db, shop } = await getAdvancedAdminContext();
 
-  const { data: products } = await db
-    .from("catalog_products")
-    .select("*")
-    .eq("shop_id", shop.id)
-    .order("created_at");
+  // Consolidate historical same-style imports before rendering the manager.
+  // Each product retains all of its color/size variants; old IDs remain
+  // archived for historical order references.
+  const products = await consolidateAdvancedSanMarCatalog(db, shop.id);
 
   // This page is the CUSTOM APPAREL catalog manager.
   // Advanced only wants SanMar-imported garments here. School uniforms are

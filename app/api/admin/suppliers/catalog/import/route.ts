@@ -15,6 +15,7 @@ import type {
 import { sanmarCompleteStyle } from "@/lib/sanmar-complete-style";
 import { withPreferredSanMarFlatMedia } from "@/lib/sanmar-flat-media";
 import { decodeHtmlEntities } from "@/lib/html-entities";
+import { isAdvancedShop, saveAdvancedSanMarImport } from "@/lib/advanced-sanmar-catalog";
 
 function supplierFrom(value: string) {
   if (value === "ss" || value === "ss-activewear")
@@ -470,6 +471,29 @@ export async function POST(request: Request) {
         : ""
     }`
   );
+
+  if (supplier === "sanmar" && targetBusiness === "print" && isAdvancedShop(shop.id)) {
+    try {
+      const saved = await saveAdvancedSanMarImport({
+        db: supabase,
+        shopId: shop.id,
+        organizationId: membership.organization_id,
+        name,
+        description,
+        configuration
+      });
+      return NextResponse.json({
+        product: saved.product,
+        targetBusiness: "print",
+        supplier,
+        mergedExistingProduct: saved.mergedExistingProduct
+      });
+    } catch (error) {
+      return NextResponse.json({
+        error: error instanceof Error ? error.message : "Unable to merge SanMar colors."
+      }, { status: 400 });
+    }
+  }
 
   let slug = baseSlug;
   let suffix = 2;

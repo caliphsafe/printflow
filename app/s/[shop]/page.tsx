@@ -15,6 +15,7 @@ import { normalizeShopSettings } from "@/lib/shop-settings";
 import { platformShopAccess } from "@/lib/shop-mode";
 import { hydrateSanMarProductRowsWithFlatMedia } from "@/lib/sanmar-flat-media";
 import { decodeProductNameFields } from "@/lib/html-entities";
+import { collapseAdvancedSanMarRows, isAdvancedShop } from "@/lib/advanced-sanmar-catalog";
 
 type Props = {
   params: Promise<{ shop: string }>;
@@ -190,8 +191,14 @@ export default async function ShopDesignerPage({
       }
     );
 
+  // One card per SanMar style, including colors imported in separate batches.
+  // This is a read-only safeguard; the Advanced admin persists the merge.
+  const uniqueRows = isAdvancedShop(data.id)
+    ? collapseAdvancedSanMarRows(flatRows).products
+    : flatRows;
+
   const products: CatalogProduct[] =
-    flatRows
+    uniqueRows
       .map((row) => {
         const decoded = decodeProductNameFields(row);
         return {

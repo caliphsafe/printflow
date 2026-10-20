@@ -6,6 +6,7 @@ import { readApiResponse } from "@/lib/client-api-response";
 import { decodeHtmlEntities } from "@/lib/html-entities";
 import { defaultProductImage, productImageChoiceKey } from "@/lib/product-images";
 import { AVAILABLE_DECORATION_METHODS } from "@/lib/catalog";
+import { advancedSanMarKind } from "@/lib/advanced-sanmar-catalog";
 import { DEFAULT_CONFIGURATION, normalizeConfiguration, normalizePrintArea } from "@/lib/catalog";
 import type { DesignSide, PrintArea, PrintSize } from "@/lib/types";
 
@@ -132,7 +133,12 @@ function colorSummaries(detail: ProductDetail) {
 
 function initialSetupItem(style: BrowseStyle, detail: ProductDetail): SetupItem {
   const colors = [...new Set(detail.variants.map((variant) => variant.colorName))].sort((a, b) => a.localeCompare(b));
-  const headwear = /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker|caps)\b/i.test(`${style.category} ${style.title}`);
+  const garmentKind = advancedSanMarKind({
+    supplier: { provider: "sanmar", styleName: style.title },
+    customization: { category: style.category }
+  }, style.title);
+  const headwear = garmentKind === "hat";
+  const polo = garmentKind === "polo";
   const base = normalizeConfiguration({
     ...DEFAULT_CONFIGURATION,
     supplier: {
@@ -152,8 +158,8 @@ function initialSetupItem(style: BrowseStyle, detail: ProductDetail): SetupItem 
     displayName: style.title.replace(new RegExp(`\\s*${style.styleId}\\s*$`, "i"), "").trim() || `${style.brandName} ${style.styleId}`,
     category: style.category || "Apparel",
     minimumQuantity: headwear ? 1 : 12,
-    decorationMethods: headwear ? ["Embroidery"] : [...METHODS],
-    printSizes: headwear ? ["full"] : ["heart", "full"],
+    decorationMethods: (headwear || polo) ? ["Embroidery"] : [...METHODS],
+    printSizes: polo ? ["heart"] : headwear ? ["full"] : ["heart", "full"],
     selectedColors: colors,
     imageSelections: Object.fromEntries(colors.map((name) => {
       const media = detail.media?.[name] || {};
@@ -167,7 +173,7 @@ function initialSetupItem(style: BrowseStyle, detail: ProductDetail): SetupItem 
         backChoiceKey: choiceKey(colorChoices.find((choice) => choice.url === backImageUrl) || { url: backImageUrl, label: "" })
       }];
     })),
-    printLocations: [],
+    printLocations: polo ? ["Left Chest"] : [],
     printAreas: {
       frontHeartArea: { ...customization.frontHeartArea },
       frontFullArea: { ...customization.frontFullArea },
@@ -287,6 +293,11 @@ export default function SanMarCatalogImporter({
 
   function toggleDecorationMethod(styleId: string, method: string, checked: boolean) {
     const item = setupItems.find((candidate) => candidate.style.styleId === styleId);
+    const kind = item && advancedSanMarKind({
+      supplier: { provider: "sanmar", styleName: item.style.title },
+      customization: { category: item.category }
+    }, item.displayName);
+    if (kind === "hat" || kind === "polo") return;
     if (!item || (!checked && item.decorationMethods.length === 1)) {
       setMessage("Keep at least one decoration method enabled for each product.");
       return;
@@ -443,7 +454,13 @@ export default function SanMarCatalogImporter({
         {setupItems.map((item) => {
           const colors = colorSummaries(item.detail);
           const representative = colors.find((color) => item.selectedColors.includes(color.name)) || colors[0];
-          const zones = /\b(hat|cap|headwear|beanie|visor|bucket hat|trucker|caps)\b/i.test(`${item.category} ${item.style.title}`) ? HEADWEAR_ZONES : APPAREL_ZONES;
+          const garmentKind = advancedSanMarKind({
+            supplier: { provider: "sanmar", styleName: item.style.title },
+            customization: { category: item.category }
+          }, item.displayName);
+          const polo = garmentKind === "polo";
+          const fixedEmbroidery = polo || garmentKind === "hat";
+          const zones = polo ? ["Left Chest"] : garmentKind === "hat" ? HEADWEAR_ZONES : APPAREL_ZONES;
           const activeZoneKey = ZONE_KEYS[item.zoneSide][item.zoneSize];
           const activeZone = item.printAreas[activeZoneKey];
           const zoneImage = representative
@@ -485,11 +502,11 @@ export default function SanMarCatalogImporter({
                   <div className="sanmar-color-image-preview"><b>Selected images for {colorName}</b><div>{selection?.frontImageUrl && <img src={selection.frontImageUrl} alt={`${colorName} selected front`}/>}{selection?.backImageUrl && <img src={selection.backImageUrl} alt={`${colorName} selected back`}/>}</div></div>
                 </section>;
               })}</div></section>
-              <section className="sanmar-wizard-section sanmar-extra-options"><header><h3>Available decoration methods</h3><span>Choose one or more methods customers may use for this product.</span></header><div className="sanmar-option-pills">{METHODS.map((method) => <label key={method} className={item.decorationMethods.includes(method) ? "selected" : ""}><input type="checkbox" checked={item.decorationMethods.includes(method)} onChange={(event) => toggleDecorationMethod(item.style.styleId, method, event.target.checked)}/>{method}</label>)}</div><div className="sanmar-option-pills"><b>Print size options</b>{PRINT_SIZES.map((size) => <label key={size.id} className={item.printSizes.includes(size.id) ? "selected" : ""}><input type="checkbox" checked={item.printSizes.includes(size.id)} onChange={(event) => updateSetupItem(item.style.styleId, (current) => ({ ...current, printSizes: event.target.checked ? [...current.printSizes, size.id] : current.printSizes.filter((entry) => entry !== size.id) }))}/>{size.label}</label>)}</div></section>
+              <section className="sanmar-wizard-section sanmar-extra-options"><header><h3>Available decoration methods</h3><span>Choose one or more methods customers may use for this product.</span></header><div className="sanmar-option-pills">{(fixedEmbroidery ? ["Embroidery"] : METHODS).map((method) => <label key={method} className={item.decorationMethods.includes(method) ? "selected" : ""}><input type="checkbox" checked={item.decorationMethods.includes(method)} onChange={(event) => toggleDecorationMethod(item.style.styleId, method, event.target.checked)}/>{method}</label>)}</div><div className="sanmar-option-pills"><b>Print size options</b>{(polo ? PRINT_SIZES.filter((size) => size.id === "heart") : PRINT_SIZES).map((size) => <label key={size.id} className={item.printSizes.includes(size.id) ? "selected" : ""}><input type="checkbox" checked={item.printSizes.includes(size.id)} disabled={polo} onChange={(event) => updateSetupItem(item.style.styleId, (current) => ({ ...current, printSizes: event.target.checked ? [...current.printSizes, size.id] : current.printSizes.filter((entry) => entry !== size.id) }))}/>{size.label}</label>)}</div></section>
             </> : <>
               <section className="sanmar-wizard-section">
                 <header><h3>Print locations</h3><span>Choose where customers may print, then edit the printable area for this product.</span></header>
-                <div className="sanmar-zone-tiles">{zones.map((zone) => <label className={item.printLocations.includes(zone) ? "selected" : ""} key={zone}><input type="checkbox" checked={item.printLocations.includes(zone)} onChange={(event) => updateSetupItem(item.style.styleId, (current) => {const printLocations = event.target.checked ? [...current.printLocations, zone] : current.printLocations.filter((entry) => entry !== zone); const zoneSide = hasLocationForSide(printLocations, current.zoneSide) ? current.zoneSide : hasLocationForSide(printLocations, "front") ? "front" : "back"; return { ...current, printLocations, zoneSide };})}/><span>{zone}</span></label>)}</div>
+                <div className="sanmar-zone-tiles">{zones.map((zone) => <label className={item.printLocations.includes(zone) ? "selected" : ""} key={zone}><input type="checkbox" checked={item.printLocations.includes(zone)} disabled={polo} onChange={(event) => updateSetupItem(item.style.styleId, (current) => {const printLocations = event.target.checked ? [...current.printLocations, zone] : current.printLocations.filter((entry) => entry !== zone); const zoneSide = hasLocationForSide(printLocations, current.zoneSide) ? current.zoneSide : hasLocationForSide(printLocations, "front") ? "front" : "back"; return { ...current, printLocations, zoneSide };})}/><span>{zone}</span></label>)}</div>
                 {!item.printLocations.length && <p className="sanmar-inline-error">Choose at least one print location to edit its print area.</p>}
               </section>
               {item.printLocations.length > 0 && <section className="sanmar-wizard-section sanmar-zone-edit-section">
