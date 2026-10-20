@@ -1,6 +1,6 @@
 import { decodeHtmlEntities } from "@/lib/html-entities";
 import { slugify } from "@/lib/catalog";
-import { ADVANCED_SHOP_ID } from "@/lib/advanced-admin";
+const ADVANCED_SHOP_ID = "1fb2131a-3e33-4986-a66b-de70ea6c7b6b";
 
 /**
  * Advanced's custom SanMar catalog is one product per supplier STYLE, with
