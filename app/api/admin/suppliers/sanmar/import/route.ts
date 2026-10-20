@@ -10,6 +10,7 @@ import { sanmarCompleteStyle } from "@/lib/sanmar-complete-style";
 import { withPreferredSanMarFlatMedia } from "@/lib/sanmar-flat-media";
 import { defaultProductImage, uniqueProductImageChoices } from "@/lib/product-images";
 import { decodeHtmlEntities } from "@/lib/html-entities";
+import { isAdvancedShop, saveAdvancedSanMarImport } from "@/lib/advanced-sanmar-catalog";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -299,6 +300,28 @@ export async function POST(request: Request) {
     if (config.supplier) {
       config.supplier.variants =
         canonicalSupplierVariants;
+    }
+
+    if (isAdvancedShop(shop.id)) {
+      const saved = await saveAdvancedSanMarImport({
+        db: supabase,
+        shopId: shop.id,
+        organizationId: membership.organization_id,
+        name: displayName || String(style.name || style.styleId),
+        description: style.description,
+        configuration: config
+      });
+
+      return NextResponse.json({
+        ok: true,
+        product: saved.product,
+        repairedExistingProduct: saved.mergedExistingProduct,
+        variantCount: variants.length,
+        colorCount: colors.length,
+        availableColorCount: allColorNames.length,
+        diagnostics: style.diagnostics,
+        flatImagePolicy: true
+      });
     }
 
     const { data: existingProducts } =
