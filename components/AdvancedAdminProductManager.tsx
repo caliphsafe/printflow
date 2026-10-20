@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { decodeProductNameFields } from "@/lib/html-entities";
 import { AVAILABLE_DECORATION_METHODS, normalizeDecorationMethods } from "@/lib/catalog";
 import { defaultProductImage, uniqueProductImageChoices } from "@/lib/product-images";
+import { advancedSanMarKind } from "@/lib/advanced-sanmar-catalog";
 
 const methods = [...AVAILABLE_DECORATION_METHODS];
 
@@ -21,11 +22,15 @@ export default function AdvancedAdminProductManager({ product }: { product: any 
   const [message, setMessage] = useState("");
 
   const supplier = product.configuration?.supplier;
+  const garmentKind = advancedSanMarKind(product.configuration, name);
+  const fixedEmbroidery = supplier?.provider === "sanmar" && (garmentKind === "polo" || garmentKind === "hat");
+  const displayedMethods = fixedEmbroidery ? ["Embroidery"] : methods;
   const activeDefault = colors.find((c:any) => c.id === defaultColorId && c.active !== false) || colors.find((c:any) => c.active !== false) || colors[0];
   const image = activeDefault?.frontImageUrl || product.configuration?.mockupImageUrl;
   const dirty = name !== product.name || active !== product.active || minimumQuantity !== Number(product.configuration?.customization?.minimumQuantity || 1) || JSON.stringify(decorationMethods) !== JSON.stringify(normalizeDecorationMethods(product.configuration?.customization?.decorationMethods)) || JSON.stringify(colors) !== JSON.stringify(product.configuration?.colors || []) || defaultColorId !== (product.configuration?.defaultColorId || product.configuration?.colors?.[0]?.id || "");
 
   function toggleMethod(method: string) {
+    if (fixedEmbroidery) return;
     if (decorationMethods.includes(method) && decorationMethods.length === 1) {
       setMessage("Keep at least one decoration method enabled for this product.");
       return;
@@ -88,8 +93,8 @@ export default function AdvancedAdminProductManager({ product }: { product: any 
     <label className="ae-field"><span>Customer-facing product name</span><input value={name} onChange={(e) => setName(e.target.value)} /></label>
     <label className="ae-field"><span>Minimum order quantity</span><input type="number" min="1" value={minimumQuantity} onChange={(e) => setMinimumQuantity(Math.max(1, Number(e.target.value || 1)))} /></label>
     <div><span style={{fontSize:8,fontWeight:900,color:"var(--ae-navy)"}}>Allowed decoration</span><div className="ae-methods" style={{marginTop:6}}>
-      {methods.map((method) => <label className="ae-check" key={method}><input type="checkbox" checked={decorationMethods.includes(method)} onChange={() => toggleMethod(method)}/><span>{method}</span></label>)}
-    </div></div>
+      {displayedMethods.map((method) => <label className="ae-check" key={method}><input type="checkbox" checked={decorationMethods.includes(method)} onChange={() => toggleMethod(method)}/><span>{method}</span></label>)}
+    </div>{garmentKind === "polo" && <small>Polos: front left-chest embroidery, heart size only.</small>}</div>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
       <small className={`ae-message ${message.includes("saved") ? "success" : "error"}`}>{message}</small>
       <button className="ae-button primary" onClick={save} disabled={busy || !dirty}>{busy ? "Saving…" : "Save product"}</button>
