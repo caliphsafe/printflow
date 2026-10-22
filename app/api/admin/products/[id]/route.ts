@@ -1,3 +1,4 @@
+import { advancedSanMarStyleId, applyAdvancedSanMarRules, isAdvancedShop } from "@/lib/advanced-sanmar-catalog";
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import { normalizeConfiguration, normalizeDecorationMethods, slugify } from "@/lib/catalog";
@@ -12,6 +13,10 @@ export async function PATCH(request: Request, { params }: Props) {
   const body = await request.json();
   const name = decodeHtmlEntities(String(body.name || "").trim());
   if (!name) return NextResponse.json({ error: "Product name is required." }, { status: 400 });
+  // The main dashboard must preserve the same policy as Advanced Admin.
+  if (isAdvancedShop(shop.id) && advancedSanMarStyleId({ ...body, name })) {
+    body.configuration = applyAdvancedSanMarRules(body.configuration, name);
+  }
   const requestedMethods = body.configuration?.customization?.decorationMethods;
   if (Array.isArray(requestedMethods) && !normalizeDecorationMethods(requestedMethods).length) {
     return NextResponse.json({ error: "Choose at least one supported decoration method for this product." }, { status: 400 });
