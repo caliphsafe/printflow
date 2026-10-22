@@ -19,6 +19,7 @@ type Props = {
   suppliers: Record<SupplierKey, SupplierState>;
   targetBusiness?: "print" | "brand";
   importedSanMarStyleIds?: string[];
+  importedSSStyleIds?: string[];
 };
 
 type Style = {
@@ -120,7 +121,8 @@ const supplierLabel = (supplier: SupplierKey) =>
 export default function SupplierCatalogBrowser({
   suppliers,
   targetBusiness = "print",
-  importedSanMarStyleIds = []
+  importedSanMarStyleIds = [],
+  importedSSStyleIds = []
 }: Props) {
   const [supplier, setSupplier] = useState<SupplierKey>(
     suppliers.sanmar.connected ? "sanmar" : "ss"
@@ -243,9 +245,9 @@ export default function SupplierCatalogBrowser({
   }
 
   useEffect(() => {
-    // Print-product imports from SanMar use the multi-step wizard below.
-    // Keep this shared browser's legacy detail/import flow for S&S and Brand sourcing.
-    if (connected && (supplier === "ss" || targetBusiness === "brand")) {
+    // Both print suppliers use the same multi-step wizard below.
+    // Keep the existing detail/import flow for Brand sourcing.
+    if (connected && targetBusiness === "brand") {
       void load({ search: "" });
     }
   }, [supplier, connected, targetBusiness]);
@@ -487,7 +489,7 @@ export default function SupplierCatalogBrowser({
     }
   }
 
-  if (supplier === "sanmar" && connected && targetBusiness === "print") {
+  if (connected && targetBusiness === "print") {
     return (
       <div className="supplier-dual-workspace supplier-catalog-layout sanmar-supplier-wizard-route">
         <SupplierPicker
@@ -496,9 +498,11 @@ export default function SupplierCatalogBrowser({
           suppliers={suppliers}
         />
         <SanMarCatalogImporter
+          key={supplier}
+          provider={supplier}
           connected={connected}
-          accountHint={suppliers.sanmar.accountHint || undefined}
-          importedStyleIds={importedSanMarStyleIds}
+          accountHint={suppliers[supplier].accountHint || undefined}
+          importedStyleIds={supplier === "ss" ? importedSSStyleIds : importedSanMarStyleIds}
         />
         <CatalogLayoutStyles />
       </div>

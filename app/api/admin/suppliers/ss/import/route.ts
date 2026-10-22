@@ -1,3 +1,4 @@
+import { importSSPrintProduct } from "@/lib/ss-print-import";
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
 import { DEFAULT_CONFIGURATION, normalizeConfiguration, slugify } from "@/lib/catalog";
@@ -33,11 +34,13 @@ function firstMedia(rows: Record<string, unknown>[], key: "swatchImageUrl" | "fr
 }
 
 export async function POST(request: Request) {
-  const { supabase, membership, shop } = await getAdminContext();
+  const context = await getAdminContext();
+  const { supabase, membership, shop } = context;
   if (!membership || !shop) return NextResponse.json({ error: "No shop configured." }, { status: 403 });
 
   const body = await request.json();
   const targetBusiness = body.targetBusiness === "brand" ? "brand" : "print";
+  if (targetBusiness === "print") return importSSPrintProduct(body, context);
   const products: Record<string, unknown>[] = Array.isArray(body.products) ? body.products as Record<string, unknown>[] : [];
   const style: StyleSummary = body.style && typeof body.style === "object" ? body.style as StyleSummary : {};
   const selectedColorNames: string[] = Array.isArray(body.selectedColors)
@@ -141,7 +144,7 @@ export async function POST(request: Request) {
       slug,
       name,
       description,
-      active: targetBusiness === "print",
+      active: false,
       configuration
     })
     .select("*")

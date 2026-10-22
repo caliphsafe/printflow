@@ -914,14 +914,14 @@ function ProductImagesEditor({
     onChange(values.map((item, index) => index === colorIndex ? { ...item, [imageKey]: url } : item));
   }
 
-  async function loadSanMarImages() {
+  async function loadSupplierImages() {
     if (!supplier?.styleId) return;
     setImagesBusy(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/admin/suppliers/sanmar/style?style=${encodeURIComponent(supplier.styleId)}`, { cache: "no-store" });
+      const response = await fetch(supplier.provider === "ss-activewear" ? `/api/admin/suppliers/ss/style/${encodeURIComponent(supplier.styleId)}` : `/api/admin/suppliers/sanmar/style?style=${encodeURIComponent(supplier.styleId)}`, { cache: "no-store" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to load SanMar photos.");
+      if (!response.ok) throw new Error(data.error || "Unable to load supplier photos.");
       const media = data.style?.media || {};
       onChange(values.map((color) => {
       const found = media[color.name] || {};
@@ -939,9 +939,9 @@ function ProductImagesEditor({
           backImageUrl: color.backImageUrl || found.backImageUrl || defaultProductImage(imageChoices, "back") || undefined
         };
       }));
-      setMessage("SanMar image options loaded.");
+      setMessage("Supplier image options loaded.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to load SanMar photos.");
+      setMessage(error instanceof Error ? error.message : "Unable to load supplier photos.");
     } finally {
       setImagesBusy(false);
     }
@@ -976,7 +976,7 @@ function ProductImagesEditor({
   }
 
   return <div className="product-images-editor">
-    <div className="product-image-choice-help"><strong>Choose images by color</strong><span>Each active color has its own front and back gallery. The first color sets matching views for the others; choosing an image in another color keeps that color’s override.</span>{supplier?.provider === "sanmar" && <button type="button" className="secondary-button compact" disabled={imagesBusy} onClick={() => void loadSanMarImages()}>{imagesBusy ? "Loading images…" : "Load latest SanMar images"}</button>}</div>
+    <div className="product-image-choice-help"><strong>Choose images by color</strong><span>Each active color has its own front and back gallery. The first color sets matching views for the others; choosing an image in another color keeps that color’s override.</span>{(supplier?.provider === "sanmar" || supplier?.provider === "ss-activewear") && <button type="button" className="secondary-button compact" disabled={imagesBusy} onClick={() => void loadSupplierImages()}>{imagesBusy ? "Loading images…" : `Load latest ${supplier?.provider === "ss-activewear" ? "S&S" : "SanMar"} images`}</button>}</div>
     {message && <p className="product-image-editor-message">{message}</p>}
     {!activeColors.length && <p className="product-image-editor-message">Turn on at least one color in the Colors tab to choose its images.</p>}
     <div className="product-image-color-list">{activeColors.map((color) => {

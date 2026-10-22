@@ -24,12 +24,8 @@ type Props = {
 
 export const dynamic = "force-dynamic";
 
-const ADVANCED_SHOP_SLUG =
-  "advanced-embroidery-screen-printing";
-
 function isLiveCustomProduct(
-  product: CatalogProduct,
-  shopSlug: string
+  product: CatalogProduct
 ) {
   const category = String(
     product.configuration.customization.category || ""
@@ -50,13 +46,6 @@ function isLiveCustomProduct(
 
   const supplier =
     product.configuration.supplier;
-
-  if (shopSlug === ADVANCED_SHOP_SLUG) {
-    return (
-      supplier?.provider === "sanmar" &&
-      supplier?.sourceMode !== "demo"
-    );
-  }
 
   return supplier?.sourceMode !== "demo";
 }
@@ -207,7 +196,7 @@ export default async function ShopDesignerPage({
         };
       })
       .filter((item) =>
-        isLiveCustomProduct(item, slug)
+        isLiveCustomProduct(item)
       );
 
   const shop: PublicShop = {
