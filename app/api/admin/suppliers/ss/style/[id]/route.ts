@@ -1,17 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-data";
-import { asNumber, field, safeImageUrl, ssRequest } from "@/lib/ss-activewear";
-import { decodeHtmlEntities } from "@/lib/html-entities";
+import { loadSSStyle } from "@/lib/ss-catalog";
 
 type Props = { params: Promise<{ id: string }> };
-
-function warehouseQuantity(value: unknown) {
-  if (!Array.isArray(value)) return 0;
-  return value.reduce((sum, row) => {
-    if (!row || typeof row !== "object") return sum;
-    return sum + asNumber(field(row as Record<string, unknown>, "qty", "quantity"));
-  }, 0);
-}
 
 export async function GET(_request: Request, { params }: Props) {
   const { id } = await params;
@@ -27,32 +18,7 @@ export async function GET(_request: Request, { params }: Props) {
     return NextResponse.json({ error: "Connect S&S Activewear before loading product details." }, { status: 409 });
   }
   try {
-    const rows = await ssRequest<Record<string, unknown>[]>(connection, `/products/?styleid=${encodeURIComponent(id)}&mediatype=json`);
-    const products = (Array.isArray(rows) ? rows : []).map((row) => {
-      const warehouseTotal = warehouseQuantity(field(row, "warehouses"));
-      const combinedQuantity = asNumber(field(row, "qty", "quantity"));
-      return {
-        sku: String(field(row, "sku") || ""),
-        skuId: String(field(row, "skuID", "skuID_Master", "skuId") || ""),
-        gtin: String(field(row, "gtin") || ""),
-        styleId: String(field(row, "styleID", "styleId") || id),
-        brandName: decodeHtmlEntities(field(row, "brandName")),
-        styleName: decodeHtmlEntities(field(row, "styleName")),
-        title: decodeHtmlEntities(field(row, "title")),
-        colorName: String(field(row, "colorName") || "Unspecified"),
-        sizeName: String(field(row, "sizeName") || "One Size"),
-        sizeOrder: String(field(row, "sizeOrder") || ""),
-        customerPrice: asNumber(field(row, "customerPrice")),
-        quantity: combinedQuantity || warehouseTotal,
-        colorHex: String(field(row, "color1") || "#777777"),
-        swatchImageUrl: safeImageUrl(field(row, "colorSwatchImage"), "large"),
-        frontImageUrl: safeImageUrl(field(row, "colorFrontImage"), "large"),
-        backImageUrl: safeImageUrl(field(row, "colorBackImage"), "large"),
-        sideImageUrl: safeImageUrl(field(row, "colorSideImage"), "large"),
-        warehouses: Array.isArray(field(row, "warehouses")) ? field(row, "warehouses") : []
-      };
-    }).filter((row) => row.sku);
-    return NextResponse.json({ products });
+    return NextResponse.json(await loadSSStyle(connection, id));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load this S&S style." }, { status: 502 });
   }

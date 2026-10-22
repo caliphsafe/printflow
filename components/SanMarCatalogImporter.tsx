@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { readApiResponse } from "@/lib/client-api-response";
 import { decodeHtmlEntities } from "@/lib/html-entities";
@@ -13,6 +14,7 @@ import type { DesignSide, PrintArea, PrintSize } from "@/lib/types";
 type BrowseStyle = {
   styleId: string;
   brandName: string;
+  styleName?: string;
   title: string;
   description: string;
   category: string;
@@ -131,7 +133,7 @@ function colorSummaries(detail: ProductDetail) {
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function initialSetupItem(style: BrowseStyle, detail: ProductDetail): SetupItem {
+function initialSetupItem(style: BrowseStyle, detail: ProductDetail, provider: "sanmar" | "ss" = "sanmar"): SetupItem {
   const colors = [...new Set(detail.variants.map((variant) => variant.colorName))].sort((a, b) => a.localeCompare(b));
   const garmentKind = advancedSanMarKind({
     supplier: { provider: "sanmar", styleName: style.title },
@@ -155,7 +157,7 @@ function initialSetupItem(style: BrowseStyle, detail: ProductDetail): SetupItem 
   return {
     style,
     detail,
-    displayName: style.title.replace(new RegExp(`\\s*${style.styleId}\\s*$`, "i"), "").trim() || `${style.brandName} ${style.styleId}`,
+    displayName: provider === "ss" ? detail.name : style.title.replace(new RegExp(`\\s*${style.styleId}\\s*$`, "i"), "").trim() || `${style.brandName} ${style.styleId}`,
     category: style.category || "Apparel",
     minimumQuantity: headwear ? 1 : 12,
     decorationMethods: (headwear || polo) ? ["Embroidery"] : [...METHODS],
@@ -188,12 +190,17 @@ function initialSetupItem(style: BrowseStyle, detail: ProductDetail): SetupItem 
 export default function SanMarCatalogImporter({
   connected = true,
   accountHint,
-  importedStyleIds = []
+  importedStyleIds = [],
+  provider = "sanmar"
 }: {
   connected?: boolean;
   accountHint?: string | null;
   importedStyleIds?: string[];
+  provider?: "sanmar" | "ss";
 }) {
+  const supplierLabel = provider === "ss" ? "S&S Activewear" : "SanMar";
+  const adminBase = usePathname()?.startsWith("/advanced-admin") ? "/advanced-admin" : "/dashboard";
+  const quickSearches = provider === "ss" ? ["Gildan", "Bella", "Comfort Colors", "hoodie", "jacket"] : QUICK;
   const [category, setCategory] = useState("");
   const [styles, setStyles] = useState<BrowseStyle[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<BrowseStyle[]>([]);
@@ -227,9 +234,9 @@ export default function SanMarCatalogImporter({
         limit: "36"
       });
       if (options?.refresh) params.set("refresh", "1");
-      const response = await fetch(`/api/admin/suppliers/sanmar/styles?${params.toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/admin/suppliers/${provider}/styles?${params.toString()}`, { cache: "no-store" });
       const data = await readApiResponse(response);
-      if (!response.ok) throw new Error(data.error || "Unable to load the live SanMar catalog.");
+      if (!response.ok) throw new Error(data.error || `Unable to load the live ${supplierLabel} catalog.`);
       setCategory(nextCategory);
       const decodedStyles = (data.styles || []).map((style: BrowseStyle) => ({
         ...style,
@@ -244,7 +251,7 @@ export default function SanMarCatalogImporter({
       setHasMore(data.hasMore === true);
     } catch (error) {
       setMessageType("error");
-      setMessage(error instanceof Error ? error.message : "Unable to load the live SanMar catalog.");
+      setMessage(error instanceof Error ? error.message : `Unable to load the live ${supplierLabel} catalog.`);
     } finally {
       setBusy(false);
     }
@@ -271,17 +278,17 @@ export default function SanMarCatalogImporter({
       for (let offset = 0; offset < selectedStyles.length; offset += 3) {
         const batch = selectedStyles.slice(offset, offset + 3);
         rows.push(...await Promise.all(batch.map(async (style) => {
-          const response = await fetch(`/api/admin/suppliers/sanmar/style?style=${encodeURIComponent(style.styleId)}`, { cache: "no-store" });
+          const response = await fetch(provider === "ss" ? `/api/admin/suppliers/ss/style/${encodeURIComponent(style.styleId)}` : `/api/admin/suppliers/sanmar/style?style=${encodeURIComponent(style.styleId)}`, { cache: "no-store" });
           const data = await readApiResponse(response);
           if (!response.ok) throw new Error(`${style.styleId}: ${data.error || "Unable to load item details."}`);
-          return initialSetupItem(style, data.style as ProductDetail);
+          return initialSetupItem(style, data.style as ProductDetail, provider);
         })));
       }
       setSetupItems(rows);
       setStep("images");
     } catch (error) {
       setMessageType("error");
-      setMessage(error instanceof Error ? error.message : "Unable to load the selected SanMar items.");
+      setMessage(error instanceof Error ? error.message : `Unable to load the selected ${supplierLabel} items.`);
     } finally {
       setDetailBusy(false);
     }
@@ -382,7 +389,7 @@ export default function SanMarCatalogImporter({
     const successes: string[] = [];
     for (const item of setupItems) {
       try {
-        const response = await fetch("/api/admin/suppliers/sanmar/import", {
+        const response = await fetch(`/api/admin/suppliers/${provider}/import`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -439,7 +446,7 @@ export default function SanMarCatalogImporter({
   const canImport = setupItems.length > 0 && setupItems.every((item) => item.selectedColors.length > 0 && item.decorationMethods.length > 0 && item.printLocations.length > 0);
 
   if (!connected) {
-    return <section className="ae-card sanmar-connect-state"><div className="sanmar-wordmark">SANMAR</div><h2>Connect SanMar to browse products.</h2><p>Once connected, browse every product type in the shop’s SanMar catalog.</p><Link className="ae-button primary" href="/advanced-admin/settings">Connect SanMar</Link></section>;
+    return <section className="ae-card sanmar-connect-state"><div className="sanmar-wordmark">{supplierLabel.toUpperCase()}</div><h2>Connect {supplierLabel} to browse products.</h2><p>Once connected, browse every product type in the shop’s {supplierLabel} catalog.</p><Link className="ae-button primary" href={`${adminBase === "/dashboard" ? "/dashboard/suppliers" : "/advanced-admin/settings"}`}>Connect {supplierLabel}</Link></section>;
   }
 
   if (step !== "catalog") {
@@ -450,7 +457,7 @@ export default function SanMarCatalogImporter({
         {step === "images" ? <button className="ae-button primary" type="button" disabled={setupItems.some((item) => !item.selectedColors.length)} onClick={() => setStep("zones")}>Next: print zones →</button> : <button className="ae-button primary" type="button" disabled={!canImport || importBusy} onClick={() => void importProducts()}>{importBusy ? "Importing…" : "Import selected products"}</button>}
       </header>
       <div className="sanmar-wizard-main">
-        <div className="sanmar-wizard-title"><div><p className="ae-kicker">SANMAR PRODUCT IMPORT</p><h1>{step === "images" ? "Choose colors and product images" : "Choose print zones"}</h1><p>{step === "images" ? "Set up each item. Select colors, then choose the front and back image views customers will see." : "Choose the print locations that customers can customize on each item before importing."}</p></div><span>{setupItems.length} item{setupItems.length === 1 ? "" : "s"}</span></div>
+        <div className="sanmar-wizard-title"><div><p className="ae-kicker">{supplierLabel.toUpperCase()} PRODUCT IMPORT</p><h1>{step === "images" ? "Choose colors and product images" : "Choose print zones"}</h1><p>{step === "images" ? "Set up each item. Select colors, then choose the front and back image views customers will see." : "Choose the print locations that customers can customize on each item before importing."}</p></div><span>{setupItems.length} item{setupItems.length === 1 ? "" : "s"}</span></div>
         {setupItems.map((item) => {
           const colors = colorSummaries(item.detail);
           const representative = colors.find((color) => item.selectedColors.includes(color.name)) || colors[0];
@@ -524,7 +531,7 @@ export default function SanMarCatalogImporter({
             </>}
           </article>;
         })}
-        {message && <div className={`sanmar-wizard-message ${messageType}`}>{message}{messageType === "success" && <Link href="/advanced-admin/products">View products →</Link>}</div>}
+        {message && <div className={`sanmar-wizard-message ${messageType}`}>{message}{messageType === "success" && <Link href={`${adminBase}/products`}>View products →</Link>}</div>}
         <footer className="sanmar-wizard-footer"><button type="button" className="ae-button" onClick={() => setStep(step === "zones" ? "images" : "catalog")}>← Back</button><span>{step === "images" ? `${setupItems.filter((item) => item.selectedColors.length).length} items have colors selected` : `${setupItems.filter((item) => item.printLocations.length).length} items have print zones selected`}</span>{step === "images" ? <button className="ae-button primary" type="button" disabled={setupItems.some((item) => !item.selectedColors.length)} onClick={() => setStep("zones")}>Next: choose print zones →</button> : <button className="ae-button primary" type="button" disabled={!canImport || importBusy} onClick={() => void importProducts()}>{importBusy ? "Importing…" : `Import ${setupItems.length} product${setupItems.length === 1 ? "" : "s"}`}</button>}</footer>
       </div>
       <style jsx>{`
@@ -535,28 +542,28 @@ export default function SanMarCatalogImporter({
 
   return <div className="sanmar-catalog-flow">
     <div className="sanmar-catalog-main">
-      <div className="sanmar-live-banner"><div><i/><div><strong>LIVE SANMAR CATALOG</strong><span>Account {accountHint || "connected"} · choose one or more products to configure before import.</span></div></div><button className="ae-button" disabled={busy} onClick={() => void load({ refresh: true })}>{busy ? "Refreshing…" : "Refresh catalog"}</button></div>
+      <div className="sanmar-live-banner"><div><i/><div><strong>LIVE {supplierLabel.toUpperCase()} CATALOG</strong><span>Account {accountHint || "connected"} · choose one or more products to configure before import.</span></div></div><button className="ae-button" disabled={busy} onClick={() => void load({ refresh: true })}>{busy ? "Refreshing…" : "Refresh catalog"}</button></div>
       <div className="sanmar-toolbar">
-        <label className="sanmar-search"><span>Search {category || "all SanMar products"}</span><div><input value={q} onChange={(event) => setQ(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void load()} placeholder="Brand, product name, or style number"/><button type="button" className="ae-button primary" disabled={busy} onClick={() => void load()}>Search</button></div></label>
+        <label className="sanmar-search"><span>Search {category || `all ${supplierLabel} products`}</span><div><input value={q} onChange={(event) => setQ(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void load()} placeholder="Brand, product name, or style number"/><button type="button" className="ae-button primary" disabled={busy} onClick={() => void load()}>Search</button></div></label>
         <label className="sanmar-brand-filter"><span>Brand</span><select value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">All brands</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label className="sanmar-category-filter"><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="">All categories</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <button type="button" className="ae-button primary" disabled={busy} onClick={() => void load()}>Apply</button>
       </div>
-      <div className="sanmar-quick"><span>Popular</span>{QUICK.map((value) => <button key={value} onClick={() => {setQ(value); void load({ search: value });}}>{value}</button>)}</div>
-      <div className="sanmar-results-head"><div><strong>{total.toLocaleString()} styles</strong><small>Select items here. Image and print-zone choices happen in the next steps.</small></div>{busy && <span>Loading SanMar…</span>}</div>
+      <div className="sanmar-quick"><span>Popular</span>{quickSearches.map((value) => <button key={value} onClick={() => {setQ(value); void load({ search: value });}}>{value}</button>)}</div>
+      <div className="sanmar-results-head"><div><strong>{total.toLocaleString()} styles</strong><small>Select items here. Image and print-zone choices happen in the next steps.</small></div>{busy && <span>Loading {supplierLabel}…</span>}</div>
       {styles.length ? <div className="sanmar-style-grid">{styles.map((style) => {
         const isSelected = selectedStyles.some((item) => item.styleId === style.styleId);
         const alreadyAdded = importedStyleIds.includes(style.styleId);
         return <button type="button" key={style.styleId} className={`sanmar-style-card${isSelected ? " selected" : ""}`} onClick={() => toggleStyle(style)} aria-pressed={isSelected}>
-          <div className="sanmar-style-image">{style.imageUrl ? <img src={style.imageUrl} alt={style.title}/> : <span className="sanmar-image-fallback">SANMAR</span>}<em>{isSelected ? "SELECTED" : alreadyAdded ? "ADDED" : "LIVE"}<i>{isSelected ? "✓" : "+"}</i></em></div>
-          <div className="sanmar-style-copy"><span>{style.brandName} · {style.styleId}</span><h3>{style.title}</h3><p>{style.description}</p><footer><small>{style.colorCount} colors</small><small>{style.sizeCount} sizes</small><small>{style.priceMin ? `${money(style.priceMin)}–${money(style.priceMax)}` : "Live pricing"}</small></footer></div>
+          <div className="sanmar-style-image">{style.imageUrl ? <img src={style.imageUrl} alt={style.title}/> : <span className="sanmar-image-fallback">{supplierLabel.toUpperCase()}</span>}<em>{isSelected ? "SELECTED" : alreadyAdded ? "ADDED" : "LIVE"}<i>{isSelected ? "✓" : "+"}</i></em></div>
+          <div className="sanmar-style-copy"><span>{style.brandName} · {style.styleName || style.styleId}</span><h3>{style.title}</h3><p>{style.description}</p><footer>{style.colorCount != null && <small>{style.colorCount} colors</small>}{style.sizeCount != null && <small>{style.sizeCount} sizes</small>}<small>{style.priceMin ? `${money(style.priceMin)}–${money(style.priceMax)}` : "Live pricing"}</small></footer></div>
         </button>;
       })}</div> : !busy && <div className="sanmar-empty"><h3>No products match this search.</h3><p>Try another brand or clear the search.</p></div>}
       {hasMore && <div className="sanmar-load-more"><button className="ae-button" disabled={busy} onClick={() => void load({ append: true })}>{busy ? "Loading…" : "Load more products"}</button></div>}
-      <details className="sanmar-exact-fallback"><summary>Know the exact SanMar style number?</summary><div><input value={exactStyle} onChange={(event) => setExactStyle(event.target.value.toUpperCase())} onKeyDown={(event) => event.key === "Enter" && void addExactStyle()} placeholder="Example: K500"/><button className="ae-button" disabled={!exactStyle.trim() || detailBusy} onClick={() => void addExactStyle()}>Add exact style</button></div></details>
+      {provider === "sanmar" && <details className="sanmar-exact-fallback"><summary>Know the exact SanMar style number?</summary><div><input value={exactStyle} onChange={(event) => setExactStyle(event.target.value.toUpperCase())} onKeyDown={(event) => event.key === "Enter" && void addExactStyle()} placeholder="Example: K500"/><button className="ae-button" disabled={!exactStyle.trim() || detailBusy} onClick={() => void addExactStyle()}>Add exact style</button></div></details>}
       {message && <div className={`sanmar-wizard-message ${messageType}`}>{message}</div>}
     </div>
-    <aside className="sanmar-selection-summary"><div><p className="ae-kicker">IMPORT SELECTION</p><h2>{selectedCount} item{selectedCount === 1 ? "" : "s"} selected</h2><p>Choose items in the catalog. Configure colors, images, and print zones on the next pages.</p></div>{selectedStyles.length > 0 ? <ul>{selectedStyles.map((style) => <li key={style.styleId}><span><b>{style.title}</b><small>{style.brandName} · {style.styleId}</small></span><button type="button" aria-label={`Remove ${style.title}`} onClick={() => toggleStyle(style)}>×</button></li>)}</ul> : <div className="sanmar-selection-empty">Your selected products will appear here.</div>}<button className="ae-button primary" type="button" disabled={!selectedCount || detailBusy} onClick={() => void openImageSetup()}>{detailBusy ? "Loading selected items…" : "Next: choose colors & images →"}</button></aside>
+    <aside className="sanmar-selection-summary"><div><p className="ae-kicker">IMPORT SELECTION</p><h2>{selectedCount} item{selectedCount === 1 ? "" : "s"} selected</h2><p>Choose items in the catalog. Configure colors, images, and print zones on the next pages.</p></div>{selectedStyles.length > 0 ? <ul>{selectedStyles.map((style) => <li key={style.styleId}><span><b>{style.title}</b><small>{style.brandName} · {style.styleName || style.styleId}</small></span><button type="button" aria-label={`Remove ${style.title}`} onClick={() => toggleStyle(style)}>×</button></li>)}</ul> : <div className="sanmar-selection-empty">Your selected products will appear here.</div>}<button className="ae-button primary" type="button" disabled={!selectedCount || detailBusy} onClick={() => void openImageSetup()}>{detailBusy ? "Loading selected items…" : "Next: choose colors & images →"}</button></aside>
     <style jsx>{`
       .sanmar-catalog-flow{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:16px;align-items:start}.sanmar-catalog-main,.sanmar-selection-summary{min-width:0;padding:18px;border:1px solid var(--ae-line);border-radius:16px;background:white}.sanmar-selection-summary{position:sticky;top:16px;display:grid;gap:13px}.sanmar-selection-summary h2{margin:3px 0;font-size:16px}.sanmar-selection-summary p:not(.ae-kicker){margin:4px 0;color:var(--ae-muted);font-size:10px;line-height:1.5}.sanmar-selection-summary ul{display:grid;gap:7px;margin:0;padding:0;list-style:none}.sanmar-selection-summary li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px;border:1px solid var(--ae-line);border-radius:10px}.sanmar-selection-summary li span{display:grid;gap:3px;min-width:0}.sanmar-selection-summary li b,.sanmar-selection-summary li small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sanmar-selection-summary li b{font-size:10px}.sanmar-selection-summary li small{color:var(--ae-muted);font-size:8px}.sanmar-selection-summary li button{border:0;background:none;color:#8d4545;font-size:17px;cursor:pointer}.sanmar-selection-empty{padding:18px 10px;border:1px dashed var(--ae-line);border-radius:10px;color:var(--ae-muted);font-size:10px;text-align:center}.sanmar-selection-summary>.ae-button{width:100%;white-space:normal}.sanmar-catalog-flow .sanmar-style-card{position:relative}.sanmar-catalog-flow .sanmar-style-image em{display:flex;align-items:center;gap:6px}.sanmar-catalog-flow .sanmar-style-image em i{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:white;color:#142c43;font-style:normal;font-size:13px}.sanmar-catalog-flow .sanmar-style-card.selected{border-color:#183956;box-shadow:0 0 0 2px #18395620}.sanmar-catalog-flow .sanmar-style-copy footer{display:flex;flex-wrap:wrap;gap:8px}.sanmar-catalog-flow .sanmar-style-copy footer small{color:#657588;font-size:9px}
       .sanmar-catalog-flow .sanmar-live-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px;padding:12px 14px;border-radius:12px;background:#102b43;color:#fff}

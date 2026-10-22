@@ -48,6 +48,11 @@ export default async function SupplierCatalogPage() {
     )
   );
 
+  const importedSSStyleIds = Array.from(new Set<string>(
+    (products || []).flatMap((row: any) => row.configuration?.supplier?.provider === "ss-activewear" && row.configuration?.businessScope !== "brand-source"
+      ? [String(row.configuration.supplier.styleId || "")].filter(Boolean) : [])
+  ));
+
   return (
     <>
       <header className="admin-header">
@@ -65,6 +70,7 @@ export default async function SupplierCatalogPage() {
       <SupplierCatalogBrowser
         suppliers={suppliers}
         importedSanMarStyleIds={importedSanMarStyleIds}
+        importedSSStyleIds={importedSSStyleIds}
       />
     </>
   );
