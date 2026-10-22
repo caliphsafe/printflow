@@ -1,3 +1,4 @@
+import { advancedSanMarStyleId, applyAdvancedSanMarRules, isAdvancedShop } from "@/lib/advanced-sanmar-catalog";
 import Link from "next/link";
 import ProductCatalogManager, {
   type ProductEditorTab
@@ -89,7 +90,11 @@ export default async function ProductsPage({
         const decoded = decodeProductNameFields(row);
         return {
           ...decoded,
-          configuration: normalizeConfiguration(decoded.configuration)
+          configuration: normalizeConfiguration(
+            isAdvancedShop(shop.id) && advancedSanMarStyleId(decoded)
+              ? applyAdvancedSanMarRules(decoded.configuration, decoded.name)
+              : decoded.configuration
+          )
         };
       });
 
@@ -136,6 +141,7 @@ export default async function ProductsPage({
       </header>
 
       <ProductCatalogManager
+        advancedShop={isAdvancedShop(shop.id)}
         initialProducts={products}
         pricingProfile={normalizePricingProfile(
           pricingRow?.configuration ||

@@ -2,6 +2,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { advancedSanMarKind, advancedSanMarStyleId, applyAdvancedSanMarRules } from "@/lib/advanced-sanmar-catalog";
 import FloatingSaveBar from "@/components/FloatingSaveBar";
 import { useUnsavedChanges } from "@/components/useUnsavedChanges";
 import { useRouter } from "next/navigation";
@@ -128,13 +129,22 @@ function singlePrintZone(value: PrintArea) {
   );
 }
 
-export default function ProductCatalogManager({ initialProducts, pricingProfile, initialSelectedId, initialTab }: { initialProducts: CatalogProduct[]; pricingProfile: ShopPricingProfile; initialSelectedId?: string; initialTab?: Tab }) {
+export default function ProductCatalogManager({ initialProducts, pricingProfile, initialSelectedId, initialTab, advancedShop = false }: { advancedShop?: boolean; initialProducts: CatalogProduct[]; pricingProfile: ShopPricingProfile; initialSelectedId?: string; initialTab?: Tab }) {
   const router = useRouter();
-  const decodedProducts = initialProducts.map((item) => decodeProductNameFields(item));
+  function enforceProductRules(item: CatalogProduct): CatalogProduct {
+    if (!advancedShop || !advancedSanMarStyleId(item)) return item;
+    return { ...item, configuration: applyAdvancedSanMarRules(item.configuration, item.name) };
+  }
+  const decodedProducts = initialProducts.map((item) => enforceProductRules(decodeProductNameFields(item)));
   const startingProduct = decodedProducts.find((item) => item.id === initialSelectedId) || decodedProducts[0];
   const [products, setProducts] = useState(decodedProducts);
   const [selectedId, setSelectedId] = useState(startingProduct?.id || "");
   const [draft, setDraft] = useState<CatalogProduct | null>(startingProduct ? copy(startingProduct) : null);
+  const garmentKind = advancedShop && draft && advancedSanMarStyleId(draft)
+    ? advancedSanMarKind(draft.configuration, draft.name)
+    : "other";
+  const poloOnly = garmentKind === "polo";
+  const embroideryOnly = poloOnly || garmentKind === "hat";
   const [savedSnapshot, setSavedSnapshot] = useState(startingProduct ? JSON.stringify(startingProduct) : "");
   const [tab, setTab] = useState<Tab>(initialTab && TABS.includes(initialTab) ? initialTab : "Basics");
   const [busy, setBusy] = useState(false);
@@ -164,9 +174,10 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
 
   useEffect(() => {
     if (!draft) return;
+    if (poloOnly && previewSide !== "front") setPreviewSide("front");
     const available = productPrintSizes(draft);
     if (!available.includes(previewSize)) setPreviewSize(available.includes("full") ? "full" : available[0] || "full");
-  }, [draft?.configuration.customization.printSizes, previewSize]);
+  }, [draft?.configuration.customization.printSizes, previewSize, poloOnly, previewSide]);
 
   async function openSupplierColorPicker() {
     if (!draft?.configuration.supplier || draft.configuration.supplier.provider !== "ss-activewear") return;
@@ -249,7 +260,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
   }
 
   function updateConfiguration(next: Partial<ProductConfiguration>) {
-    if (draft) setDraft({ ...draft, configuration: { ...draft.configuration, ...next } });
+    if (draft) setDraft(enforceProductRules({ ...draft, configuration: { ...draft.configuration, ...next } }));
   }
 
   function updateCustomization(next: Partial<ProductConfiguration["customization"]>) {
@@ -427,7 +438,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                 <Panel title="Product basics" description="The information customers use to understand and choose this product.">
                   <div className="clean-form-grid">
                     <Field label="Product name">
-                      <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value, slug: slugify(event.target.value) })} />
+                      <input value={draft.name} onChange={(event) => setDraft(enforceProductRules({ ...draft, name: event.target.value, slug: slugify(event.target.value) }))} />
                     </Field>
                     <Field label="Category">
                       <select value={draft.configuration.customization.category} onChange={(event) => updateCustomization({ category: event.target.value })}>
@@ -472,33 +483,37 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
 
               {tab === "Options" && (
                 <>
-                  <Panel title="Design choices" description="Select every side combination customers can use for this product.">
+                  <Panel title="Design choices" description={poloOnly ? "Polos are restricted to front left-chest embroidery. These choices are fixed." : "Select every side combination customers can use for this product."}>
                     <div className="selection-card-grid">
                       <CheckCard
-                        title="Front only"
-                        text="The customer selects Heart Size or Full Size for the front."
+                        title={poloOnly ? "Front left chest only" : "Front only"}
+                        disabled={poloOnly}
+                        text={poloOnly ? "Required: embroidery on the front left chest, Heart Size only." : "Customers use the enabled print sizes for the front."}
                         checked={draft.configuration.customization.designModes.includes("front")}
                         onChange={(checked) => updateCustomization({ designModes: toggleValue(draft.configuration.customization.designModes, "front", checked) })}
                       />
                       <CheckCard
                         title="Back only"
-                        text="The customer selects Heart Size or Full Size for the back."
+                        disabled={poloOnly}
+                        text={poloOnly ? "Not available for polos." : "Customers use the enabled print sizes for the back."}
                         checked={draft.configuration.customization.designModes.includes("back")}
                         onChange={(checked) => updateCustomization({ designModes: toggleValue(draft.configuration.customization.designModes, "back", checked) })}
                       />
                       <CheckCard
                         title="Front + back"
-                        text="Each side receives its own artwork and print-size choice."
+                        disabled={poloOnly}
+                        text={poloOnly ? "Not available for polos." : "Each side receives its own artwork and print-size choice."}
                         checked={draft.configuration.customization.designModes.includes("front-back")}
                         onChange={(checked) => updateCustomization({ designModes: toggleValue(draft.configuration.customization.designModes, "front-back", checked) })}
                       />
                     </div>
                   </Panel>
-                  <Panel title="Print size options" description="Choose exactly which print-size choices this product supports. At least one option must remain enabled.">
+                  <Panel title="Print size options" description={poloOnly ? "Polos use Heart Size only for the left-chest embroidery area." : "Choose exactly which print-size choices this product supports. At least one option must remain enabled."}>
                     <div className="selection-card-grid">
                       <CheckCard
                         title="Heart Size"
-                        text="Offer the compact Heart Size print area for this product."
+                        disabled={poloOnly}
+                        text={poloOnly ? "Required for front left-chest embroidery." : "Offer the compact Heart Size print area for this product."}
                         checked={productPrintSizes(draft).includes("heart")}
                         onChange={(checked) => {
                           const current = productPrintSizes(draft);
@@ -518,7 +533,8 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                       />
                       <CheckCard
                         title="Full Size"
-                        text="Offer the larger Full Size print area for this product."
+                        disabled={poloOnly}
+                        text={poloOnly ? "Not available for polos." : "Offer the larger Full Size print area for this product."}
                         checked={productPrintSizes(draft).includes("full")}
                         onChange={(checked) => {
                           const current = productPrintSizes(draft);
@@ -538,11 +554,12 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                       />
                     </div>
                   </Panel>
-                  <Panel title="Available decoration methods" description="Choose one or more methods customers may use for this product. Keep at least one selected.">
+                  <Panel title="Available decoration methods" description={embroideryOnly ? "This product supports embroidery only. Screen printing and DTF are unavailable." : "Choose one or more methods customers may use for this product. Keep at least one selected."}>
                     <div className="selection-card-grid">
-                      {AVAILABLE_DECORATION_METHODS.map((method) => <CheckCard
+                      {(embroideryOnly ? ["Embroidery"] : AVAILABLE_DECORATION_METHODS).map((method) => <CheckCard
                         key={method}
                         title={method}
+                        disabled={embroideryOnly}
                         text={method === "Screen Printing" ? "Offer screen printing for this product." : method === "Embroidery" ? "Offer embroidery for this product." : "Offer DTF (Direct To Fabric) for this product."}
                         checked={normalizeDecorationMethods(draft.configuration.customization.decorationMethods).includes(method)}
                         onChange={(checked) => toggleDecorationMethod(method, checked)}
@@ -634,7 +651,7 @@ export default function ProductCatalogManager({ initialProducts, pricingProfile,
                       </select>
                     </Field>
                     <div className="segmented-control" aria-label="Garment side">
-                      {(["front", "back"] as DesignSide[]).map((item) => (
+                      {((poloOnly ? ["front"] : ["front", "back"]) as DesignSide[]).map((item) => (
                         <button key={item} className={previewSide === item ? "active" : ""} onClick={() => setPreviewSide(item)}>
                           {item === "front" ? "Front" : "Back"}
                         </button>
@@ -770,10 +787,10 @@ function Field({ label, wide, children }: { label: string; wide?: boolean; child
   );
 }
 
-function CheckCard({ title, text, checked, onChange }: { title: string; text: string; checked: boolean; onChange: (value: boolean) => void }) {
+function CheckCard({ title, text, checked, onChange, disabled = false }: { title: string; text: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
   return (
     <label className={checked ? "selection-card selected" : "selection-card"}>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       <span className="fake-check">✓</span>
       <span>
         <strong>{title}</strong>
