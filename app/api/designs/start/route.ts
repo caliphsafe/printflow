@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
 import { makeDesignDisplayId } from "@/lib/design-id";
-import { normalizeConfiguration } from "@/lib/catalog";
+import { normalizeConfiguration, printAreaFor } from "@/lib/catalog";
+import { validateArtworkPlacement, validateArtworkSource, artworkAspect, type ArtworkSource } from "@/lib/artwork-dimensions";
 import { decodeProductNameFields } from "@/lib/html-entities";
 import { DEFAULT_PRICING_PROFILE, calculateResolvedOrderPricing, normalizePricingProfile } from "@/lib/pricing-settings";
 import { normalizeShopSettings } from "@/lib/shop-settings";
@@ -13,6 +14,7 @@ type ArtPayload = {
   sizeBytes: number;
   placement: unknown;
   printSize?: PrintSize;
+  source?: ArtworkSource;
 };
 
 type Payload = {
@@ -20,6 +22,7 @@ type Payload = {
   customer: { name: string; email: string; phone?: string };
   configuration: {
     productId: string;
+    artworkSizingVersion?: number;
     packageId: string;
     colorId: string;
     designMode: DesignMode;
@@ -106,9 +109,22 @@ export async function POST(request: Request) {
       const printSize = payload.configuration.printSizes?.[side];
       if (!art) return jsonError(`Upload ${side} artwork.`);
       if (!validPrintSize(printSize)) return jsonError(`Choose Heart Size or Full Size for the ${side}.`);
+      if (!product.configuration.customization.printSizes.includes(printSize)) return jsonError(`That ${side} print area is unavailable.`);
       printSizes[side] = printSize;
       if (art.sizeBytes <= 0 || art.sizeBytes > settings.upload.maxBytes) return jsonError(`${side} artwork is too large.`);
       if (!settings.upload.acceptedTypes.includes(art.mimeType)) return jsonError(`${side} artwork type is not accepted.`);
+      try {
+        const placement = validateArtworkPlacement(printAreaFor(product.configuration, side, printSize), art.placement);
+        art.placement = placement;
+        if (payload.configuration.artworkSizingVersion === 2) {
+          art.source = validateArtworkSource(art.source);
+          if (Math.abs(placement.width / placement.height / artworkAspect(art.source) - 1) > 0.01) {
+            return jsonError(`The ${side} artwork proportions changed. Upload the file again.`);
+          }
+        }
+      } catch (error) {
+        return jsonError(error instanceof Error ? `${side}: ${error.message}` : "Invalid artwork measurements.");
+      }
     }
 
     const sizes = Array.isArray(payload.configuration.sizes) ? payload.configuration.sizes : [];
@@ -175,6 +191,12 @@ export async function POST(request: Request) {
         filename: art.filename,
         mimeType: art.mimeType,
         placement: art.placement,
+        source: art.source,
+        printArea: printAreaFor(product.configuration, side, printSizes[side]!),
+        productionDimensions: (() => {
+          const line = pricing.printLines.find(line => line.side === side)!;
+          return { widthInches: line.widthInches, heightInches: line.heightInches, squareInches: line.squareInches };
+        })(),
         printSize: printSizes[side],
         garmentImageUrl: side === "front" ? color.frontImageUrl : color.backImageUrl
       };
@@ -211,6 +233,7 @@ export async function POST(request: Request) {
         design_sides: sideData,
         design_configuration: {
           designMode: payload.configuration.designMode,
+          artworkSizingVersion: payload.configuration.artworkSizingVersion === 2 ? 2 : 1,
           decorationMethod: pricing.decorationMethod,
           decorationPercentage: pricing.decorationPercentage,
           printSizes,

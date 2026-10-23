@@ -149,6 +149,8 @@ export type ScreenPrintingPricing = {
   maximumColors: number;
   heartBasePerItem: number;
   fullBasePerItem: number;
+  compactMaxWidthInches: number;
+  compactMaxHeightInches: number;
   additionalColorPerItem: number;
   setupPerScreen: number;
   countWhiteUnderbase: boolean;
@@ -281,6 +283,9 @@ export type PrintPricingLine = {
   heightInches?: number;
   squareInches?: number;
   estimatedStitches?: number;
+  pricingSize?: PrintSize;
+  minimumApplied?: boolean;
+  measured?: boolean;
   baseUnitPrice: number;
   discountPercent: number;
   unitPrice: number;

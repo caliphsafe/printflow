@@ -716,3 +716,16 @@
   .modern-customer-shell .customer-product-card.modern > .customer-product-image { height:clamp(100px,29vw,175px); }
   .modern-customer-shell .customer-product-card.modern > .product-card-info { min-height:215px; padding:8px; }
 }
+
+/* Actual production dimensions and per-location decoration prices. */
+.modern-customer-shell .artwork-sizing-card { display:grid; gap:10px; padding:14px; margin:14px 0; border:1px solid var(--sf-border,#ddd); border-radius:12px; background:var(--sf-panel,#fff); color:var(--sf-ink,#171717); }
+.modern-customer-shell .artwork-sizing-card > strong { font-size:15px; line-height:1.5; }
+.modern-customer-shell .artwork-sizing-card small { font-size:12px; line-height:1.5; color:var(--sf-muted,#555); }
+.modern-customer-shell .artwork-dimension-inputs { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.modern-customer-shell .artwork-dimension-inputs label { display:grid; gap:6px; font-size:12px; font-weight:700; }
+.modern-customer-shell .artwork-dimension-inputs input { box-sizing:border-box; min-width:0; width:100%; padding:10px; border:1px solid var(--sf-border,#ccc); border-radius:8px; background:var(--sf-panel,#fff); color:var(--sf-ink,#171717); font:inherit; font-size:16px; }
+.modern-customer-shell .artwork-live-price { display:flex; justify-content:space-between; gap:10px; padding-top:10px; border-top:1px solid var(--sf-border,#ddd); font-size:13px; }
+.modern-customer-shell .artwork-live-price b { font-size:18px; }
+.modern-customer-shell .quote-artwork-sizes { display:grid; gap:10px; margin:12px 0; }
+.modern-customer-shell .quote-artwork-sizes > div { display:grid; gap:5px; font-size:12px; line-height:1.5; }
+.modern-customer-shell .quote-artwork-sizes span { color:var(--sf-muted,#555); }

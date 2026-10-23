@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getAdminContext } from "@/lib/admin-data";
 import OrderBlanksButton from "@/components/OrderBlanksButton";
 import BlankOrderDraftButton from "@/components/BlankOrderDraftButton";
+import { formatArtworkDimensions } from "@/lib/artwork-dimensions";
 import { decodeHtmlEntities } from "@/lib/html-entities";
 
 export const dynamic = "force-dynamic";
@@ -105,10 +106,12 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         <dl className="details-list polished-details-list">
           {printSizes.front && <div><dt>Front print</dt><dd>{title(printSizes.front)}</dd></div>}
           {printSizes.back && <div><dt>Back print</dt><dd>{title(printSizes.back)}</dd></div>}
+          {printLines.filter((line: any) => line.measured && line.widthInches && line.heightInches).map((line: any) => <div key={line.side}><dt>{title(line.side)} artwork</dt><dd>{formatArtworkDimensions(line)}{line.estimatedStitches ? ` · Estimated ${Number(line.estimatedStitches).toLocaleString()} stitches` : ""}</dd></div>)}
           <div><dt>Sizes</dt><dd>{(o.size_breakdown || []).filter((x: any) => x.quantity > 0).map((x: any) => `${x.size}: ${x.quantity}`).join(", ")}</dd></div>
           <div><dt>Design optimization</dt><dd>{config.designOptimizationRequested ? "Requested" : "Not requested"}</dd></div>
           <div><dt>Customer notes</dt><dd>{o.customer_notes || "—"}</dd></div>
         </dl>
+        {config.artworkSizingVersion === 2 && <p>Dimensions apply to the visible artwork, excluding transparent outer margins. Keep these dimensions when preparing the original file. Embroidery stitch counts require production confirmation.</p>}
       </section>
 
       <section className="admin-card order-pricing-card">
@@ -117,7 +120,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           <div><span>Supplier garment cost</span><b>${supplierGarmentCost.toFixed(2)}</b></div>
           <div><span>Garment markup · {Number(config.garmentMarkupPercent || 0).toFixed(1)}%</span><b>${garmentMarkupAmount.toFixed(2)}</b></div>
           <div className="subtotal"><span>Customer garment subtotal</span><b>${garmentSubtotal.toFixed(2)}</b></div>
-          {printLines.map((line: any) => <div key={`${line.side}-${line.printSize}`}><span>{title(line.side)} · {title(line.printSize)}{line.inkColors ? ` · ${line.inkColors} color${line.inkColors === 1 ? "" : "s"}` : ""}</span><b>${Number(line.unitPrice || 0).toFixed(2)} / shirt</b></div>)}
+          {printLines.map((line: any) => <div key={`${line.side}-${line.printSize}`}><span>{title(line.side)} · {line.measured ? formatArtworkDimensions(line) : title(line.printSize)}{line.pricingSize ? ` · ${line.pricingSize === "heart" ? "Compact" : "Large"} price bracket` : ""}{line.minimumApplied ? " · Minimum applied" : ""}{line.inkColors ? ` · ${line.inkColors} color${line.inkColors === 1 ? "" : "s"}` : ""}</span><b>${Number(line.unitPrice || 0).toFixed(2)} / shirt</b></div>)}
           {config.discountTierLabel && <div><span>Production threshold</span><b>{config.discountTierLabel}</b></div>}
           <div className="subtotal"><span>Print subtotal</span><b>${printSubtotal.toFixed(2)}</b></div>
           <div className="subtotal"><span>Merchandise · {o.package_quantity} items</span><b>${merchandiseSubtotal.toFixed(2)}</b></div>
