@@ -1,4 +1,5 @@
 import { printAreaFor } from "@/lib/catalog";
+import { artworkDimensions } from "@/lib/artwork-dimensions";
 import type {
   ArtworkPlacement,
   CatalogProduct,
@@ -51,6 +52,8 @@ export const DEFAULT_PRICING_PROFILE: ShopPricingProfile = {
     maximumColors: 6,
     heartBasePerItem: 3,
     fullBasePerItem: 5,
+    compactMaxWidthInches: 4,
+    compactMaxHeightInches: 4,
     additionalColorPerItem: 1,
     setupPerScreen: 20,
     countWhiteUnderbase: true,
@@ -131,6 +134,8 @@ function normalizeScreenPrinting(value: any): ScreenPrintingPricing {
     maximumColors: Math.min(12, integer(value?.maximumColors ?? fallback.maximumColors, 1)),
     heartBasePerItem: money(value?.heartBasePerItem ?? fallback.heartBasePerItem),
     fullBasePerItem: money(value?.fullBasePerItem ?? fallback.fullBasePerItem),
+    compactMaxWidthInches: Math.min(20, Math.max(0.1, Number(value?.compactMaxWidthInches) || fallback.compactMaxWidthInches)),
+    compactMaxHeightInches: Math.min(24, Math.max(0.1, Number(value?.compactMaxHeightInches) || fallback.compactMaxHeightInches)),
     additionalColorPerItem: money(value?.additionalColorPerItem ?? fallback.additionalColorPerItem),
     setupPerScreen: money(value?.setupPerScreen ?? fallback.setupPerScreen),
     countWhiteUnderbase: value?.countWhiteUnderbase !== false,
@@ -242,14 +247,19 @@ function supplierUnitCost(product: CatalogProduct, color: ShirtColor, size: stri
 }
 
 function actualDimensions(product: CatalogProduct, side: DesignSide, size: PrintSize, placement?: ArtworkPlacement) {
-  const area = printAreaFor(product.configuration, side, size);
-  const maxWidthPx = Math.max(1, Number(area.artworkWidth || area.width));
-  const maxHeightPx = Math.max(1, Number(area.artworkHeight || area.height));
-  const widthRatio = placement ? Math.min(1, Math.max(0.05, placement.width / maxWidthPx)) : 1;
-  const heightRatio = placement ? Math.min(1, Math.max(0.05, placement.height / maxHeightPx)) : 1;
-  const widthInches = Number(((area.widthInches || (size === "heart" ? 4 : 14)) * widthRatio).toFixed(2));
-  const heightInches = Number(((area.heightInches || (size === "heart" ? 4 : 18)) * heightRatio).toFixed(2));
-  return { widthInches, heightInches, squareInches: Number((widthInches * heightInches).toFixed(2)) };
+  return artworkDimensions(printAreaFor(product.configuration, side, size), placement);
+}
+
+/** Shop estimates at 4 × 4 and 14 × 18 inches anchor a continuous area estimate.
+ * The same physical artwork receives the same estimate in either placement zone.
+ */
+export function estimateArtworkStitches(squareInches: number, config: EmbroideryPricing) {
+  const compact = config.heartEstimatedStitches;
+  const full = Math.max(compact, config.fullEstimatedStitches);
+  const stitches = squareInches <= 16 ? compact * squareInches / 16
+    : squareInches >= 252 ? full * squareInches / 252
+    : compact + (full - compact) * (squareInches - 16) / (252 - 16);
+  return Math.max(1, Math.round(stitches));
 }
 
 export type PricingPrintSelection = {
@@ -313,18 +323,21 @@ export function calculateResolvedOrderPricing({
     methodSetup = money(totalScreens * config.setupPerScreen);
     activeSelections.forEach(([side, selection], index) => {
       const inkColors = Math.min(config.maximumColors, Math.max(1, integer(selection.inkColors || 1, 1)));
-      const base = selection.printSize === "heart" ? config.heartBasePerItem : config.fullBasePerItem;
+      const dims = actualDimensions(product, side, selection.printSize, selection.placement);
+      const pricingSize = dims.widthInches <= config.compactMaxWidthInches && dims.heightInches <= config.compactMaxHeightInches ? "heart" : "full";
+      const base = pricingSize === "heart" ? config.heartBasePerItem : config.fullBasePerItem;
       const raw = base + Math.max(0, inkColors - 1) * config.additionalColorPerItem;
       const locationDiscount = index > 0 ? config.additionalLocationDiscountPercent : 0;
       const combinedDiscount = 1 - (1 - tier.discountPercent / 100) * (1 - locationDiscount / 100);
       const unitPrice = money(raw * (1 - combinedDiscount));
-      const dims = actualDimensions(product, side, selection.printSize, selection.placement);
       printLines.push({
         side,
         printSize: selection.printSize,
         method,
         quantity,
         inkColors,
+        pricingSize,
+        measured: Boolean(selection.placement),
         ...dims,
         baseUnitPrice: money(raw),
         discountPercent: Number((combinedDiscount * 100).toFixed(2)),
@@ -339,13 +352,16 @@ export function calculateResolvedOrderPricing({
     methodSetup = config.setupFee;
     activeSelections.forEach(([side, selection]) => {
       const dims = actualDimensions(product, side, selection.printSize, selection.placement);
-      const raw = Math.max(config.minimumPerLocation, dims.squareInches * config.ratePerSquareInch + config.pressFeePerLocation);
+      const areaPrice = dims.squareInches * config.ratePerSquareInch + config.pressFeePerLocation;
+      const raw = Math.max(config.minimumPerLocation, areaPrice);
       const unitPrice = money(raw * (1 - tier.discountPercent / 100));
       printLines.push({
         side,
         printSize: selection.printSize,
         method,
         quantity,
+        measured: Boolean(selection.placement),
+        minimumApplied: areaPrice < config.minimumPerLocation,
         ...dims,
         baseUnitPrice: money(raw),
         discountPercent: tier.discountPercent,
@@ -359,16 +375,18 @@ export function calculateResolvedOrderPricing({
     tierLabel = `${tier.minQuantity}+ · ${tier.discountPercent}% embroidery discount`;
     methodSetup = money(config.setupPerLocation * activeSelections.length + config.digitizingFee);
     activeSelections.forEach(([side, selection]) => {
-      const estimatedStitches = selection.printSize === "heart" ? config.heartEstimatedStitches : config.fullEstimatedStitches;
+      const dims = actualDimensions(product, side, selection.printSize, selection.placement);
+      const estimatedStitches = estimateArtworkStitches(dims.squareInches, config);
       const raw = Math.max(config.minimumPerLocation, (estimatedStitches / 1000) * config.ratePerThousandStitches);
       const unitPrice = money(raw * (1 - tier.discountPercent / 100));
-      const dims = actualDimensions(product, side, selection.printSize, selection.placement);
       printLines.push({
         side,
         printSize: selection.printSize,
         method,
         quantity,
         estimatedStitches,
+        measured: Boolean(selection.placement),
+        minimumApplied: estimatedStitches / 1000 * config.ratePerThousandStitches < config.minimumPerLocation,
         ...dims,
         baseUnitPrice: money(raw),
         discountPercent: tier.discountPercent,

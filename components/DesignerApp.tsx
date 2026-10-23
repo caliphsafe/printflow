@@ -16,6 +16,9 @@ import type {
   SizeQuantity
 } from "@/lib/types";
 import { decodeHtmlEntities } from "@/lib/html-entities";
+import ArtworkImage from "@/components/ArtworkImage";
+import ArtworkSizingControls from "@/components/ArtworkSizingControls";
+import { artworkZone, artworkDimensions, fitArtwork, resizeArtwork, artworkSampleDimensions, visibleArtworkBounds, artworkAspect, formatArtworkDimensions, type ArtworkSource } from "@/lib/artwork-dimensions";
 
 const W = 800;
 const H = 800;
@@ -31,8 +34,8 @@ const ARTWORK_MIME_BY_EXTENSION: Record<string, string> = {
   svg: "image/svg+xml"
 };
 
-type SideState = { file: File | null; mimeType: string; dataUrl: string; placement: ArtworkPlacement };
-const freshSide = (): SideState => ({ file: null, mimeType: "", dataUrl: "", placement: { ...emptyPlacement } });
+type SideState = { file: File | null; mimeType: string; dataUrl: string; source: ArtworkSource | null; placement: ArtworkPlacement };
+const freshSide = (): SideState => ({ file: null, mimeType: "", dataUrl: "", source: null, placement: { ...emptyPlacement } });
 
 function assetUrl(url?: string) {
   if (!url) return "";
@@ -254,25 +257,11 @@ function loadImage(src: string, crossOrigin = false) {
 }
 
 function printZoneBounds(area: PrintArea) {
-  const width = Math.max(40, Math.min(Number(area.width || 40), W));
-  const height = Math.max(40, Math.min(Number(area.height || 40), H));
-  const x = Math.max(0, Math.min(W - width, Number(area.x || 0)));
-  const y = Math.max(0, Math.min(H - height, Number(area.y || 0)));
-  return { x, y, width, height };
+  return artworkZone(area);
 }
 
 function fitPlacementToArea(placement: ArtworkPlacement, area: PrintArea) {
-  const zone = printZoneBounds(area);
-  const ratio = Math.min(zone.width / placement.width, zone.height / placement.height, 1);
-  const width = Math.max(40, placement.width * ratio);
-  const height = Math.max(40, placement.height * ratio);
-  return {
-    ...placement,
-    width,
-    height,
-    x: Math.max(zone.x, Math.min(zone.x + zone.width - width, zone.x + (zone.width - width) / 2)),
-    y: Math.max(zone.y, Math.min(zone.y + zone.height - height, zone.y + (zone.height - height) / 2))
-  };
+  return fitArtwork(placement, area);
 }
 
 export default function DesignerApp({ shop }: { shop: PublicShop }) {
@@ -348,8 +337,8 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
   const totalAssigned = useMemo(() => sizes.reduce((sum, item) => sum + item.quantity, 0), [sizes]);
   const minimum = product?.configuration.customization.minimumQuantity || 12;
   const selectedPrints = {
-    front: neededSides.includes("front") ? { printSize: availablePrintSizes(product).includes(printSizes.front) ? printSizes.front : defaultPrintSize(product), placement: front.placement, inkColors: inkColors.front } : undefined,
-    back: neededSides.includes("back") ? { printSize: availablePrintSizes(product).includes(printSizes.back) ? printSizes.back : defaultPrintSize(product), placement: back.placement, inkColors: inkColors.back } : undefined
+    front: neededSides.includes("front") ? { printSize: availablePrintSizes(product).includes(printSizes.front) ? printSizes.front : defaultPrintSize(product), placement: front.file ? front.placement : undefined, inkColors: inkColors.front } : undefined,
+    back: neededSides.includes("back") ? { printSize: availablePrintSizes(product).includes(printSizes.back) ? printSizes.back : defaultPrintSize(product), placement: back.file ? back.placement : undefined, inkColors: inkColors.back } : undefined
   };
   const pricingSizes = totalAssigned > 0 ? sizes : sizes.map((item, index) => ({ ...item, quantity: index === 0 ? minimum : 0 }));
   const pricing = calculateResolvedOrderPricing({
@@ -500,13 +489,21 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       const objectUrl = URL.createObjectURL(file);
       objectUrlsRef.current.add(objectUrl);
       const image = await loadImage(objectUrl);
+      const sample = artworkSampleDimensions(image.naturalWidth, image.naturalHeight);
+      const canvas = document.createElement("canvas");
+      canvas.width = sample.width; canvas.height = sample.height;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) throw new Error("Unable to measure artwork in this browser.");
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(image, 0, 0, sample.width, sample.height);
+      const source: ArtworkSource = { width: image.naturalWidth, height: image.naturalHeight,
+        bounds: visibleArtworkBounds(ctx.getImageData(0, 0, sample.width, sample.height).data, sample.width, sample.height) };
       const area = printAreaFor(product.configuration, target, printSizes[target]);
       const zone = printZoneBounds(area);
       const maxWidth = zone.width * 0.92;
       const maxHeight = zone.height * 0.92;
-      const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
-      const width = image.width * ratio;
-      const height = image.height * ratio;
+      const width = Math.min(maxWidth, maxHeight * artworkAspect(source));
+      const height = width / artworkAspect(source);
       const placement = {
         x: Math.max(zone.x, Math.min(zone.x + zone.width - width, zone.x + (zone.width - width) / 2)),
         y: Math.max(zone.y, Math.min(zone.y + zone.height - height, zone.y + (zone.height - height) / 2)),
@@ -516,10 +513,16 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
       };
       const previous = target === "front" ? front : back;
       releaseSide(previous);
-      (target === "front" ? setFront : setBack)({ file, mimeType, dataUrl: objectUrl, placement });
+      (target === "front" ? setFront : setBack)({ file, mimeType, dataUrl: objectUrl, source, placement });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to preview that artwork file.");
     }
+  }
+
+  function setArtworkDimension(axis: "width" | "height", inches: number) {
+    const placement = resizeArtwork(sideState.placement, printArea, axis, inches);
+    setSideState(current => ({ ...current, placement }));
+    return artworkDimensions(printArea, placement);
   }
 
   function point(event: ReactPointerEvent<SVGElement>) {
@@ -551,9 +554,9 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
         }
       }));
     } else {
-      const maxWidth = Math.max(40, printZone.x + printZone.width - start.x);
-      const maxHeight = Math.max(40, printZone.y + printZone.height - start.y);
-      let width = Math.max(40, Math.min(maxWidth, start.width + dx));
+      const maxWidth = Math.max(1, printZone.x + printZone.width - start.x);
+      const maxHeight = Math.max(1, printZone.y + printZone.height - start.y);
+      let width = Math.max(1, Math.min(maxWidth, start.width + dx));
       let height = width * (start.height / start.width);
       if (height > maxHeight) {
         height = maxHeight;
@@ -633,7 +636,10 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
     if (state.dataUrl) {
       try {
         const art = await loadImage(state.dataUrl);
-        ctx.drawImage(art, state.placement.x, state.placement.y, state.placement.width, state.placement.height);
+        const bounds = state.source?.bounds || { x: 0, y: 0, width: 1, height: 1 };
+        ctx.drawImage(art, bounds.x * art.naturalWidth, bounds.y * art.naturalHeight,
+          bounds.width * art.naturalWidth, bounds.height * art.naturalHeight,
+          state.placement.x, state.placement.y, state.placement.width, state.placement.height);
       } catch {
         throw new Error(
           `Your ${target} artwork could not be rendered. Please remove it and upload the file again.`
@@ -685,6 +691,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
           mimeType: state.mimeType,
           sizeBytes: state.file!.size,
           placement: state.placement,
+          source: state.source,
           printSize: printSizes[target]
         };
       }
@@ -707,6 +714,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
           customer,
           configuration: {
             productId: product.id,
+            artworkSizingVersion: 2,
             packageId: pricing.tierId || "",
             colorId: color.id,
             designMode: mode,
@@ -898,7 +906,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
           {hasPrintSizeChoice && <WizardSection number="2" title="Decoration size"><div className="side-print-size-stack">{neededSides.map((target)=><div className="side-print-size-group" key={target}><span>{target==="front"?"Front":"Back"}</span><div className="print-size-choice-grid">{printSizeOptions.map((value)=>{const area=printAreaFor(product.configuration,target,value);return <label key={value} className={printSizes[target]===value?"print-size-choice selected":"print-size-choice"}><input type="radio" name={`${target}-print-size`} checked={printSizes[target]===value} onChange={()=>choosePrintSize(target,value)}/><span><b>{printSizeLabel(value)}</b><small>{area.widthInches}″ × {area.heightInches}″ max</small></span></label>;})}</div></div>)}</div></WizardSection>}
           <WizardSection number={hasPrintSizeChoice?"3":"2"} title="Decoration method">{product.configuration.customization.decorationMethods.length ? <label className="guided-field"><span>How should we decorate it?</span><select value={decoration} onChange={(event)=>setDecoration(event.target.value)}>{product.configuration.customization.decorationMethods.map((item)=><option key={item}>{item}</option>)}</select></label> : <p className="method-explainer">No decoration methods are enabled for this product. Please contact the shop.</p>}
             {decoration.toLowerCase().includes("screen")&&<div className="ink-color-estimator"><div><strong>Ink colors</strong><small>More colors and locations can affect the quote.</small></div>{neededSides.map((target)=><label key={target}><span>{target==="front"?"Front":"Back"}</span><select value={inkColors[target]} onChange={(event)=>setInkColors((current)=>({...current,[target]:Number(event.target.value)}))}>{Array.from({length:shop.pricing.screenPrinting.maximumColors},(_,index)=>index+1).map((count)=><option key={count} value={count}>{count} color{count===1?"":"s"}</option>)}</select></label>)}</div>}
-            {decoration.toLowerCase().includes("dtf")&&<p className="method-explainer">DTF pricing uses the artwork dimensions you set in the next step.</p>}{decoration.toLowerCase().includes("embroider")&&<p className="method-explainer">Embroidery pricing uses an estimated stitch tier. The shop will confirm production details.</p>}
+            {decoration.toLowerCase().includes("dtf")&&<p className="method-explainer">DTF pricing uses the artwork dimensions you set in the next step.</p>}{decoration.toLowerCase().includes("embroider")&&<p className="method-explainer">Embroidery pricing estimates stitches from your actual artwork size. The shop confirms production details.</p>}
           </WizardSection>
           <WizardSection number={hasPrintSizeChoice?"4":"3"} title="Optional services"><div className="customer-service-stack">{designOptimizationAmount>0&&<label className={designOptimizationRequested?"service-choice selected":"service-choice"}><input type="checkbox" checked={designOptimizationRequested} onChange={(event)=>setDesignOptimizationRequested(event.target.checked)}/><span className="fake-check">✓</span><span><b>{shop.pricing.designOptimizationFee.label}</b><small>{shop.pricing.designOptimizationFee.description}</small></span></label>}{customerAddOns.map((item)=><label key={item.id} className={selectedAddOnIds.includes(item.id)?"service-choice selected":"service-choice"}><input type="checkbox" checked={selectedAddOnIds.includes(item.id)} onChange={(event)=>setSelectedAddOnIds((current)=>event.target.checked?[...new Set([...current,item.id])]:current.filter((id)=>id!==item.id))}/><span className="fake-check">✓</span><span><b>{item.name}</b><small>{item.description}</small></span></label>)}</div></WizardSection>
           <button className="designer-primary" disabled={!product.configuration.customization.decorationMethods.length} onClick={()=>{setSide(neededSides[0]);setStep("artwork");}}>Continue to artwork</button>
@@ -940,14 +948,11 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
                 )}
                 {sideState.dataUrl && (
                   <g>
-                    <image
-                      href={sideState.dataUrl}
-                      x={sideState.placement.x}
-                      y={sideState.placement.y}
-                      width={sideState.placement.width}
-                      height={sideState.placement.height}
+                    <ArtworkImage
+                      src={sideState.dataUrl}
+                      placement={sideState.placement}
+                      source={sideState.source}
                       onPointerDown={(event) => begin("drag", event)}
-                      style={{ cursor: "move" }}
                     />
                     <rect
                       x={sideState.placement.x}
@@ -980,6 +985,7 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
             <button className="flow-back-link" onClick={()=>setStep("decoration")}>← Decoration</button><h1>Add your artwork</h1><p className="flow-lede">Choose each print side, upload a design, and adjust it on the garment.</p>
             <div className="stage-topbar"><div className="side-tabs modern">{neededSides.map((target)=><button type="button" key={target} className={side===target?"selected":""} onClick={()=>setSide(target)}>{target==="front"?"Front":"Back"}{(target==="front"?front.file:back.file)?<i>✓</i>:null}</button>)}</div><div className="stage-topbar-actions"><span>{hasPrintSizeChoice?`${printSizeLabel(currentPrintSize)} · `:"Print area · "}{printArea.widthInches?.toFixed(1)}″ × {printArea.heightInches?.toFixed(1)}″ max</span><button className="save-mockup-button" disabled={!sideState.file||mockupBusy!==null} onClick={()=>downloadMockup(side)}>{mockupBusy===side?"Saving…":"Save mockup"}</button></div></div>
             <div className="stage-upload modern"><label><input type="file" accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event)=>{const input=event.currentTarget;void handleArtwork(side,input.files?.[0]).finally(()=>{input.value="";});}}/>{sideState.file?`Replace ${side} artwork`:`Upload ${side} artwork`}</label>{sideState.file&&<button type="button" onClick={()=>clearSide(side)}>Remove artwork</button>}</div>
+            <ArtworkSizingControls line={pricing.printLines.find(line => line.side === side)} maxWidth={printZone.widthInches} maxHeight={printZone.heightInches} onResize={setArtworkDimension} />
             <div className="stage-guidance"><p>{product.configuration.customization.customerInstructions}</p><small>{hasPrintSizeChoice?`${printSizeLabel(currentPrintSize)} is`:"This print area is"} limited to {printArea.widthInches}″ × {printArea.heightInches}″. Drag artwork to place it and use the handle to resize. PNG, JPG, WEBP, or SVG · up to {uploadLimitMb} MB.</small></div>
             <div className="artwork-step-actions"><p>{neededSides.every((target)=>(target==="front"?front:back).file)?"Artwork added for every selected location.":`Artwork is optional to continue. Missing: ${neededSides.filter((target)=>!(target==="front"?front:back).file).join(" and ")}.`}</p><button className="designer-primary" onClick={()=>setStep("review")}>Continue to Quote & order</button></div>
           </aside>
@@ -1135,10 +1141,11 @@ export default function DesignerApp({ shop }: { shop: PublicShop }) {
           <div className="customer-guided-layout quote-guided-layout"><aside className="guided-product-preview quote-mockup-preview" aria-label={`${customerProductName(product)} design mockup`}><div className="guided-product-image quote-mockup-image"><svg className="quote-mockup-canvas" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${customerProductName(product)} in ${color.name}, ${quoteSide} mockup`}>
             <rect width={W} height={H} fill="#f6f6f3" />
             {quoteGarmentUrl ? <image href={quoteGarmentUrl} x="32" y="32" width="736" height="736" preserveAspectRatio="xMidYMid meet" /> : <path d="M255 150 110 245l75 135 78-42v330h274V338l78 42 75-135-145-95-65 55H320z" fill={garmentColorFallback(color)} stroke="#bbb" strokeWidth="3" />}
-            {quoteSideState.dataUrl && <image href={quoteSideState.dataUrl} x={quoteSideState.placement.x} y={quoteSideState.placement.y} width={quoteSideState.placement.width} height={quoteSideState.placement.height} />}
+            {quoteSideState.dataUrl && <ArtworkImage src={quoteSideState.dataUrl} placement={quoteSideState.placement} source={quoteSideState.source} />}
           </svg></div>{neededSides.length > 1 && <div className="quote-preview-side-tabs" aria-label="Mockup side">{neededSides.map((target) => <button type="button" key={target} className={quoteSide === target ? "active" : ""} onClick={() => setSide(target)}>{target === "front" ? "Front" : "Back"}</button>)}</div>}</aside>
           <div className="guided-options-scroll quote-options-scroll"><button className="flow-back-link" onClick={()=>setStep("artwork")}>← Artwork</button><h1>Quote & order</h1><p className="flow-lede">Check your order details and contact information before continuing to secure payment.</p>
           <div className="quote-review-grid"><div className="quote-summary-card"><h2>Order summary</h2><dl><div><dt>Product</dt><dd>{customerProductName(product)}</dd></div><div><dt>Brand</dt><dd>{product.configuration.supplier?.brandName || "—"}</dd></div><div><dt>Color</dt><dd>{color.name}</dd></div><div><dt>Quantity</dt><dd>{totalAssigned} pieces · {sizes.filter((item)=>item.quantity>0).map((item)=>`${item.size} × ${item.quantity}`).join(", ")}</dd></div><div><dt>Decoration</dt><dd>{decoration}</dd></div><div><dt>Location</dt><dd>{modeLabel(mode)}{neededSides.map((target)=>` · ${target}: ${printSizeLabel(printSizes[target])}`).join("")}</dd></div><div><dt>Artwork</dt><dd>{neededSides.map((target)=>`${target}: ${(target==="front"?front:back).file ? "Uploaded ✓" : "Missing"}`).join(" · ")}</dd></div></dl>
+            <div className="quote-artwork-sizes">{pricing.printLines.map(line => <div key={line.side}><b>{line.side === "front" ? "Front" : "Back"} · {line.measured ? formatArtworkDimensions(line) : "Upload artwork for final sizing"}</b><span>${line.unitPrice.toFixed(2)} decoration / item{line.pricingSize ? ` · ${line.pricingSize === "heart" ? "Compact" : "Large"} price bracket` : ""}{line.estimatedStitches ? ` · Estimated ${line.estimatedStitches.toLocaleString()} stitches` : ""}{line.minimumApplied ? " · Minimum location charge applies" : ""}</span></div>)}</div>
             <div className="quote-lines"><div><span>Garments</span><b>${pricing.garmentSubtotal.toFixed(2)}</b></div><div><span>Decoration</span><b>${pricing.printSubtotal.toFixed(2)}</b></div>{pricing.setupFee>0&&<div><span>Setup</span><b>${pricing.setupFee.toFixed(2)}</b></div>}{pricing.designOptimizationFee>0&&<div><span>Design service</span><b>${pricing.designOptimizationFee.toFixed(2)}</b></div>}{pricing.addOnTotal>0&&<div><span>Optional services</span><b>${pricing.addOnTotal.toFixed(2)}</b></div>}<div className="quote-total"><span>Order total</span><b>${totalPrice.toFixed(2)}</b></div><small>Calculated using this shop’s current pricing rules. Final production details are subject to shop review.</small></div>
           </div><div className="quote-contact-card"><h2>Contact & order notes</h2><label>Full name<input autoComplete="name" placeholder="Your name" value={customer.name} onChange={(event)=>setCustomer({...customer,name:event.target.value})}/></label><label>Email<input type="email" autoComplete="email" placeholder="you@example.com" value={customer.email} onChange={(event)=>setCustomer({...customer,email:event.target.value})}/></label><label>Phone <span>Optional</span><input type="tel" autoComplete="tel" placeholder="Phone number" value={customer.phone} onChange={(event)=>setCustomer({...customer,phone:event.target.value})}/></label><label>Order notes<textarea rows={4} placeholder="Anything the shop should know?" value={notes} onChange={(event)=>setNotes(event.target.value)}/></label>
             {!neededSides.every((target)=>(target==="front"?front:back).file)&&<div className="artwork-needed-note"><b>Artwork still needed</b><span>Continue to the Artwork step to add a file before placing your order.</span><button type="button" onClick={()=>setStep("artwork")}>Add artwork</button></div>}{totalAssigned<minimum&&<div className="artwork-needed-note"><b>Quantity minimum not met</b><span>Select at least {minimum} pieces in Color & quantity before placing your order.</span><button type="button" onClick={()=>setStep("color")}>Edit quantities</button></div>}{previewMode ? <div className="customer-payment-warning preview"><b>Preview mode</b><span>Checkout is disabled in preview.</span></div> : !shop.paymentReady && <div className="customer-payment-warning"><b>Checkout is temporarily unavailable.</b><span>This shop has not connected a live payment provider yet.</span></div>}{error&&<div className="error-message">{error}</div>}{submissionStatus&&<div className="submission-status"><i/><span>{submissionStatus}</span></div>}<button className="designer-primary full modern" disabled={previewMode||!shop.paymentReady||submitting||totalAssigned<minimum||!customer.name.trim()||!customer.email.trim()||!neededSides.every((target)=>(target==="front"?front:back).file)} onClick={submit}>{previewMode?"Preview mode · checkout disabled":submitting?"Preparing order…":!neededSides.every((target)=>(target==="front"?front:back).file)?"Add artwork to continue":totalAssigned<minimum?"Meet the quantity minimum to continue":`Continue to payment · $${totalPrice.toFixed(2)}`}</button><small className="disclaimer">{shop.settings.customerExperience?.artworkDisclaimer}</small>

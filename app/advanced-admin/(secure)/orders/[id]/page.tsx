@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AdvancedAdminOrderStatus from "@/components/AdvancedAdminOrderStatus";
 import { getAdvancedAdminContext } from "@/lib/advanced-admin";
+import { formatArtworkDimensions } from "@/lib/artwork-dimensions";
 import { decodeHtmlEntities } from "@/lib/html-entities";
 
 function cash(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value || 0); }
@@ -60,7 +61,7 @@ export default async function AdvancedOrderDetail({ params }: { params: Promise<
           {(items || []).map((item: any) => {
             const sizes = (quantities || []).filter((q: any) => q.order_item_id === item.id);
             return <div className="ae-line-item" key={item.id}>
-              <div><strong>{decodeHtmlEntities(item.product_name_snapshot)}</strong><span>{item.color_name || "Preset color"}</span></div>
+              <div><strong>{decodeHtmlEntities(item.product_name_snapshot)}</strong><span>{item.color_name || "Preset color"}</span>{(item.configuration?.printLines || []).filter((line: any) => line.measured).map((line: any) => <span key={line.side}>{line.side === "front" ? "Front" : "Back"}: {formatArtworkDimensions(line)} · {cash(Number(line.unitPrice || 0))} decoration / item{line.estimatedStitches ? ` · Estimated ${Number(line.estimatedStitches).toLocaleString()} stitches` : ""}</span>)}{item.configuration?.artworkSizingVersion === 2 && <small>Production size excludes transparent outer margins. Confirm embroidery stitches before production.</small>}</div>
               <span>{item.decoration_method || "Preset"} · {item.decoration_location || "Preset location"}</span>
               <span>{sizes.map((q: any) => `${q.size_name} × ${q.quantity}`).join(" · ") || `${item.quantity} total`}</span>
               <b>{cash(Number(item.line_total || 0))}</b>
